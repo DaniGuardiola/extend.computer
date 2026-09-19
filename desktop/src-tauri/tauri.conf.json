@@ -1,0 +1,62 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "extend.computer",
+  "version": "0.1.0",
+  "identifier": "computer.extend.desktop",
+  "build": {
+    "beforeDevCommand": "npm run native:permissions && npm run dev",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "npm run native:permissions && npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "extend.computer",
+        "width": 760,
+        "height": 600,
+        "minWidth": 580,
+        "minHeight": 480,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": {
+          "x": 32,
+          "y": 29.8
+        }
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "app"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "13.0",
+      "signingIdentity": "-",
+      "hardenedRuntime": false,
+      "files": {
+        "Library/LaunchServices/ExtendComputerLowJitter": "../../native/macos/LowJitter/.build/bundled/ExtendComputerLowJitter",
+        "Library/LaunchDaemons/computer.extend.lowjitter.plist": "../../native/macos/LowJitter/Service/computer.extend.lowjitter.plist"
+      }
+    },
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": {
+      "../../target/extend.computer Cursor.app": "helpers/extend.computer Cursor.app",
+      "permission-resources/libExtendComputerPermissions.dylib": "libExtendComputerPermissions.dylib",
+      "permission-resources/libPermissionFlow.dylib": "libPermissionFlow.dylib",
+      "permission-resources/libSystemSettingsKit.dylib": "libSystemSettingsKit.dylib",
+      "permission-resources/PermissionFlow_PermissionFlow.bundle": "PermissionFlow_PermissionFlow.bundle",
+      "permission-resources/PermissionFlow-LICENSE": "PermissionFlow-LICENSE"
+    }
+  }
+}

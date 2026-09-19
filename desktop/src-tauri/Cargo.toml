@@ -1,0 +1,28 @@
+[package]
+name = "extend-computer-desktop"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[features]
+default = []
+dev-identity = ["extend-computer-agent/dev-identity"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+extend-computer-agent = { path = "../.." }
+mdns-sd = "0.17"
+tempfile = "3"
+anyhow = "1"
+zeroize = "1"
+if-addrs = "0.14"
+libc = "0.2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSButton", "NSView", "NSWindow"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSProcessInfo"] }

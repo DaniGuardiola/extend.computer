@@ -1,0 +1,13 @@
+import Foundation
+@main struct IdentityProbe {
+    static func main() {
+        do {
+            let identity = try ServiceIdentity.current(application: true)
+            try identity.verifyBroker(at: URL(fileURLWithPath: CommandLine.arguments[1]))
+            print("ACCEPTED")
+        } catch {
+            print("REJECTED")
+            exit(1)
+        }
+    }
+}

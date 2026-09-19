@@ -1,0 +1,33 @@
+{
+  "name": "extend-computer-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit && vite build",
+    "tauri": "tauri",
+    "native:permissions": "bash ../scripts/build-permission-flow.sh && sh ../native/macos/LowJitter/build-bundled.sh",
+    "desktop:dev": "python3 ../scripts/dev-app.py run",
+    "desktop:build:dev": "python3 ../scripts/dev-app.py build",
+    "desktop:signing:setup": "python3 ../scripts/dev-app.py setup"
+  },
+  "dependencies": {
+    "@ariakit/react": "^0.4.0",
+    "@tauri-apps/api": "^2.0.0",
+    "lucide-react": "^1.47.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.0.0",
+    "@tauri-apps/cli": "^2.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.5.0",
+    "prettier": "^3.9.7",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.8.0",
+    "vite": "^7.0.0"
+  }
+}
