@@ -132,13 +132,8 @@ function Landing() {
               <Link to="/signup" className="button primary">
                 Get started <ArrowUpRight size={20} />
               </Link>
-              <a
-                href="https://github.com/DaniGuardiola/extend.computer"
-                className="source-link"
-                target="_blank"
-                rel="noreferrer"
-              >
-                View source <ArrowUpRight size={16} />
+              <a href="#how-it-works" className="source-link">
+                See how it works <ArrowUpRight size={16} />
               </a>
             </div>
             <p className="hero-footnote">Free to use. Yours to host.</p>
@@ -216,12 +211,8 @@ function Landing() {
       <footer className="site-footer">
         <Brand />
         <span>Less friction. More flow.</span>
-        <a
-          href="https://github.com/DaniGuardiola/extend.computer"
-          target="_blank"
-          rel="noreferrer"
-        >
-          Built in the open <ArrowUpRight size={15} />
+        <a href="#how-it-works">
+          Self-hostable by design <ArrowUpRight size={15} />
         </a>
       </footer>
     </div>

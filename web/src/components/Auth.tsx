@@ -59,7 +59,7 @@ export function Auth({ signup = false }: { signup?: boolean }) {
           </h2>
           <p>A home for every device on your desk.</p>
         </div>
-        <small>Open source. Yours to run.</small>
+        <small>Your desk. Your control.</small>
       </aside>
       <main id="main" className="auth-main">
         <div className="auth-box">

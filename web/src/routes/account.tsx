@@ -2,7 +2,6 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import * as Ariakit from '@ariakit/react'
 import {
-  ArrowRight,
   Fingerprint,
   KeyRound,
   Laptop,
@@ -221,13 +220,6 @@ function Dashboard() {
                     next. For now, the desktop app connects directly on your
                     local network.
                   </p>
-                  <a
-                    className="button button-outline"
-                    href="https://github.com/DaniGuardiola/extend.computer#readme"
-                  >
-                    Get the desktop app
-                    <ArrowRight size={14} />
-                  </a>
                 </div>
               )}
             </section>
@@ -331,9 +323,7 @@ function Dashboard() {
       </main>
       <footer className="dashboard-footer">
         <span>Your devices. Your control.</span>
-        <a href="https://github.com/DaniGuardiola/extend.computer">
-          Open source ↗
-        </a>
+        <a href="/">Back to home ↗</a>
       </footer>
       <Ariakit.Dialog
         open={!!removal}
