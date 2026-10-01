@@ -1,0 +1,25 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "extend-computer",
+  "account_id": "ab3418f68aabe124b1273f0e46a75885",
+  "triggers": { "crons": ["17 3 * * *"] },
+  "main": "src/server.ts",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "routes": [{ "pattern": "extend.computer", "custom_domain": true }],
+  "observability": { "enabled": true, "head_sampling_rate": 0.1 },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "extend-computer",
+      "database_id": "aa7b3297-a30e-4238-8bb2-9ae446e0b5f4",
+      "migrations_dir": "migrations",
+    },
+  ],
+  "durable_objects": {
+    "bindings": [{ "name": "ACCOUNTS", "class_name": "AccountService" }],
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["AccountService"] }],
+  "vars": { "SIGNUP_ENABLED": "true" },
+}

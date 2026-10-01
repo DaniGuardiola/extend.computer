@@ -12,7 +12,7 @@
 - React, Tailwind CSS 4, Ariakit controls, Lucide icons, and system/light/dark appearance.
 - Native macOS permission guidance through PermissionFlow. The GUI reports effective input access; Accessibility may satisfy both input checks without a separate Input Monitoring grant.
 
-Native full-input sharing has been tested across two Macs through the CLI harness. GUI pairing, permission setup, and GUI input sharing have been user-verified. Discovery-first visual pairing awaits a live two-Mac comparison. Screen extension, visual arrangement, accounts, and backup providers remain future work. No project license has been selected; vendored dependencies retain their own licenses.
+Native full-input sharing has been tested across two Macs through the CLI harness. GUI pairing, permission setup, and GUI input sharing have been user-verified. Discovery-first visual pairing awaits a live two-Mac comparison. An initial self-hostable account/device registry is available in `server/`; desktop login and account-based connections are not integrated yet. Screen extension, visual arrangement, and backup providers remain future work. No project license has been selected; vendored dependencies retain their own licenses.
 
 ## Development and use
 
@@ -21,6 +21,8 @@ Native full-input sharing has been tested across two Macs through the CLI harnes
 - CLI executable: `extend-computer`.
 - [Prototype guide](docs/prototype.md): diagnostic commands and trust model.
 - [Code map](docs/code-map.md): source organization and verification commands.
+- [Official website](web/README.md): Cloudflare-hosted landing page, password/passkey accounts, and device management.
+- [Account server](server/README.md): self-hostable account and device registry, API, and desktop integration plan.
 
 ### AWDL setting
 
