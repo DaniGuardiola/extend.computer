@@ -249,7 +249,7 @@ function ShareTyping({ side }: { side: 'left' | 'right' }) {
   )
 }
 
-function WorkspaceCursor({ mode }: { mode: 'mirror' | 'remote' }) {
+function WorkspaceCursor({ mode }: { mode: 'extend' | 'mirror' | 'remote' }) {
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const cursor = ref.current!
@@ -282,7 +282,11 @@ function WorkspaceCursor({ mode }: { mode: 'mirror' | 'remote' }) {
     <div
       ref={ref}
       className={
-        mode === 'mirror' ? 'extend-cursor mirror-drag-cursor' : 'remote-cursor'
+        mode === 'mirror'
+          ? 'extend-cursor mirror-drag-cursor'
+          : mode === 'extend'
+            ? 'extend-cursor'
+            : 'remote-cursor'
       }
     >
       <MousePointer2 fill="currentColor" />
@@ -320,9 +324,7 @@ function Workspace({ side, mode }: { side: 'left' | 'right'; mode: Mode }) {
               ? 'REMOTE WORKSPACE'
               : mode === 'mirror'
                 ? 'THE SAME WORKSPACE'
-                : side === 'left'
-                  ? 'ROOM TO THINK'
-                  : 'ROOM TO MAKE'}
+                : 'ROOM TO MAKE'}
           </span>
         </div>
         <div className="workspace-art">
@@ -331,12 +333,7 @@ function Workspace({ side, mode }: { side: 'left' | 'right'; mode: Mode }) {
           <i />
         </div>
         <span className="workspace-caption">Good things take space.</span>
-        {mode === 'extend' ? (
-          <div className="extend-cursor">
-            <MousePointer2 fill="currentColor" />
-          </div>
-        ) : null}
-        {mode === 'mirror' || mode === 'remote' ? (
+        {mode === 'extend' || mode === 'mirror' || mode === 'remote' ? (
           <WorkspaceCursor mode={mode} />
         ) : null}
       </div>

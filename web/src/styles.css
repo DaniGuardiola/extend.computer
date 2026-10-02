@@ -1628,6 +1628,7 @@ h3 {
   background: #314626;
 }
 .extend-cursor {
+  --extend-grab-top: 7px;
   position: absolute;
   z-index: 3;
   left: 46%;
@@ -1653,56 +1654,184 @@ h3 {
   height: 13px;
   border: 1px solid var(--acid);
   border-radius: 50%;
-  animation: extend-held var(--demo-duration) step-end infinite;
+  animation:
+    extend-held var(--demo-duration) step-end infinite,
+    extend-click var(--demo-duration) linear infinite;
 }
 @keyframes extend-grab {
   0%,
-  44%,
-  50%,
   100% {
+    left: 46%;
     top: 40%;
   }
   8%,
   38%,
+  74%,
+  94% {
+    left: 46%;
+    top: var(--extend-grab-top);
+  }
+  42%,
+  46% {
+    left: var(--mirror-circle-x);
+    top: var(--mirror-circle-y);
+  }
+  50%,
+  54% {
+    left: var(--mirror-square-x);
+    top: var(--mirror-square-y);
+  }
   58%,
-  88% {
-    top: 7px;
+  62% {
+    left: var(--mirror-toggle-x);
+    top: var(--mirror-toggle-y);
+  }
+  66%,
+  68% {
+    left: 92%;
+    top: 90%;
   }
 }
 @keyframes extend-held {
   0%,
   38%,
-  88%,
+  48%,
+  56%,
+  64%,
+  72%,
+  94%,
   100% {
     opacity: 0;
   }
   8%,
-  58% {
+  44%,
+  52%,
+  60%,
+  68%,
+  74% {
     opacity: 1;
+  }
+}
+@keyframes extend-click {
+  0%,
+  43.99%,
+  51.99%,
+  59.99%,
+  67.99%,
+  74%,
+  100% {
+    transform: scale(1);
+  }
+  44%,
+  52%,
+  60%,
+  68% {
+    transform: scale(0.5);
+  }
+  48%,
+  56%,
+  64%,
+  72% {
+    transform: scale(1.6);
   }
 }
 @keyframes window-out {
   0%,
   12%,
-  88%,
+  94%,
   100% {
     transform: translateX(0);
   }
   38%,
-  62% {
+  78% {
     transform: translateX(150%);
   }
 }
 @keyframes window-in {
   0%,
   12%,
-  88%,
+  94%,
   100% {
     transform: translateX(-150%);
   }
   38%,
-  62% {
+  78% {
     transform: translateX(0);
+  }
+}
+.mode-extend .workspace-art i:first-child {
+  animation: extend-select-circle var(--demo-duration) ease-out infinite;
+}
+.mode-extend .workspace-art i:nth-child(2) {
+  animation: extend-select-square var(--demo-duration) ease-out infinite;
+}
+.mode-extend .workspace-art i:nth-child(3) {
+  animation: extend-fill-circle var(--demo-duration) ease-out infinite;
+}
+@keyframes extend-select-circle {
+  0%,
+  43.99%,
+  72%,
+  100% {
+    background: var(--acid);
+    transform: scale(1);
+  }
+  44% {
+    background: #b78bdd;
+    transform: scale(0.9);
+  }
+  48%,
+  67.99% {
+    background: #b78bdd;
+    transform: scale(1);
+  }
+  68% {
+    background: var(--acid);
+    transform: scale(1);
+  }
+}
+@keyframes extend-select-square {
+  0%,
+  51.99%,
+  72%,
+  100% {
+    background: #779d55;
+    transform: rotate(15deg);
+  }
+  52% {
+    background: #b78bdd;
+    transform: rotate(-12deg) scale(0.9);
+  }
+  56%,
+  67.99% {
+    background: #b78bdd;
+    transform: rotate(-12deg);
+  }
+  68% {
+    background: #779d55;
+    transform: rotate(15deg);
+  }
+}
+@keyframes extend-fill-circle {
+  0%,
+  59.99%,
+  72%,
+  100% {
+    background: transparent;
+    transform: scale(1);
+  }
+  60% {
+    background: var(--acid);
+    transform: scale(0.9);
+  }
+  64%,
+  67.99% {
+    background: var(--acid);
+    transform: scale(1);
+  }
+  68% {
+    background: transparent;
+    transform: scale(1);
   }
 }
 .laptop-wallpaper,
@@ -2150,19 +2279,8 @@ h3 {
     padding: 2px;
     font-size: 2px;
   }
-  @keyframes extend-grab {
-    0%,
-    44%,
-    50%,
-    100% {
-      top: 40%;
-    }
-    8%,
-    38%,
-    58%,
-    88% {
-      top: 2px;
-    }
+  .extend-cursor {
+    --extend-grab-top: 2px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
