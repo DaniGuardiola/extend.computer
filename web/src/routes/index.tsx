@@ -46,7 +46,7 @@ const modes = [
     label: 'Remote desktop',
     title: 'Your other Mac. Right here.',
     description:
-      'View and control another Mac’s desktop from this one. Reach its apps and files without changing seats.',
+      'Open another Mac’s desktop in a window on yours. Use its apps and files while keeping your own workspace.',
     detail: 'ANOTHER MAC. WITHIN REACH.',
   },
 ] as const
@@ -63,11 +63,28 @@ function ShareCursor({ side }: { side: 'left' | 'right' }) {
 }
 
 function Workspace({ side, mode }: { side: 'left' | 'right'; mode: Mode }) {
+  if (mode === 'remote' && side === 'right') {
+    return (
+      <div className="workspace-picture remote-local-workspace">
+        <div className="remote-local-note">MY WORKSPACE</div>
+        <div className="remote-viewer">
+          <div className="remote-viewer-bar">
+            <span>● ● ●</span>
+            <span>DESKTOP MAC</span>
+            <i className="status-dot" />
+          </div>
+          <div className="remote-viewport">
+            <Workspace side="left" mode="remote" />
+          </div>
+        </div>
+      </div>
+    )
+  }
   return (
     <div className={`workspace-picture workspace-${side}`}>
       <div className="workspace-grid" />
-      {mode === 'remote' && side === 'right' ? (
-        <div className="mirror-cursor">
+      {mode === 'remote' ? (
+        <div className="remote-cursor">
           <MousePointer2 fill="currentColor" />
         </div>
       ) : null}
@@ -138,7 +155,7 @@ function Desk() {
             <div className="screen">
               <div className="screen-toolbar">
                 <span className="window-dots">● ● ●</span>
-                <span>DESKTOP</span>
+                <span>{mode === 'remote' ? 'REMOTE MAC' : 'DESKTOP'}</span>
               </div>
               {mode === 'share' ? (
                 <div className="screen-content">
@@ -176,7 +193,7 @@ function Desk() {
                   {mode === 'extend'
                     ? 'EXTRA DISPLAY'
                     : mode === 'remote'
-                      ? 'REMOTE DESKTOP'
+                      ? 'THIS MAC'
                       : 'LAPTOP'}
                 </span>
               </div>
