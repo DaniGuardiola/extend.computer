@@ -58,7 +58,9 @@ function ShareCursor({ side }: { side: 'left' | 'right' }) {
   useEffect(() => {
     const cursor = ref.current!
     const screen = cursor.parentElement!
-    const field = screen.querySelector<HTMLElement>(`.share-typing-${side}`)!
+    const field = screen.querySelector<HTMLElement>(
+      `.share-typing-${side} .share-typing-input`,
+    )!
     let active = true
     const update = () => {
       if (!active) return
@@ -95,12 +97,126 @@ function ShareCursor({ side }: { side: 'left' | 'right' }) {
 }
 
 function ShareTyping({ side }: { side: 'left' | 'right' }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [terminal, setTerminal] = useState({
+    history: ['connected', 'ready to type'],
+    input: '',
+  })
+  useEffect(() => {
+    const phrases =
+      side === 'left'
+        ? [
+            'hello, desktop',
+            'one keyboard',
+            'keep going',
+            'less switching',
+            'make some room',
+            'back to work',
+            'ideas welcome',
+            'stay in flow',
+          ]
+        : [
+            'hello, laptop',
+            'same keyboard',
+            'new workspace',
+            'keep creating',
+            'over here now',
+            'pick up here',
+            'more ideas',
+            'one smooth hop',
+          ]
+    const recent: string[] = []
+    let deck: string[] = []
+    const nextPhrase = () => {
+      if (!deck.length) {
+        deck = [...phrases]
+        for (let i = deck.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1))
+          ;[deck[i], deck[j]] = [deck[j], deck[i]]
+        }
+      }
+      const index = deck.findIndex((phrase) => !recent.includes(phrase))
+      const [phrase] = deck.splice(index, 1)
+      recent.push(phrase)
+      if (recent.length > 3) recent.shift()
+      return phrase
+    }
+    const motion = matchMedia('(prefers-reduced-motion: reduce)')
+    let frame = 0
+    let animation: Animation | undefined
+    let cycle = -1
+    let submitted = false
+    let phrase = ''
+    let input = ''
+    let history = ['connected', 'ready to type']
+    const tick = () => {
+      animation ??= ref.current
+        ?.closest('.screen')
+        ?.querySelector(`.share-cursor-${side}`)
+        ?.getAnimations()
+        .find(
+          (item) =>
+            (item as CSSAnimation).animationName === `share-${side}-path`,
+        )
+      if (animation && typeof animation.currentTime === 'number') {
+        const duration = Number(animation.effect!.getTiming().duration)
+        const currentCycle = Math.floor(animation.currentTime / duration)
+        const progress = (animation.currentTime % duration) / duration
+        if (currentCycle !== cycle) {
+          cycle = currentCycle
+          phrase = nextPhrase()
+          submitted = false
+        }
+        const start = side === 'left' ? 0.06 : 0.46
+        const finish = side === 'left' ? 0.2 : 0.68
+        const enter = side === 'left' ? 0.22 : 0.7
+        const count = Math.max(
+          0,
+          Math.min(
+            phrase.length,
+            Math.floor(((progress - start) / (finish - start)) * phrase.length),
+          ),
+        )
+        let nextInput = submitted ? '' : phrase.slice(0, count)
+        if (!submitted && progress >= enter) {
+          history = [...history.slice(-1), phrase]
+          submitted = true
+          nextInput = ''
+          setTerminal({ history, input: '' })
+        } else if (nextInput !== input) {
+          setTerminal({ history, input: nextInput })
+        }
+        input = nextInput
+      }
+      frame = requestAnimationFrame(tick)
+    }
+    const start = () => {
+      cancelAnimationFrame(frame)
+      animation = undefined
+      if (motion.matches) {
+        setTerminal({ history: ['connected', phrases[0]], input: '' })
+      } else {
+        frame = requestAnimationFrame(tick)
+      }
+    }
+    start()
+    motion.addEventListener('change', start)
+    return () => {
+      cancelAnimationFrame(frame)
+      motion.removeEventListener('change', start)
+    }
+  }, [side])
   return (
-    <div className={`share-typing share-typing-${side}`}>
-      <span className="accent">›</span>
-      <span className="share-typed-text">
-        {side === 'left' ? 'hello, desktop' : 'hello, laptop'}
-      </span>
+    <div ref={ref} className={`share-typing share-typing-${side}`}>
+      <div className="share-terminal-history">
+        {terminal.history.map((line, index) => (
+          <div key={index}>› {line}</div>
+        ))}
+      </div>
+      <div className="share-typing-input">
+        <span className="accent">›</span>
+        <span className="share-typed-text">{terminal.input}</span>
+      </div>
     </div>
   )
 }
@@ -209,13 +325,6 @@ function Desk() {
                   </div>
                   <div className="fake-window">
                     <span>~/good-things</span>
-                    <p>
-                      <b>→</b> a little more space
-                      <br />
-                      <b>→</b> a lot less friction
-                      <br />
-                      <b>✓</b> keep going
-                    </p>
                     <ShareTyping side="left" />
                   </div>
                 </div>
