@@ -1490,7 +1490,8 @@ h3 {
     transform: translateX(0);
   }
 }
-.mode-mirror .cursor-track {
+.mode-mirror .cursor-track,
+.mode-remote .cursor-track {
   display: none;
 }
 .mirror-cursor {
@@ -1530,6 +1531,8 @@ h3 {
 }
 @media (max-width: 600px) {
   .mode-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     width: 100%;
     gap: 3px;
     margin-top: 20px;

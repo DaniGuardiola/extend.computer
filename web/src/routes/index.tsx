@@ -18,6 +18,14 @@ export const Route = createFileRoute('/')({ component: Landing })
 
 const modes = [
   {
+    id: 'extend',
+    label: 'Extend display',
+    title: 'More room for your next idea.',
+    description:
+      'Turn another Mac into an extra display. Spread your windows out and make a little more room to think.',
+    detail: 'ONE DESKTOP. MORE SPACE.',
+  },
+  {
     id: 'share',
     label: 'Share input',
     title: 'One keyboard. Every computer.',
@@ -34,12 +42,12 @@ const modes = [
     detail: 'SAME SCREEN. NEW PERSPECTIVE.',
   },
   {
-    id: 'extend',
-    label: 'Extend display',
-    title: 'More room for your next idea.',
+    id: 'remote',
+    label: 'Remote desktop',
+    title: 'Your other Mac. Right here.',
     description:
-      'Turn another Mac into an extra display. Spread your windows out and make a little more room to think.',
-    detail: 'ONE DESKTOP. MORE SPACE.',
+      'View and control another Mac’s desktop from this one. Reach its apps and files without changing seats.',
+    detail: 'ANOTHER MAC. WITHIN REACH.',
   },
 ] as const
 
@@ -49,7 +57,7 @@ function Workspace({ side, mode }: { side: 'left' | 'right'; mode: Mode }) {
   return (
     <div className={`workspace-picture workspace-${side}`}>
       <div className="workspace-grid" />
-      {mode === 'mirror' ? (
+      {mode === 'mirror' || (mode === 'remote' && side === 'right') ? (
         <div className="mirror-cursor">
           <MousePointer2 fill="currentColor" />
         </div>
@@ -58,11 +66,13 @@ function Workspace({ side, mode }: { side: 'left' | 'right'; mode: Mode }) {
         <div className="workspace-window-bar">
           ● ● ●{' '}
           <span>
-            {mode === 'mirror'
-              ? 'THE SAME WORKSPACE'
-              : side === 'left'
-                ? 'ROOM TO THINK'
-                : 'ROOM TO MAKE'}
+            {mode === 'remote'
+              ? 'REMOTE WORKSPACE'
+              : mode === 'mirror'
+                ? 'THE SAME WORKSPACE'
+                : side === 'left'
+                  ? 'ROOM TO THINK'
+                  : 'ROOM TO MAKE'}
           </span>
         </div>
         <div className="workspace-art">
@@ -77,7 +87,7 @@ function Workspace({ side, mode }: { side: 'left' | 'right'; mode: Mode }) {
 }
 
 function Desk() {
-  const [mode, setMode] = useState<Mode>('share')
+  const [mode, setMode] = useState<Mode>('extend')
   const [paused, setPaused] = useState(false)
   const current = modes.find((item) => item.id === mode)!
   const tabs = Ariakit.useTabStore({
@@ -87,7 +97,7 @@ function Desk() {
   return (
     <section
       className={`desk-visual mode-${mode} ${paused ? 'demo-paused' : ''}`}
-      aria-label="Explore the three modes"
+      aria-label="Explore the four modes"
     >
       <div className="desk-topline">
         <span>
@@ -145,7 +155,13 @@ function Desk() {
             <div className="screen">
               <div className="screen-toolbar">
                 <span className="window-dots">● ● ●</span>
-                <span>{mode === 'extend' ? 'EXTRA DISPLAY' : 'LAPTOP'}</span>
+                <span>
+                  {mode === 'extend'
+                    ? 'EXTRA DISPLAY'
+                    : mode === 'remote'
+                      ? 'REMOTE DESKTOP'
+                      : 'LAPTOP'}
+                </span>
               </div>
               {mode === 'share' ? (
                 <div className="laptop-wallpaper">
@@ -246,9 +262,10 @@ function Landing() {
             </h2>
           </div>
           <p>
-            Share your keyboard. Mirror your screen.
-            <br className="desktop-break" /> Turn another Mac into an extra
-            display.
+            Turn another Mac into an extra display.
+            <br className="desktop-break" /> Share your keyboard. Mirror your
+            screen.
+            <br className="desktop-break" /> Control another desktop from yours.
             <br className="desktop-break" /> Choose how your computers work
             together.
           </p>
