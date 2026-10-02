@@ -130,88 +130,43 @@ function ShareCursor({ side }: { side: 'left' | 'right' }) {
       if (!active) return
       const bounds = screen.getBoundingClientRect()
       const target = field.getBoundingClientRect()
-      const peerBounds = peer.getBoundingClientRect()
       const peerTarget = peerField.getBoundingClientRect()
       const leftTarget = side === 'left' ? target : peerTarget
       const rightTarget = side === 'right' ? target : peerTarget
-      const leftBounds = side === 'left' ? bounds : peerBounds
-      const rightBounds = side === 'right' ? bounds : peerBounds
-      const leftScreen = side === 'left' ? screen : peer
-      const rightScreen = side === 'right' ? screen : peer
-      const leftDistance =
-        leftBounds.left +
-        leftScreen.clientLeft +
-        (leftBounds.width - leftScreen.clientLeft * 2) -
-        (leftTarget.left + leftTarget.width * 0.9)
-      const rightDistance =
-        rightTarget.left +
-        rightTarget.width * 0.35 -
-        (rightBounds.left + rightScreen.clientLeft)
-      // Treat the display edges as adjacent, with one slope across the handoff.
-      const leftY = leftTarget.top + leftTarget.height / 2
-      const rightY = rightTarget.top + rightTarget.height / 2
-      const crossingY =
-        leftY +
-        ((rightY - leftY) * leftDistance) / (leftDistance + rightDistance)
       const tip = Number.parseFloat(
         getComputedStyle(cursor).getPropertyValue('--cursor-tip'),
       )
+      const point = (target: DOMRect, x: number) => ({
+        left: `${target.left + target.width * x - bounds.left - screen.clientLeft - tip}px`,
+        top: `${target.top + target.height / 2 - bounds.top - screen.clientTop - tip}px`,
+      })
+      const leftPoint = point(leftTarget, 0.9)
+      const rightPoint = point(rightTarget, 0.35)
       cursor.style.setProperty(
         '--type-x',
-        `${target.left + target.width * (side === 'left' ? 0.9 : 0.35) - bounds.left - screen.clientLeft - tip}px`,
+        (side === 'left' ? leftPoint : rightPoint).left,
       )
       cursor.style.setProperty(
         '--type-y',
-        `${target.top + target.height / 2 - bounds.top - screen.clientTop - tip}px`,
+        (side === 'left' ? leftPoint : rightPoint).top,
       )
-      cursor.style.setProperty(
-        '--cross-y',
-        `${crossingY - bounds.top - screen.clientTop - tip}px`,
-      )
-      const fraction = leftDistance / (leftDistance + rightDistance)
-      const outbound = 0.24 + 0.18 * fraction
-      const inbound = 0.72 + 0.24 * (1 - fraction)
-      const atField = {
-        left: cursor.style.getPropertyValue('--type-x'),
-        top: cursor.style.getPropertyValue('--type-y'),
-      }
-      const atEdge = {
-        left:
-          side === 'left'
-            ? `${bounds.width - screen.clientLeft * 2 - tip}px`
-            : `${-tip}px`,
-        top: cursor.style.getPropertyValue('--cross-y'),
-      }
+      // Both clipped copies follow one path in page coordinates, including the gap.
       for (const animation of cursor.getAnimations()) {
         const name = (animation as CSSAnimation).animationName
         const effect = animation.effect as KeyframeEffect
         if (name === `share-${side}-path`) {
-          effect.setKeyframes(
-            side === 'left'
-              ? [
-                  { ...atField, offset: 0 },
-                  { ...atField, offset: 0.24 },
-                  { ...atEdge, offset: outbound },
-                  { ...atEdge, offset: inbound },
-                  { ...atField, offset: 0.96 },
-                  { ...atField, offset: 1 },
-                ]
-              : [
-                  { ...atEdge, offset: 0 },
-                  { ...atEdge, offset: outbound },
-                  { ...atField, offset: 0.42 },
-                  { ...atField, offset: 0.72 },
-                  { ...atEdge, offset: inbound },
-                  { ...atEdge, offset: 1 },
-                ],
-          )
-        } else if (name === `share-${side}-visible`) {
-          const initial = side === 'left' ? 1 : 0
           effect.setKeyframes([
-            { opacity: initial, offset: 0, easing: 'steps(1, end)' },
-            { opacity: 1 - initial, offset: outbound, easing: 'steps(1, end)' },
-            { opacity: initial, offset: inbound, easing: 'steps(1, end)' },
-            { opacity: initial, offset: 1, easing: 'steps(1, end)' },
+            { ...leftPoint, offset: 0 },
+            { ...leftPoint, offset: 0.24 },
+            { ...rightPoint, offset: 0.48 },
+            { ...rightPoint, offset: 0.72 },
+            { ...leftPoint, offset: 0.96 },
+            { ...leftPoint, offset: 1 },
+          ])
+        } else if (name === `share-${side}-visible`) {
+          effect.setKeyframes([
+            { opacity: 1, offset: 0 },
+            { opacity: 1, offset: 1 },
           ])
         }
       }
@@ -326,7 +281,7 @@ function ShareTyping({ side }: { side: 'left' | 'right' }) {
           phrase = nextPhrase()
           submitted = false
         }
-        const start = side === 'left' ? 0.06 : 0.46
+        const start = side === 'left' ? 0.06 : 0.52
         const finish = side === 'left' ? 0.2 : 0.68
         const enter = side === 'left' ? 0.22 : 0.7
         const count = Math.max(

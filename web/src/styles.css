@@ -1541,13 +1541,13 @@ h3 {
 }
 @keyframes share-click-right {
   0%,
-  41.99%,
-  46%,
+  47.99%,
+  52%,
   100% {
     opacity: 0;
     transform: scale(1.5);
   }
-  42% {
+  48% {
     opacity: 1;
     transform: scale(0.4);
   }
