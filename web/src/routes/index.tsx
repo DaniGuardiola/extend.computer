@@ -136,7 +136,14 @@ function ShareCursor({ side }: { side: 'left' | 'right' }) {
         bounds.bottom - screen.clientTop,
         peerBounds.bottom - peer.clientTop,
       )
-      const crossingY = sharedTop + (sharedBottom - sharedTop) * 0.6
+      const leftField = (
+        side === 'left' ? screen : peer
+      ).querySelector<HTMLElement>('.share-typing-left .share-typing-input')!
+      const leftTarget = leftField.getBoundingClientRect()
+      const crossingY = Math.min(
+        sharedBottom,
+        Math.max(sharedTop, leftTarget.top + leftTarget.height / 2),
+      )
       const tip = Number.parseFloat(
         getComputedStyle(cursor).getPropertyValue('--cursor-tip'),
       )

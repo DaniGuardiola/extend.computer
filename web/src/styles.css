@@ -1470,11 +1470,6 @@ h3 {
     left: var(--type-x);
     top: var(--type-y);
   }
-  27%,
-  88% {
-    left: max(86%, var(--type-x));
-    top: var(--cross-y);
-  }
   30%,
   82% {
     left: calc(100% - var(--cursor-tip));
@@ -1491,7 +1486,7 @@ h3 {
   }
   36%,
   76% {
-    left: 10%;
+    left: var(--type-x);
     top: var(--cross-y);
   }
   42%,
