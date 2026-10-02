@@ -4,17 +4,15 @@ export function Brand() {
   return (
     <Link to="/" className="brand" aria-label="extend.computer home">
       <svg
-        width="28"
-        height="24"
-        viewBox="0 0 28 24"
+        width="34"
+        height="34"
+        viewBox="110 110 292 330"
         fill="none"
         aria-hidden="true"
       >
         <path
-          d="M2 3h10v15H2zM16 3h10v15H16zM6 22h16M14 18v4"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinejoin="round"
+          fill="currentColor"
+          d="M138 137h236v126H214v-34h126v-58H172v139h178v34H138V137Zm101 207h34v42h61v34H178v-34h61v-42Z"
         />
       </svg>
       <span>

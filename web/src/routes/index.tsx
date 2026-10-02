@@ -3,98 +3,190 @@ import {
   ArrowUpRight,
   ArrowRight,
   MousePointer2,
-  MoveRight,
+  Pause,
+  Play,
   ShieldCheck,
   Radio,
   Laptop,
   Terminal,
 } from 'lucide-react'
 import { useState } from 'react'
+import * as Ariakit from '@ariakit/react'
 import { Brand } from '../components/Brand'
 
 export const Route = createFileRoute('/')({ component: Landing })
 
-function Desk() {
-  const [side, setSide] = useState<'left' | 'right'>('right')
+const modes = [
+  {
+    id: 'share',
+    label: 'Share input',
+    title: 'One keyboard. Every computer.',
+    description:
+      'Slide your cursor between computers. Your keyboard follows, while each Mac keeps its own apps and workspace.',
+    detail: 'YOUR KEYBOARD + MOUSE',
+  },
+  {
+    id: 'mirror',
+    label: 'Mirror screen',
+    title: 'Your screen. A different seat.',
+    description:
+      'Bring one Mac’s screen onto another. See the same workspace and control it from wherever you’re sitting.',
+    detail: 'SAME SCREEN. NEW PERSPECTIVE.',
+  },
+  {
+    id: 'extend',
+    label: 'Extend display',
+    title: 'More room for your next idea.',
+    description:
+      'Turn another Mac into an extra display. Spread your windows out and make a little more room to think.',
+    detail: 'ONE DESKTOP. MORE SPACE.',
+  },
+] as const
+
+type Mode = (typeof modes)[number]['id']
+
+function Workspace({ side, mode }: { side: 'left' | 'right'; mode: Mode }) {
   return (
-    <div className="desk-visual">
+    <div className={`workspace-picture workspace-${side}`}>
+      <div className="workspace-grid" />
+      {mode === 'mirror' ? (
+        <div className="mirror-cursor">
+          <MousePointer2 fill="currentColor" />
+        </div>
+      ) : null}
+      <div className="workspace-window">
+        <div className="workspace-window-bar">
+          ● ● ●{' '}
+          <span>
+            {mode === 'mirror'
+              ? 'THE SAME WORKSPACE'
+              : side === 'left'
+                ? 'ROOM TO THINK'
+                : 'ROOM TO MAKE'}
+          </span>
+        </div>
+        <div className="workspace-art">
+          <i />
+          <i />
+          <i />
+        </div>
+        <span className="workspace-caption">Good things take space.</span>
+      </div>
+    </div>
+  )
+}
+
+function Desk() {
+  const [mode, setMode] = useState<Mode>('share')
+  const [paused, setPaused] = useState(false)
+  const current = modes.find((item) => item.id === mode)!
+  const tabs = Ariakit.useTabStore({
+    selectedId: mode,
+    setSelectedId: (id) => setMode(id as Mode),
+  })
+  return (
+    <section
+      className={`desk-visual mode-${mode} ${paused ? 'demo-paused' : ''}`}
+      aria-label="Explore the three modes"
+    >
       <div className="desk-topline">
         <span>
           <i className="status-dot" /> TWO MACS. ONE FLOW.
         </span>
         <span>01 — 02</span>
       </div>
-      <div className="computers" aria-hidden="true">
-        <div
-          className={`computer monitor ${side === 'left' ? 'active-screen' : ''}`}
-        >
-          <div className="screen">
-            <div className="screen-toolbar">
-              <span className="window-dots">● ● ●</span>
-              <span>DESKTOP</span>
-            </div>
-            <div className="screen-content">
-              <div className="screen-greeting">
-                Make room
-                <br />
-                for more<span>.</span>
+      <Ariakit.TabList
+        store={tabs}
+        className="mode-tabs"
+        aria-label="Connection mode"
+      >
+        {modes.map((item) => (
+          <Ariakit.Tab key={item.id} id={item.id} className="mode-tab">
+            {item.label}
+          </Ariakit.Tab>
+        ))}
+      </Ariakit.TabList>
+      <Ariakit.TabPanel store={tabs} tabId={mode} className="mode-panel">
+        <div className="computers" aria-hidden="true">
+          <div className="computer monitor">
+            <div className="screen">
+              <div className="screen-toolbar">
+                <span className="window-dots">● ● ●</span>
+                <span>DESKTOP</span>
               </div>
-              <div className="fake-window">
-                <span>~/good-things</span>
-                <p>
-                  <b>→</b> a little more space
-                  <br />
-                  <b>→</b> a lot less friction
-                  <br />
-                  <b>✓</b> keep going
-                </p>
+              {mode === 'share' ? (
+                <div className="screen-content">
+                  <div className="screen-greeting">
+                    Make room
+                    <br />
+                    for more<span>.</span>
+                  </div>
+                  <div className="fake-window">
+                    <span>~/good-things</span>
+                    <p>
+                      <b>→</b> a little more space
+                      <br />
+                      <b>→</b> a lot less friction
+                      <br />
+                      <b>✓</b> keep going
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <Workspace side="left" mode={mode} />
+              )}
+            </div>
+            <div className="monitor-chin">
+              <div />
+            </div>
+            <div className="monitor-stand" />
+          </div>
+          <div className="computer laptop">
+            <div className="screen">
+              <div className="screen-toolbar">
+                <span className="window-dots">● ● ●</span>
+                <span>{mode === 'extend' ? 'EXTRA DISPLAY' : 'LAPTOP'}</span>
               </div>
+              {mode === 'share' ? (
+                <div className="laptop-wallpaper">
+                  <span>
+                    Keep
+                    <br />
+                    your flow<span className="accent">.</span>
+                  </span>
+                  <div className="wallpaper-orbit" />
+                </div>
+              ) : (
+                <Workspace side="right" mode={mode} />
+              )}
             </div>
-            {side === 'left' ? (
-              <MousePointer2 className="visual-cursor" fill="currentColor" />
-            ) : null}
-          </div>
-          <div className="monitor-chin">
-            <div />
-          </div>
-          <div className="monitor-stand" />
-        </div>
-        <div
-          className={`computer laptop ${side === 'right' ? 'active-screen' : ''}`}
-        >
-          <div className="screen">
-            <div className="screen-toolbar">
-              <span className="window-dots">● ● ●</span>
-              <span>LAPTOP</span>
+            <div className="laptop-base">
+              <div />
             </div>
-            <div className="laptop-wallpaper">
-              <span>
-                Keep
-                <br />
-                your flow<span className="accent">.</span>
-              </span>
-              <div className="wallpaper-orbit" />
-            </div>
-            {side === 'right' ? (
-              <MousePointer2 className="visual-cursor" fill="currentColor" />
-            ) : null}
           </div>
-          <div className="laptop-base">
-            <div />
+          <div className="cursor-track" key={mode}>
+            <MousePointer2 className="visual-cursor" fill="currentColor" />
+            <span>YOU</span>
           </div>
         </div>
-      </div>
+        <div className="mode-description">
+          <h2>{current.title}</h2>
+          <p>{current.description}</p>
+        </div>
+      </Ariakit.TabPanel>
       <div className="desk-bottomline">
-        <span>YOUR KEYBOARD + MOUSE</span>
+        <span>{current.detail}</span>
         <button
-          onClick={() => setSide(side === 'left' ? 'right' : 'left')}
+          onClick={() => setPaused((value) => !value)}
           className="demo-control"
-          aria-label={`Move demo cursor to ${side === 'left' ? 'laptop' : 'desktop'}`}
+          aria-pressed={paused}
+          aria-label={paused ? 'Play demo animation' : 'Pause demo animation'}
         >
-          Try the handoff <MoveRight size={17} />
+          {paused ? <Play size={14} /> : <Pause size={14} />}
+          {paused ? 'Play demo' : 'Pause demo'}
         </button>
       </div>
-    </div>
+    </section>
   )
 }
 
@@ -125,7 +217,7 @@ function Landing() {
               <span>Zero borders.</span>
             </h1>
             <p className="hero-description">
-              Your keyboard and mouse,
+              Your screens, keyboard and mouse,
               <br className="desktop-break" /> across all your Macs. Keep going.
             </p>
             <div className="hero-actions">
@@ -154,11 +246,11 @@ function Landing() {
             </h2>
           </div>
           <p>
-            Move your cursor to the edge of one screen.
-            <br className="desktop-break" /> Pick up right where you left off on
-            the next.
-            <br className="desktop-break" /> Your keyboard follows. That’s the
-            whole idea.
+            Share your keyboard. Mirror your screen.
+            <br className="desktop-break" /> Turn another Mac into an extra
+            display.
+            <br className="desktop-break" /> Choose how your computers work
+            together.
           </p>
         </section>
         <section className="feature-grid" aria-label="Built for your desk">
@@ -198,9 +290,9 @@ function Landing() {
             <p className="eyebrow">YOUR DESK, REMEMBERED</p>
             <h2>A home for your devices.</h2>
             <p>
-              Create your account and manage your device list.
+              Sign in once. Find your computers in one place.
               <br />
-              Desktop account sign-in is coming next.
+              Your desk, ready wherever you are.
             </p>
           </div>
           <Link to="/signup" className="button light">
