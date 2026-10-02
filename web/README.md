@@ -54,6 +54,8 @@ The directory is account-private and supports registration, presence, and remova
 
 Cloudflare's free plan cannot send to arbitrary users. The optional Resend adapter works from the existing free Worker without upgrading Cloudflare. Keep Resend on its free tier with overages disabled. Sending remains disabled until both `RESEND_API_KEY` (a Worker secret) and `EMAIL_FROM` (a verified sender) exist. `PUBLIC_ORIGIN` must be the installation's exact HTTPS origin; localhost HTTP is accepted for development. Never put the API key in source or build variables.
 
+The official installation's sender is `extend.computer <accounts@mail.extend.computer>`, with the Resend domain in Ireland. Verify the domain's DKIM and sending records, keep CNAME records DNS-only, and leave click/open tracking disabled for authentication links. Create a sending-only API key restricted to `mail.extend.computer` and store it as `RESEND_API_KEY` on the Worker. Self-hosted installations should use their own sender, domain, and key.
+
 ```sh
 npx wrangler secret put RESEND_API_KEY
 # Add EMAIL_FROM to wrangler.jsonc vars after verifying its domain in Resend.
