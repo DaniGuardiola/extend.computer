@@ -81,6 +81,11 @@ function Workspace({ side, mode }: { side: 'left' | 'right'; mode: Mode }) {
           <i />
         </div>
         <span className="workspace-caption">Good things take space.</span>
+        {mode === 'extend' ? (
+          <div className="extend-cursor">
+            <MousePointer2 fill="currentColor" />
+          </div>
+        ) : null}
       </div>
     </div>
   )
@@ -180,10 +185,12 @@ function Desk() {
               <div />
             </div>
           </div>
-          <div className="cursor-track" key={mode}>
-            <MousePointer2 className="visual-cursor" fill="currentColor" />
-            <span>YOU</span>
-          </div>
+          {mode === 'share' ? (
+            <div className="cursor-track" key={mode}>
+              <MousePointer2 className="visual-cursor" fill="currentColor" />
+              <span>YOU</span>
+            </div>
+          ) : null}
         </div>
         <div className="mode-description">
           <h2>{current.title}</h2>

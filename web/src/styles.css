@@ -1468,25 +1468,80 @@ h3 {
 .mode-extend .workspace-right {
   background: #314626;
 }
+.extend-cursor {
+  position: absolute;
+  z-index: 3;
+  left: 46%;
+  top: 40%;
+  color: #eaffd5;
+  pointer-events: none;
+  animation: extend-grab 9s ease-in-out infinite;
+}
+.extend-cursor svg {
+  display: block;
+  width: 23px;
+  height: 23px;
+  stroke: #142211;
+  filter: drop-shadow(2px 3px 0 #00000044);
+}
+.extend-cursor::before {
+  content: '';
+  position: absolute;
+  left: -3px;
+  top: -3px;
+  width: 13px;
+  height: 13px;
+  border: 1px solid var(--acid);
+  border-radius: 50%;
+  animation: extend-held 9s step-end infinite;
+}
+@keyframes extend-grab {
+  0%,
+  52%,
+  60%,
+  100% {
+    top: 40%;
+  }
+  12%,
+  44%,
+  68%,
+  94% {
+    top: 7px;
+  }
+}
+@keyframes extend-held {
+  0%,
+  44%,
+  94%,
+  100% {
+    opacity: 0;
+  }
+  12%,
+  68% {
+    opacity: 1;
+  }
+}
 @keyframes window-out {
   0%,
-  12%,
+  18%,
+  94%,
   100% {
     transform: translateX(0);
   }
-  45%,
-  65% {
+  44%,
+  68% {
     transform: translateX(150%);
   }
 }
 @keyframes window-in {
   0%,
-  12%,
+  18%,
+  94%,
   100% {
     transform: translateX(-150%);
   }
-  45%,
-  65% {
+  44%,
+  68% {
     transform: translateX(0);
   }
 }
@@ -1565,21 +1620,68 @@ h3 {
     padding: 4px;
     font-size: 3px;
   }
-  .mirror-cursor svg {
+  .mirror-cursor svg,
+  .extend-cursor svg {
     width: 14px;
     height: 14px;
+  }
+  @keyframes extend-grab {
+    0%,
+    52%,
+    60%,
+    100% {
+      top: 40%;
+    }
+    12%,
+    44%,
+    68%,
+    94% {
+      top: 2px;
+    }
   }
 }
 @media (prefers-reduced-motion: reduce) {
   .cursor-track,
   .mirror-cursor,
+  .extend-cursor,
   .workspace-window {
     animation: none !important;
+  }
+  .extend-cursor::before {
+    display: none;
   }
   .mode-extend .workspace-left .workspace-window {
     transform: translateX(60%);
   }
   .mode-extend .workspace-right .workspace-window {
     transform: translateX(-40%);
+  }
+}
+
+.email-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin-bottom: 24px;
+}
+.email-notice h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+.email-notice p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+@media (max-width: 600px) {
+  .email-notice {
+    flex-direction: column;
+    align-items: stretch;
   }
 }
