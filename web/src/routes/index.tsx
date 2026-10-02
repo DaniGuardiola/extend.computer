@@ -390,19 +390,22 @@ function WorkspaceCursor({ mode }: { mode: 'extend' | 'mirror' | 'remote' }) {
     const window = cursor.parentElement!
     const update = () => {
       const bounds = window.getBoundingClientRect()
+      const scale =
+        bounds.width / Number.parseFloat(getComputedStyle(window).width)
       const tip =
-        (cursor.querySelector('svg')!.getBoundingClientRect().width * 3) / 24
+        (cursor.querySelector('svg')!.getBoundingClientRect().width * 3) /
+        (24 * scale)
       for (const [index, name] of ['circle', 'square', 'toggle'].entries()) {
         const shape = window
           .querySelectorAll('.workspace-art i')
           [index].getBoundingClientRect()
         cursor.style.setProperty(
           `--mirror-${name}-x`,
-          `${shape.left + shape.width / 2 - bounds.left - window.clientLeft - tip}px`,
+          `${(shape.left + shape.width / 2 - bounds.left) / scale - window.clientLeft - tip}px`,
         )
         cursor.style.setProperty(
           `--mirror-${name}-y`,
-          `${shape.top + shape.height / 2 - bounds.top - window.clientTop - tip}px`,
+          `${(shape.top + shape.height / 2 - bounds.top) / scale - window.clientTop - tip}px`,
         )
       }
     }
@@ -508,24 +511,37 @@ function RemoteViewport() {
     const source = viewport
       .closest('.computers')!
       .querySelector<HTMLElement>('.monitor .screen')!
+    const desktop = viewport.firstElementChild as HTMLElement
+    const viewer = viewport.parentElement!
+    const local = viewer.parentElement!
     const update = () => {
-      viewport.style.aspectRatio = `${source.clientWidth} / ${source.clientHeight}`
-      const menu = source.querySelector<HTMLElement>('.os-bar')!
-      viewport.style.setProperty(
-        '--remote-menu-height',
-        `${(menu.offsetHeight * viewport.clientWidth) / source.clientWidth}px`,
-      )
+      const sourceStyle = getComputedStyle(source)
+      const width = Number.parseFloat(sourceStyle.width) - source.clientLeft * 2
+      const height =
+        Number.parseFloat(sourceStyle.height) -
+        Number.parseFloat(sourceStyle.borderTopWidth) -
+        Number.parseFloat(sourceStyle.borderBottomWidth)
+      const bar = viewer.querySelector<HTMLElement>('.remote-viewer-bar')!
+      const availableHeight = local.clientHeight * 0.81 - bar.offsetHeight - 10
+      viewer.style.width = `${Math.min(local.clientWidth * 0.82, (availableHeight * width) / height)}px`
+      viewport.style.aspectRatio = `${width} / ${height}`
+      desktop.style.width = `${width}px`
+      desktop.style.height = `${height}px`
+      desktop.style.transform = `scale(${viewport.getBoundingClientRect().width / width})`
     }
     const observer = new ResizeObserver(update)
     observer.observe(source)
     observer.observe(viewport)
+    observer.observe(local)
     update()
     return () => observer.disconnect()
   }, [])
   return (
     <div ref={ref} className="remote-viewport">
-      <ScreenMenuBar app="Canvas" />
-      <Workspace side="left" mode="remote" />
+      <div className="remote-desktop">
+        <ScreenMenuBar app="Canvas" />
+        <Workspace side="left" mode="remote" />
+      </div>
     </div>
   )
 }

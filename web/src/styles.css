@@ -1804,34 +1804,7 @@ h3 {
   height: 4px;
   background: var(--acid);
 }
-.remote-viewport {
-  position: relative;
-  flex: none;
-  aspect-ratio: 1.77;
-}
-.remote-viewport > .workspace-picture {
-  inset: var(--remote-menu-height, 14px) 0 0;
-}
-.remote-viewport .os-bar {
-  height: var(--remote-menu-height, 14px);
-  padding: 0 4px;
-  font-size: 4px;
-}
-.remote-viewport .os-menu,
-.remote-viewport .os-status {
-  gap: 4px;
-}
-.remote-viewport .os-bar svg {
-  width: 6px;
-  height: 6px;
-}
-.remote-viewport .workspace-window-bar {
-  padding: 4px;
-  font-size: 4px;
-}
-.remote-viewport .workspace-caption {
-  font-size: clamp(3px, 0.7vw, 8px);
-}
+
 .remote-cursor {
   position: absolute;
   z-index: 3;
@@ -2235,22 +2208,7 @@ h3 {
   .mirror-drag-cursor {
     --mirror-grab-top: 2px;
   }
-  .remote-viewport > .workspace-picture {
-    inset-block-start: var(--remote-menu-height, 9px);
-  }
-  .remote-viewport .os-bar {
-    height: var(--remote-menu-height, 9px);
-    font-size: 2px;
-    padding: 0 2px;
-  }
-  .remote-viewport .os-menu,
-  .remote-viewport .os-status {
-    gap: 2px;
-  }
-  .remote-viewport .os-bar svg {
-    width: 4px;
-    height: 4px;
-  }
+
   .remote-local-note {
     padding: 4px;
     font-size: 3px;
@@ -2263,10 +2221,7 @@ h3 {
     width: 3px;
     height: 3px;
   }
-  .remote-viewport .workspace-window-bar {
-    padding: 2px;
-    font-size: 2px;
-  }
+
   .extend-cursor {
     --extend-grab-top: 2px;
   }
@@ -2549,4 +2504,24 @@ h3 {
 }
 .second-factor .button {
   margin-bottom: 0.8rem;
+}
+
+.remote-local-workspace {
+  inset: 0 0 28px;
+}
+.remote-desktop {
+  position: absolute;
+  inset: 0 auto auto 0;
+  transform-origin: top left;
+}
+.remote-viewport {
+  position: relative;
+  flex: none;
+  aspect-ratio: 1.77;
+  overflow: hidden;
+}
+@media (max-width: 600px) {
+  .remote-local-workspace {
+    inset: 0 0 17px;
+  }
 }
