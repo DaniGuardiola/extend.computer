@@ -373,6 +373,7 @@ h3 {
   color: var(--acid);
 }
 .fake-window {
+  order: -1;
   flex: 1;
   background: #20281c;
   border: 1px solid #465738;

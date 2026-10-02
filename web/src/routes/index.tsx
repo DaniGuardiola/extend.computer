@@ -168,6 +168,53 @@ function ShareCursor({ side }: { side: 'left' | 'right' }) {
         '--cross-y',
         `${crossingY - bounds.top - screen.clientTop - tip}px`,
       )
+      const fraction = leftDistance / (leftDistance + rightDistance)
+      const outbound = 0.24 + 0.18 * fraction
+      const inbound = 0.72 + 0.24 * (1 - fraction)
+      const atField = {
+        left: cursor.style.getPropertyValue('--type-x'),
+        top: cursor.style.getPropertyValue('--type-y'),
+      }
+      const atEdge = {
+        left:
+          side === 'left'
+            ? `${bounds.width - screen.clientLeft * 2 - tip}px`
+            : `${-tip}px`,
+        top: cursor.style.getPropertyValue('--cross-y'),
+      }
+      for (const animation of cursor.getAnimations()) {
+        const name = (animation as CSSAnimation).animationName
+        const effect = animation.effect as KeyframeEffect
+        if (name === `share-${side}-path`) {
+          effect.setKeyframes(
+            side === 'left'
+              ? [
+                  { ...atField, offset: 0 },
+                  { ...atField, offset: 0.24 },
+                  { ...atEdge, offset: outbound },
+                  { ...atEdge, offset: inbound },
+                  { ...atField, offset: 0.96 },
+                  { ...atField, offset: 1 },
+                ]
+              : [
+                  { ...atEdge, offset: 0 },
+                  { ...atEdge, offset: outbound },
+                  { ...atField, offset: 0.42 },
+                  { ...atField, offset: 0.72 },
+                  { ...atEdge, offset: inbound },
+                  { ...atEdge, offset: 1 },
+                ],
+          )
+        } else if (name === `share-${side}-visible`) {
+          const initial = side === 'left' ? 1 : 0
+          effect.setKeyframes([
+            { opacity: initial, offset: 0 },
+            { opacity: 1 - initial, offset: outbound },
+            { opacity: initial, offset: inbound },
+            { opacity: initial, offset: 1 },
+          ])
+        }
+      }
     }
     const observer = new ResizeObserver(update)
     observer.observe(screen)
