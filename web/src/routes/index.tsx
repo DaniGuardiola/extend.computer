@@ -479,6 +479,35 @@ function useExtendArtwork(root: RefObject<HTMLElement | null>, mode: Mode) {
   return artwork
 }
 
+function RemoteViewport() {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const viewport = ref.current!
+    const source = viewport
+      .closest('.computers')!
+      .querySelector<HTMLElement>('.monitor .screen')!
+    const update = () => {
+      viewport.style.aspectRatio = `${source.clientWidth} / ${source.clientHeight}`
+      const menu = source.querySelector<HTMLElement>('.os-bar')!
+      viewport.style.setProperty(
+        '--remote-menu-height',
+        `${(menu.offsetHeight * viewport.clientWidth) / source.clientWidth}px`,
+      )
+    }
+    const observer = new ResizeObserver(update)
+    observer.observe(source)
+    observer.observe(viewport)
+    update()
+    return () => observer.disconnect()
+  }, [])
+  return (
+    <div ref={ref} className="remote-viewport">
+      <ScreenMenuBar app="Canvas" />
+      <Workspace side="left" mode="remote" />
+    </div>
+  )
+}
+
 function Workspace({
   side,
   mode,
@@ -498,10 +527,7 @@ function Workspace({
             <span>DESKTOP MAC</span>
             <i className="status-dot" />
           </div>
-          <div className="remote-viewport">
-            <ScreenMenuBar app="Canvas" />
-            <Workspace side="left" mode="remote" />
-          </div>
+          <RemoteViewport />
         </div>
       </div>
     )

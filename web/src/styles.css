@@ -1783,7 +1783,7 @@ h3 {
 }
 .remote-viewer {
   position: absolute;
-  inset: 19% 5% 8% 13%;
+  inset: 19% 5% auto 13%;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1811,14 +1811,14 @@ h3 {
 }
 .remote-viewport {
   position: relative;
-  flex: 1;
-  min-height: 0;
+  flex: none;
+  aspect-ratio: 1.77;
 }
 .remote-viewport > .workspace-picture {
-  inset: 14px 0 0;
+  inset: var(--remote-menu-height, 14px) 0 0;
 }
 .remote-viewport .os-bar {
-  height: 14px;
+  height: var(--remote-menu-height, 14px);
   padding: 0 4px;
   font-size: 4px;
 }
@@ -2241,10 +2241,10 @@ h3 {
     --mirror-grab-top: 2px;
   }
   .remote-viewport > .workspace-picture {
-    inset-block-start: 9px;
+    inset-block-start: var(--remote-menu-height, 9px);
   }
   .remote-viewport .os-bar {
-    height: 9px;
+    height: var(--remote-menu-height, 9px);
     font-size: 2px;
     padding: 0 2px;
   }
