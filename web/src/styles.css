@@ -1586,6 +1586,66 @@ h3 {
   animation: mirror-move 9s ease-in-out infinite;
   color: #eaffd5;
 }
+.mode-mirror .workspace-window {
+  animation: mirror-window-circle 9s linear infinite;
+}
+.mirror-drag-cursor {
+  --mirror-grab-top: 7px;
+  animation: mirror-grab 9s ease-in-out infinite;
+}
+.mirror-drag-cursor::before {
+  animation: mirror-held 9s step-end infinite;
+}
+@keyframes mirror-window-circle {
+  0%,
+  18%,
+  82%,
+  100% {
+    transform: translate(0, 0);
+  }
+  26% {
+    transform: translate(5.66%, 2.05%);
+  }
+  34% {
+    transform: translate(8%, 7%);
+  }
+  42% {
+    transform: translate(5.66%, 11.95%);
+  }
+  50% {
+    transform: translate(0, 14%);
+  }
+  58% {
+    transform: translate(-5.66%, 11.95%);
+  }
+  66% {
+    transform: translate(-8%, 7%);
+  }
+  74% {
+    transform: translate(-5.66%, 2.05%);
+  }
+}
+@keyframes mirror-grab {
+  0%,
+  92%,
+  100% {
+    top: 40%;
+  }
+  12%,
+  82% {
+    top: var(--mirror-grab-top);
+  }
+}
+@keyframes mirror-held {
+  0%,
+  82%,
+  100% {
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+}
 .mirror-cursor svg {
   width: 23px;
   height: 23px;
@@ -1656,6 +1716,9 @@ h3 {
   .extend-cursor svg {
     width: 14px;
     height: 14px;
+  }
+  .mirror-drag-cursor {
+    --mirror-grab-top: 2px;
   }
   @keyframes extend-grab {
     0%,

@@ -66,7 +66,7 @@ function Workspace({ side, mode }: { side: 'left' | 'right'; mode: Mode }) {
   return (
     <div className={`workspace-picture workspace-${side}`}>
       <div className="workspace-grid" />
-      {mode === 'mirror' || (mode === 'remote' && side === 'right') ? (
+      {mode === 'remote' && side === 'right' ? (
         <div className="mirror-cursor">
           <MousePointer2 fill="currentColor" />
         </div>
@@ -90,8 +90,10 @@ function Workspace({ side, mode }: { side: 'left' | 'right'; mode: Mode }) {
           <i />
         </div>
         <span className="workspace-caption">Good things take space.</span>
-        {mode === 'extend' ? (
-          <div className="extend-cursor">
+        {mode === 'extend' || mode === 'mirror' ? (
+          <div
+            className={`extend-cursor ${mode === 'mirror' ? 'mirror-drag-cursor' : ''}`}
+          >
             <MousePointer2 fill="currentColor" />
           </div>
         ) : null}
