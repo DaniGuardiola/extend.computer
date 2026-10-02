@@ -605,6 +605,7 @@ export class AccountService extends DurableObject<Env> {
     status = 200,
     passkey?: string,
     mfaVersion?: number,
+    sourceSession?: string,
   ) {
     const current = now()
     const count = await this.env.DB.prepare(
@@ -621,7 +622,8 @@ export class AccountService extends DurableObject<Env> {
       WHERE id = ? AND (? IS NULL OR password_hash = ?)
       AND ((mfa_enabled=0 AND ? IS NULL) OR mfa_version=?)
       AND (? IS NULL OR EXISTS (SELECT 1 FROM passkeys WHERE id = ? AND account_id = accounts.id))
-      AND (SELECT COUNT(*) FROM sessions WHERE account_id = accounts.id AND expires_at > ?) < 100`,
+      AND (SELECT COUNT(*) FROM sessions WHERE account_id = accounts.id AND expires_at > ?) < 100
+      AND (? IS NULL OR EXISTS(SELECT 1 FROM sessions WHERE token_hash=? AND account_id=accounts.id AND expires_at>? AND mfa_version=accounts.mfa_version))`,
     )
       .bind(
         digest(raw),
@@ -634,6 +636,9 @@ export class AccountService extends DurableObject<Env> {
         mfaVersion ?? null,
         passkey ?? null,
         passkey ?? null,
+        current,
+        sourceSession ?? null,
+        sourceSession ?? null,
         current,
       )
       .run()
@@ -701,6 +706,7 @@ export class AccountService extends DurableObject<Env> {
     const url = new URL(request.url)
     const path = url.pathname.replace(/^\/api/, '')
     const method = request.method
+    const db = this.env.DB
     // Cookie-authenticated writes must originate on this exact website.
     if (method !== 'GET' && !bearer(request)) {
       if (request.headers.get('Origin') !== url.origin)
@@ -714,6 +720,7 @@ export class AccountService extends DurableObject<Env> {
     if (path === '/v1/server' && method === 'GET')
       return json({
         api_version: 1,
+        desktop_browser_login: true,
         signup_enabled: this.env.SIGNUP_ENABLED === 'true',
         email_enabled: emailEnabled(this.env),
         heartbeat_interval_seconds: 30,
@@ -820,6 +827,43 @@ export class AccountService extends DurableObject<Env> {
       return this.loginResponse(request, account!, 200, key!.id)
     }
 
+    if (path === '/v1/auth/desktop/exchange' && method === 'POST') {
+      if (request.headers.get('X-Extend-Client') !== 'desktop')
+        fail(400, 'Desktop client required')
+      const input = await body(request)
+      const raw = text(input.code, 64, 'authorization code')
+      const verifier = text(input.verifier, 128, 'code verifier')
+      if (
+        !/^[a-f0-9]{64}$/.test(raw) ||
+        !/^[A-Za-z0-9_-]{43,128}$/.test(verifier)
+      )
+        fail(400, 'Invalid desktop authorization')
+      const challenge = createHash('sha256')
+        .update(verifier)
+        .digest('base64url')
+      const found = await db
+        .prepare(
+          `DELETE FROM desktop_codes WHERE id=? AND challenge=? AND expires_at>? RETURNING session_hash`,
+        )
+        .bind(digest(raw), challenge, now())
+        .first<{ session_hash: string }>()
+      if (!found) fail(401, 'Desktop authorization expired. Sign in again.')
+      const owner = await db
+        .prepare(
+          `SELECT a.* FROM accounts a JOIN sessions s ON s.account_id=a.id WHERE s.token_hash=? AND s.expires_at>? AND s.mfa_version=a.mfa_version`,
+        )
+        .bind(found!.session_hash, now())
+        .first<Account>()
+      if (!owner) fail(401, 'Browser session ended. Sign in again.')
+      return this.loginResponse(
+        request,
+        owner!,
+        200,
+        undefined,
+        owner!.mfa_enabled ? owner!.mfa_version : undefined,
+        found!.session_hash,
+      )
+    }
     if (path === '/v1/auth/mfa/verify' && method === 'POST') {
       const input = await body(request)
       const ticket = await this.mfaTicket(input.ticket)
@@ -968,8 +1012,29 @@ export class AccountService extends DurableObject<Env> {
     }
 
     const session = await this.session(request)
+    if (path === '/v1/auth/desktop/authorize' && method === 'POST') {
+      const input = await body(request)
+      const challenge = text(input.challenge, 43, 'code challenge')
+      if (!/^[A-Za-z0-9_-]{43}$/.test(challenge))
+        fail(400, 'Invalid code challenge')
+      const raw = token()
+      const granted = await db.batch([
+        db
+          .prepare(
+            'DELETE FROM desktop_codes WHERE expires_at<=? OR session_hash=?',
+          )
+          .bind(now(), session.token_hash),
+        db
+          .prepare(
+            `INSERT INTO desktop_codes SELECT ?,token_hash,?,? FROM sessions s JOIN accounts a ON a.id=s.account_id WHERE s.token_hash=? AND s.expires_at>? AND s.mfa_version=a.mfa_version`,
+          )
+          .bind(digest(raw), challenge, now() + 120, session.token_hash, now()),
+      ])
+      if (!granted[1]!.meta.changes) fail(401, 'Browser session ended. Sign in again.')
+      return json({ code: raw })
+    }
+
     const account = session.account_id
-    const db = this.env.DB
 
     if (path === '/v1/mfa' && method === 'GET') {
       const user = await db

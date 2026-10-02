@@ -5,7 +5,13 @@ import type { PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/brow
 import { SecondFactor, type MfaPending } from './SecondFactor'
 import { Brand } from './Brand'
 import { api, message } from '../lib/api'
-export function Auth({ signup = false }: { signup?: boolean }) {
+export function Auth({
+  signup = false,
+  onSignedIn,
+}: {
+  signup?: boolean
+  onSignedIn?: () => void | Promise<void>
+}) {
   const navigate = useNavigate()
   const [pending, setPending] = useState<MfaPending | null>(null)
   const [busy, setBusy] = useState(false)
@@ -33,7 +39,7 @@ export function Auth({ signup = false }: { signup?: boolean }) {
         if (settings.email_enabled)
           await api('/auth/email/request', 'POST').catch(() => {})
       }
-      await navigate({ to: '/account' })
+      await (onSignedIn ? onSignedIn() : navigate({ to: '/account' }))
     } catch (error) {
       setError(message(error))
     } finally {
@@ -54,7 +60,7 @@ export function Auth({ signup = false }: { signup?: boolean }) {
         'POST',
         await startAuthentication({ optionsJSON }),
       )
-      await navigate({ to: '/account' })
+      await (onSignedIn ? onSignedIn() : navigate({ to: '/account' }))
     } catch (error) {
       setError(message(error))
     } finally {
@@ -95,7 +101,9 @@ export function Auth({ signup = false }: { signup?: boolean }) {
           {pending ? (
             <SecondFactor
               pending={pending}
-              onVerified={() => navigate({ to: '/account' })}
+              onVerified={() =>
+                onSignedIn ? onSignedIn() : navigate({ to: '/account' })
+              }
               onCancel={() => setPending(null)}
             />
           ) : (

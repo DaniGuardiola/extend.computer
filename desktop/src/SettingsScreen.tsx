@@ -1,3 +1,4 @@
+import { AccountPanel, type AccountFlow } from "./Account";
 import { useState } from "react";
 import { DeviceInformation } from "./DeviceInformation";
 import { DeviceNameSettings } from "./DeviceNameSettings";
@@ -9,11 +10,13 @@ import {
 } from "./PermissionsDialog";
 
 export function SettingsScreen({
+  account,
   onBack,
   theme,
   onThemeChange,
   ...permissions
 }: PermissionDetailsProps & {
+  account: AccountFlow;
   onBack: () => void;
   theme: Theme;
   onThemeChange: (theme: Theme) => void;
@@ -25,6 +28,12 @@ export function SettingsScreen({
         <ArrowLeft size={15} aria-hidden="true" /> Back
       </button>
       <h1 className="mb-7 text-base font-medium">Settings</h1>
+      <section aria-labelledby="account-heading" className="mb-8">
+        <h2 id="account-heading" className="mb-4 text-sm font-medium">
+          Account
+        </h2>
+        <AccountPanel account={account} />
+      </section>
       <DeviceNameSettings />
       <section
         aria-labelledby="appearance-heading"

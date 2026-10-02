@@ -1,6 +1,6 @@
 # Account server
 
-This is the standalone service for independent installations. The official website uses Cloudflare Workers with a separate database and matching account/device API. It stores accounts and an account-private device directory. The desktop app does not use it yet; local pairing and control continue to work without an account.
+This is the standalone service for independent installations. The official website uses Cloudflare Workers with a separate database and matching account/device API. It stores accounts and an account-private device directory. The desktop app can use this API for password/2FA login, registration, device presence/listing, and sign-out. Local pairing and control continue to work without an account.
 
 ## Run
 
@@ -107,3 +107,9 @@ Authenticated management endpoints:
 | POST | `/v1/mfa/disable` | Disable 2FA |
 
 Management requires a fresh password check (and an enabled second factor), valid for five minutes on that exact session. Start security-key enrollment with `/v1/passkeys/register/options` and `{ "factor": true }`; these keys can work without a PIN and cannot perform passwordless login. Ordinary passkey registration still requires user verification. Security changes revoke other sessions, update the current session's security version, and invalidate pending tickets. Save recovery codes immediately; only their hashes remain on the server. `tests/mfa-browser.mjs` verifies touch-only key enrollment and login in isolated Chromium.
+
+## Desktop account configuration
+
+Open the app's account dialog, expand **Account server**, and enter this server's HTTPS origin (localhost HTTP is allowed for development). Saved sessions are scoped to the server URL and stored in the operating system credential store. The app registers its existing identity and updates device presence every 30 seconds while running. Removing a device from the server invalidates its account credentials on the next check; local pairing remains independent. Sign-out revokes the session and its device heartbeat credentials, then deletes the local saved login.
+
+This standalone service provides an API rather than a website. Password, TOTP, and recovery-code login work directly in the desktop app. Browser passkey/security-key login, signup, password recovery, and security management require a website deployment; the official installation supplies those flows. Create standalone accounts through its signup API or your own account UI. Keep email/password/2FA policies consistent with your installation.

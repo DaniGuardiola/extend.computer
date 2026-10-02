@@ -195,6 +195,9 @@ impl Desktop {
     fn store(&self) -> Result<TrustStore> {
         TrustStore::open(&self.root)
     }
+    pub fn account_public_key(&self) -> Result<String> {
+        Ok(hex::encode(self.identity()?.public()))
+    }
     pub fn local_device_info(&self) -> Result<LocalDeviceInfo> {
         Ok(LocalDeviceInfo {
             name: self.local_name(),

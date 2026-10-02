@@ -48,7 +48,7 @@ Daily cleanup removes bounded batches of expired sessions/challenges. Device pre
 
 ## Device connection boundary
 
-The directory is account-private and supports registration, presence, and removal. Desktop account sign-in and automatic connections are not integrated yet. Local account-free pairing still works. A public-key registration is a claim, not proof of possession. Before enabling account-based control, verify key possession and bind discovery to the engine's pinned encrypted peer handshake and local permissions. Internet connections also need rendezvous/NAT traversal and an encrypted relay fallback.
+The directory is account-private and supports registration, presence, and removal. Desktop sign-in, device registration, presence, account device listing, and sign-out are integrated. The app can connect already-paired local devices from the account directory; new devices still require local pairing. Automatic account-based pairing and internet connections are not implemented. Local account-free pairing still works. A public-key registration is a claim, not proof of possession. Before enabling account-based control, verify key possession and bind discovery to the engine's pinned encrypted peer handshake and local permissions. Internet connections also need rendezvous/NAT traversal and an encrypted relay fallback.
 
 ## Transactional email
 
@@ -79,3 +79,9 @@ Security changes require a fresh password and, when enabled, a second factor. Ch
 Before deploying TOTP, generate a separate random 32-byte key encoded as 64 hexadecimal characters and store it as the Worker secret `MFA_ENCRYPTION_KEY` (`npx wrangler secret put MFA_ENCRYPTION_KEY`). Back up this key securely alongside the database: TOTP secrets use AES-256-GCM with account-bound authenticated encryption. Replacing the key without migrating encrypted secrets prevents existing authenticators from working. Passkey-only 2FA does not require this key.
 
 The standalone server supports the same factors and ticket flow; see its README for configuration and API shapes. `EXTEND_TEST_URL=http://localhost:3006 node tests/mfa-browser.mjs` verifies the UI in isolated Chromium; `tests/mfa-api.mjs` verifies enforcement, replay protection, and session revocation against local D1. Unit tests cover RFC 6238 vectors and encryption tampering.
+
+## Desktop browser sign-in
+
+The app offers direct password login with TOTP/recovery codes and browser login for passkeys/security keys. Browser login opens `/desktop/connect` with an ephemeral loopback port, random state, and SHA-256 PKCE challenge. The user explicitly approves the signed-in account. The server issues a two-minute code bound to that browser session and challenge. `/v1/auth/desktop/exchange` consumes it only with the correct verifier, checks the source session, and issues a separate native session. Codes are stored as hashes and cannot be replayed. Account/session tokens never enter callback URLs or the desktop webview.
+
+`tests/desktop-login.mjs` verifies the browser handoff, verifier binding, replay, and browser-session revocation using an isolated Chromium and local callback listener. Device registration uses the app's existing X25519 identity. Account presence is a directory hint; it never grants input-control permission or replaces pinned local pairing.

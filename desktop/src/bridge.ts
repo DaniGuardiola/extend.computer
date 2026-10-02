@@ -75,3 +75,36 @@ export const api = {
     invoke<void>("open_permission", { permission }),
   dismiss: () => invoke<void>("dismiss_message"),
 };
+
+export type AccountDevice = {
+  id: string;
+  name: string;
+  platform: string;
+  fingerprint: string;
+  online: boolean;
+  last_seen: number | null;
+};
+export type AccountState = {
+  server: string;
+  email: string | null;
+  device_id: string | null;
+  devices: AccountDevice[];
+  pending: { totp: boolean; keys: boolean; recovery: boolean } | null;
+  browser_pending: boolean;
+  error: string | null;
+};
+export const accounts = {
+  status: () => invoke<AccountState>("account_status"),
+  refresh: () => invoke<AccountState>("account_refresh"),
+  configure: (server: string) =>
+    invoke<AccountState>("account_configure", { server }),
+  login: (email: string, password: string) =>
+    invoke<AccountState>("account_login", { email, password }),
+  verify: (code: string) => invoke<AccountState>("account_verify", { code }),
+  logout: () => invoke<AccountState>("account_logout"),
+  remove: (id: string) => invoke<AccountState>("account_remove_device", { id }),
+  cancel: () => invoke<AccountState>("account_cancel"),
+  browser: () => invoke<AccountState>("account_browser_login"),
+  open: (page: "signup" | "account" | "recover") =>
+    invoke<void>("account_open_page", { page }),
+};

@@ -99,19 +99,24 @@ function Dashboard() {
     else void action(work, notice)
   }
   async function addPasskey() {
-    protectedAction(async () => {
-      const { startRegistration } = await import('@simplewebauthn/browser')
-      const optionsJSON = await api<PublicKeyCredentialCreationOptionsJSON>(
-        '/passkeys/register/options',
-        'POST',
-      )
-      await api(
-        '/passkeys/register/verify',
-        'POST',
-        await startRegistration({ optionsJSON }),
-      )
-      await refresh()
-    }, account?.mfa_enabled ? 'Passkey added as a second factor.' : 'Passkey added. Next time, sign in with a touch.')
+    protectedAction(
+      async () => {
+        const { startRegistration } = await import('@simplewebauthn/browser')
+        const optionsJSON = await api<PublicKeyCredentialCreationOptionsJSON>(
+          '/passkeys/register/options',
+          'POST',
+        )
+        await api(
+          '/passkeys/register/verify',
+          'POST',
+          await startRegistration({ optionsJSON }),
+        )
+        await refresh()
+      },
+      account?.mfa_enabled
+        ? 'Passkey added as a second factor.'
+        : 'Passkey added. Next time, sign in with a touch.',
+    )
   }
   async function changePassword(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -247,9 +252,9 @@ function Dashboard() {
                   <Monitor size={31} />
                   <h2>Your desk starts here.</h2>
                   <p>
-                    No devices registered yet. Desktop account sign-in is coming
-                    next. For now, the desktop app connects directly on your
-                    local network.
+                    No devices registered yet. Open the desktop app and log in
+                    to add this computer. Pair devices on your local network
+                    before connecting.
                   </p>
                 </div>
               )}
@@ -312,7 +317,11 @@ function Dashboard() {
                     <div>
                       <Fingerprint size={19} />
                       <div>
-                        <h3>{account?.mfa_enabled ? 'Confirm with a passkey.' : 'A touch beats a password.'}</h3>
+                        <h3>
+                          {account?.mfa_enabled
+                            ? 'Confirm with a passkey.'
+                            : 'A touch beats a password.'}
+                        </h3>
                         <p>
                           {account?.mfa_enabled
                             ? 'After your password, confirm with your fingerprint, face, or security key.'
@@ -327,7 +336,11 @@ function Dashboard() {
                     <KeyRound size={19} />
                     <div>
                       <h3>Password</h3>
-                      <p>{account?.mfa_enabled ? 'Required before your second factor.' : 'Keep a password as another way in.'}</p>
+                      <p>
+                        {account?.mfa_enabled
+                          ? 'Required before your second factor.'
+                          : 'Keep a password as another way in.'}
+                      </p>
                     </div>
                   </div>
                   <button

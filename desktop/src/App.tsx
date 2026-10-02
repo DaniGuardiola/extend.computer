@@ -19,7 +19,10 @@ import { PermissionsDialog, type PermissionAction } from "./PermissionsDialog";
 import { SettingsScreen } from "./SettingsScreen";
 import { PairingApprovalDialog } from "./PairingApprovalDialog";
 import { ExplainedButton } from "./ExplainedButton";
+import { useAccount, AccountDialog, AccountDevices } from "./Account";
 export function App() {
+  const account = useAccount();
+  const [accountOpen, setAccountOpen] = useState(false);
   const appearance = useAppearance();
   const [data, setData] = useState<Snapshot | null>(null);
   const [error, setError] = useState("");
@@ -227,16 +230,16 @@ export function App() {
         </div>
         <button
           className="button quiet !px-2 !text-muted"
-          disabled
-          title="Accounts are not available yet"
+          onClick={() => setAccountOpen(true)}
         >
           <LogIn size={14} />
-          Log in
+          {account.state?.email ? "Account" : "Log in"}
         </button>
       </header>
       <main className="-mx-8 min-h-0 flex-1 overflow-y-auto overscroll-contain px-8 py-7">
         {settings && data ? (
           <SettingsScreen
+            account={account}
             theme={appearance.theme}
             onThemeChange={appearance.setTheme}
             snapshot={data}
@@ -264,6 +267,19 @@ export function App() {
                 Pair device
               </button>
             </div>
+            <AccountDevices
+              disabled={busy || !!session}
+              account={account}
+              peers={data?.peers ?? []}
+              onConnect={(peer) => connect(peer.id, peer)}
+              onPair={() =>
+                void act(async () => {
+                  await api.receive(true);
+                  pairingPeerCount.current = data?.peers.length ?? 0;
+                  setPair(true);
+                })
+              }
+            />
             {!native && (
               <p className="mb-4 text-sm text-muted">
                 Desktop preview. Open extend.computer to connect devices.
@@ -375,6 +391,12 @@ export function App() {
           </>
         )}
       </main>
+      {accountOpen && (
+        <AccountDialog
+          account={account}
+          onClose={() => setAccountOpen(false)}
+        />
+      )}
       {data?.notification && (
         <div
           role="status"

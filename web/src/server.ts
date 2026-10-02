@@ -13,6 +13,9 @@ export default {
     ctx.waitUntil(
       env.DB.batch([
         env.DB.prepare(
+          'DELETE FROM desktop_codes WHERE id IN (SELECT id FROM desktop_codes WHERE expires_at <= ? LIMIT 1000)',
+        ).bind(stamp),
+        env.DB.prepare(
           'DELETE FROM sessions WHERE token_hash IN (SELECT token_hash FROM sessions WHERE expires_at <= ? LIMIT 1000)',
         ).bind(stamp),
         env.DB.prepare(

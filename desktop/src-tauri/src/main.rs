@@ -1,4 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+mod accounts;
 mod approval;
 mod discovery;
 mod native;
@@ -126,6 +127,69 @@ async fn open_permission(
 fn dismiss_message(state: State<'_>) {
     state.clear_message();
 }
+
+type AccountState<'a> = tauri::State<'a, Arc<accounts::Accounts>>;
+#[tauri::command]
+async fn account_status(state: AccountState<'_>) -> Result<accounts::View, String> {
+    let state = state.inner().clone();
+    background(move || Ok(state.view())).await
+}
+#[tauri::command]
+async fn account_refresh(state: AccountState<'_>) -> Result<accounts::View, String> {
+    let state = state.inner().clone();
+    background(move || state.refresh()).await
+}
+#[tauri::command]
+async fn account_configure(
+    state: AccountState<'_>,
+    server: String,
+) -> Result<accounts::View, String> {
+    let state = state.inner().clone();
+    background(move || state.configure(server)).await
+}
+#[tauri::command]
+async fn account_login(
+    state: AccountState<'_>,
+    email: String,
+    password: String,
+) -> Result<accounts::View, String> {
+    let state = state.inner().clone();
+    background(move || state.login(email, password)).await
+}
+#[tauri::command]
+async fn account_verify(state: AccountState<'_>, code: String) -> Result<accounts::View, String> {
+    let state = state.inner().clone();
+    background(move || state.verify(code)).await
+}
+#[tauri::command]
+async fn account_logout(state: AccountState<'_>) -> Result<accounts::View, String> {
+    let state = state.inner().clone();
+    background(move || state.logout()).await
+}
+#[tauri::command]
+async fn account_remove_device(
+    state: AccountState<'_>,
+    id: String,
+) -> Result<accounts::View, String> {
+    let state = state.inner().clone();
+    background(move || state.remove(id)).await
+}
+#[tauri::command]
+async fn account_cancel(state: AccountState<'_>) -> Result<accounts::View, String> {
+    let state = state.inner().clone();
+    background(move || Ok(state.cancel())).await
+}
+#[tauri::command]
+async fn account_browser_login(state: AccountState<'_>) -> Result<accounts::View, String> {
+    let state = state.inner().clone();
+    background(move || state.browser()).await
+}
+#[tauri::command]
+async fn account_open_page(state: AccountState<'_>, page: String) -> Result<(), String> {
+    let state = state.inner().clone();
+    background(move || state.open_page(page)).await
+}
+
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
@@ -160,10 +224,23 @@ fn main() {
             desktop.start_presence()?;
             desktop.start_peer_checks();
             desktop.restore_receiving();
+            let accounts = accounts::Accounts::new(desktop.clone())?;
+            accounts.start();
+            app.manage(accounts);
             app.manage(desktop.clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            account_status,
+            account_refresh,
+            account_configure,
+            account_login,
+            account_verify,
+            account_logout,
+            account_remove_device,
+            account_cancel,
+            account_browser_login,
+            account_open_page,
             snapshot,
             local_device_info,
             set_local_device_name,
