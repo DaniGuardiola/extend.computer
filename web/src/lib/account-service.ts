@@ -8,6 +8,7 @@ import {
   type RegistrationResponseJSON,
   type AuthenticationResponseJSON,
 } from '@simplewebauthn/server'
+import { matchTotp, newTotpSecret, sealSecret, openSecret } from './totp'
 import { hashPassword, verifyPassword } from './password'
 import { emailEnabled, sendAccountEmail, type EmailKind } from './email'
 
@@ -178,6 +179,8 @@ type Account = {
   email: string
   password_hash: string
   email_verified: number
+  mfa_enabled: number
+  mfa_version: number
 }
 type Session = { account_id: string; token_hash: string }
 type Passkey = {
@@ -187,6 +190,18 @@ type Passkey = {
   counter: number
   transports: string
   rp_id: string
+  purpose: string
+}
+type MfaTicket = {
+  id: string
+  account_id: string
+  email: string
+  password_version: string
+  version: number
+  purpose: string
+  session_hash: string | null
+  expires_at: number
+  attempts: number
 }
 type Challenge = {
   challenge: string
@@ -324,7 +339,7 @@ export class AccountService extends DurableObject<Env> {
     const raw = bearer(request) ?? cookie(request, COOKIE)
     if (!raw || !/^[a-f0-9]{64}$/.test(raw)) fail(401, 'Please sign in')
     const found = await this.env.DB.prepare(
-      'SELECT account_id, token_hash FROM sessions WHERE token_hash = ? AND expires_at > ?',
+      'SELECT s.account_id, s.token_hash FROM sessions s JOIN accounts a ON a.id=s.account_id WHERE s.token_hash = ? AND s.expires_at > ? AND s.mfa_version=a.mfa_version',
     )
       .bind(digest(raw!), now())
       .first<Session>()
@@ -332,11 +347,264 @@ export class AccountService extends DurableObject<Env> {
     return found!
   }
 
+  private async mfaInfo(account: string) {
+    const totp = await this.env.DB.prepare(
+      'SELECT account_id FROM totp_factors WHERE account_id = ?',
+    )
+      .bind(account)
+      .first()
+    const keys = await this.env.DB.prepare(
+      'SELECT COUNT(*) AS n FROM passkeys WHERE account_id = ?',
+    )
+      .bind(account)
+      .first<{ n: number }>()
+    const recovery = await this.env.DB.prepare(
+      'SELECT COUNT(*) AS n FROM recovery_codes WHERE account_id = ?',
+    )
+      .bind(account)
+      .first<{ n: number }>()
+    return {
+      totp: !!totp,
+      keys: keys!.n,
+      recovery_codes: recovery!.n,
+      totp_available: !!this.env.MFA_ENCRYPTION_KEY,
+    }
+  }
+
+  private async mfaPending(
+    account: Account,
+    purpose = 'login',
+    session: string | null = null,
+  ) {
+    const raw = token()
+    const inserted = await this.env.DB.batch([
+      this.env.DB.prepare('DELETE FROM mfa_tickets WHERE expires_at <= ?').bind(
+        now(),
+      ),
+      this.env.DB.prepare(
+        'INSERT INTO mfa_tickets (id,account_id,password_version,version,purpose,session_hash,expires_at) SELECT ?,id,password_hash,mfa_version,?,?,? FROM accounts WHERE id=? AND password_hash=? AND mfa_version=? AND (SELECT COUNT(*) FROM mfa_tickets WHERE account_id=accounts.id)<20',
+      ).bind(
+        digest(raw),
+        purpose,
+        session,
+        now() + 300,
+        account.id,
+        account.password_hash,
+        account.mfa_version,
+      ),
+    ])
+    if (!inserted[1]!.meta.changes)
+      fail(
+        429,
+        'Too many pending sign-ins or security settings changed. Try again later.',
+      )
+    const info = await this.mfaInfo(account.id)
+    return json({
+      mfa_required: true,
+      ticket: raw,
+      totp: info.totp,
+      keys: info.keys > 0,
+      recovery: true,
+    })
+  }
+
+  private async mfaTicket(raw: unknown) {
+    if (typeof raw !== 'string' || !/^[a-f0-9]{64}$/.test(raw))
+      fail(401, 'Verification expired. Sign in again.')
+    const ticket = await this.env.DB.prepare(
+      `SELECT t.*, a.email, a.mfa_enabled FROM mfa_tickets t JOIN accounts a ON a.id=t.account_id
+      WHERE t.id=? AND t.expires_at>? AND t.attempts<5 AND a.password_hash=t.password_version AND a.mfa_version=t.version`,
+    )
+      .bind(digest(raw as string), now())
+      .first<MfaTicket>()
+    if (!ticket) fail(401, 'Verification expired. Sign in again.')
+    return ticket!
+  }
+
+  private async mfaAttempt(ticket: MfaTicket) {
+    const updated = await this.env.DB.prepare(
+      'UPDATE mfa_tickets SET attempts=attempts+1 WHERE id=? AND attempts<5 AND expires_at>?',
+    )
+      .bind(ticket.id, now())
+      .run()
+    if (!updated.meta.changes) fail(401, 'Verification expired. Sign in again.')
+    const attempt = await this.env.DB.prepare(
+      `INSERT INTO mfa_attempts VALUES (?,1,?) ON CONFLICT(account_id) DO UPDATE SET
+      count=CASE WHEN until<=? THEN 1 ELSE count+1 END, until=CASE WHEN until<=? THEN excluded.until ELSE until END RETURNING count`,
+    )
+      .bind(ticket.account_id, now() + 60, now(), now())
+      .first<{ count: number }>()
+    if (attempt!.count > 10)
+      fail(429, 'Too many verification attempts. Try again in a minute.')
+  }
+
+  private async mfaCode(account: string, code: unknown) {
+    if (typeof code !== 'string') fail(401, 'Invalid verification code')
+    if (/^\d{6}$/.test(code as string)) {
+      const factor = await this.env.DB.prepare(
+        'SELECT secret,last_step FROM totp_factors WHERE account_id=?',
+      )
+        .bind(account)
+        .first<{ secret: string; last_step: number }>()
+      if (!factor || !this.env.MFA_ENCRYPTION_KEY)
+        fail(401, 'Invalid verification code')
+      const secret = openSecret(
+        factor!.secret,
+        this.env.MFA_ENCRYPTION_KEY!,
+        account,
+      )
+      const step = matchTotp(secret, code, now(), factor!.last_step)
+      if (step === null) fail(401, 'Invalid or already used verification code')
+      const used = await this.env.DB.prepare(
+        'UPDATE totp_factors SET last_step=? WHERE account_id=? AND secret=? AND last_step<?',
+      )
+        .bind(step, account, factor!.secret, step)
+        .run()
+      if (!used.meta.changes)
+        fail(401, 'Invalid or already used verification code')
+    } else {
+      const normalized = (code as string).replace(/[- ]/g, '').toLowerCase()
+      if (!/^[a-f0-9]{32}$/.test(normalized))
+        fail(401, 'Invalid verification code')
+      const used = await this.env.DB.prepare(
+        'DELETE FROM recovery_codes WHERE account_id=? AND code_hash=? RETURNING code_hash',
+      )
+        .bind(account, digest(normalized))
+        .first()
+      if (!used) fail(401, 'Invalid or already used recovery code')
+    }
+  }
+
+  private async mfaFinish(request: Request, ticket: MfaTicket) {
+    const consumed = await this.env.DB.prepare(
+      `DELETE FROM mfa_tickets WHERE id=? AND expires_at>? AND
+      EXISTS(SELECT 1 FROM accounts WHERE id=? AND password_hash=? AND mfa_version=?) RETURNING id`,
+    )
+      .bind(
+        ticket.id,
+        now(),
+        ticket.account_id,
+        ticket.password_version,
+        ticket.version,
+      )
+      .first()
+    if (!consumed) fail(401, 'Verification expired. Sign in again.')
+    if (ticket.purpose === 'manage') {
+      const updated = await this.env.DB.prepare(
+        `UPDATE sessions SET elevated_until=? WHERE token_hash=? AND account_id=? AND expires_at>? AND mfa_version=?
+        AND EXISTS(SELECT 1 FROM accounts WHERE id=? AND password_hash=? AND mfa_version=?)`,
+      )
+        .bind(
+          now() + 300,
+          ticket.session_hash,
+          ticket.account_id,
+          now(),
+          ticket.version,
+          ticket.account_id,
+          ticket.password_version,
+          ticket.version,
+        )
+        .run()
+      if (!updated.meta.changes) fail(401, 'Session expired. Sign in again.')
+      return json({ success: true })
+    }
+    return this.loginResponse(
+      request,
+      {
+        id: ticket.account_id,
+        email: ticket.email,
+        password_hash: ticket.password_version,
+      },
+      200,
+      undefined,
+      ticket.version,
+    )
+  }
+
+  private async elevated(session: Session) {
+    const found = await this.env.DB.prepare(
+      `SELECT a.* FROM sessions s JOIN accounts a ON a.id=s.account_id
+      WHERE s.token_hash=? AND s.expires_at>? AND s.elevated_until>? AND s.mfa_version=a.mfa_version`,
+    )
+      .bind(session.token_hash, now(), now())
+      .first<Account>()
+    if (!found)
+      fail(
+        403,
+        'Confirm your password and second factor before changing security settings.',
+      )
+    return found!
+  }
+
+  private async mfaChange(
+    session: Session,
+    enabled: boolean,
+    extra: (version: number) => D1PreparedStatement[] = () => [],
+    codes = true,
+  ) {
+    const user = await this.elevated(session)
+    const version = Number.parseInt(randomBytes(6).toString('hex'), 16)
+    const recovery =
+      enabled && codes
+        ? Array.from({ length: 10 }, () => randomBytes(16).toString('hex'))
+        : []
+    const guard = 'EXISTS(SELECT 1 FROM accounts WHERE id=? AND mfa_version=?)'
+    const operations = [
+      this.env.DB.prepare(
+        `UPDATE accounts SET mfa_enabled=?,mfa_version=? WHERE id=? AND mfa_version=? AND
+        EXISTS(SELECT 1 FROM sessions WHERE token_hash=? AND account_id=? AND expires_at>? AND elevated_until>? AND mfa_version=?)`,
+      ).bind(
+        enabled ? 1 : 0,
+        version,
+        user.id,
+        user.mfa_version,
+        session.token_hash,
+        user.id,
+        now(),
+        now(),
+        user.mfa_version,
+      ),
+      ...extra(version),
+      this.env.DB.prepare(
+        `DELETE FROM sessions WHERE account_id=? AND token_hash<>? AND ${guard}`,
+      ).bind(user.id, session.token_hash, user.id, version),
+      this.env.DB.prepare(
+        `UPDATE sessions SET mfa_version=?,elevated_until=0 WHERE token_hash=? AND ${guard}`,
+      ).bind(version, session.token_hash, user.id, version),
+      this.env.DB.prepare(
+        `DELETE FROM mfa_tickets WHERE account_id=? AND ${guard}`,
+      ).bind(user.id, user.id, version),
+      this.env.DB.prepare(
+        `DELETE FROM challenges WHERE account_id=? AND ${guard}`,
+      ).bind(user.id, user.id, version),
+    ]
+    if (codes || !enabled)
+      operations.push(
+        this.env.DB.prepare(
+          `DELETE FROM recovery_codes WHERE account_id=? AND ${guard}`,
+        ).bind(user.id, user.id, version),
+      )
+    for (const code of recovery)
+      operations.push(
+        this.env.DB.prepare(
+          `INSERT INTO recovery_codes SELECT ?,? WHERE ${guard}`,
+        ).bind(user.id, digest(code), user.id, version),
+      )
+    const result = await this.env.DB.batch(operations)
+    if (!result[0]!.meta.changes)
+      fail(403, 'Security settings changed. Verify again.')
+    return json({
+      success: true,
+      recovery_codes: recovery.map((c) => c.match(/.{8}/g)!.join('-')),
+    })
+  }
+
   private async loginResponse(
     request: Request,
     account: { id: string; email: string; password_hash?: string },
     status = 200,
     passkey?: string,
+    mfaVersion?: number,
   ) {
     const current = now()
     const count = await this.env.DB.prepare(
@@ -349,8 +617,9 @@ export class AccountService extends DurableObject<Env> {
     const raw = token()
     const expires_at = current + SESSION_SECONDS
     const inserted = await this.env.DB.prepare(
-      `INSERT INTO sessions SELECT ?, id, ?, ? FROM accounts
+      `INSERT INTO sessions (token_hash, account_id, expires_at, created_at, mfa_version) SELECT ?, id, ?, ?, mfa_version FROM accounts
       WHERE id = ? AND (? IS NULL OR password_hash = ?)
+      AND ((mfa_enabled=0 AND ? IS NULL) OR mfa_version=?)
       AND (? IS NULL OR EXISTS (SELECT 1 FROM passkeys WHERE id = ? AND account_id = accounts.id))
       AND (SELECT COUNT(*) FROM sessions WHERE account_id = accounts.id AND expires_at > ?) < 100`,
     )
@@ -361,6 +630,8 @@ export class AccountService extends DurableObject<Env> {
         account.id,
         account.password_hash ?? null,
         account.password_hash ?? null,
+        mfaVersion ?? null,
+        mfaVersion ?? null,
         passkey ?? null,
         passkey ?? null,
         current,
@@ -411,7 +682,9 @@ export class AccountService extends DurableObject<Env> {
     request: Request,
     kind: string,
   ): Promise<Challenge> {
-    const raw = cookie(request, CHALLENGE_COOKIE)
+    const raw =
+      request.headers.get('X-Extend-Challenge') ??
+      cookie(request, CHALLENGE_COOKIE)
     if (!raw || !/^[a-f0-9]{64}$/.test(raw))
       fail(401, 'Passkey request expired. Try again.')
     const found = await this.env.DB.prepare(
@@ -480,6 +753,7 @@ export class AccountService extends DurableObject<Env> {
         'scrypt$32768$8$3$00000000000000000000000000000000$0000000000000000000000000000000000000000000000000000000000000000'
       const valid = verifyPassword(secret, hash)
       if (!account || !valid) fail(401, 'Email or password is incorrect')
+      if (account!.mfa_enabled) return this.mfaPending(account!)
       return this.loginResponse(request, account!)
     }
 
@@ -490,6 +764,7 @@ export class AccountService extends DurableObject<Env> {
       })
       const id = await this.challenge(request, 'login', null, options.challenge)
       const response = json(options)
+      response.headers.set('X-Extend-Challenge', id)
       setCookie(response, request, CHALLENGE_COOKIE, id, 300)
       return response
     }
@@ -497,7 +772,7 @@ export class AccountService extends DurableObject<Env> {
       const input = await body(request)
       const challenge = await this.consumeChallenge(request, 'login')
       const key = await this.env.DB.prepare(
-        'SELECT * FROM passkeys WHERE id = ? AND rp_id = ?',
+        "SELECT * FROM passkeys WHERE id = ? AND rp_id = ? AND purpose='login'",
       )
         .bind(text(input.id, 2048, 'passkey'), url.hostname)
         .first<Passkey>()
@@ -533,11 +808,94 @@ export class AccountService extends DurableObject<Env> {
         .run()
       if (!updated.meta.changes) fail(401, 'Passkey changed. Try again.')
       const account = await this.env.DB.prepare(
-        'SELECT id, email, password_hash FROM accounts WHERE id = ?',
+        'SELECT * FROM accounts WHERE id = ?',
       )
         .bind(key!.account_id)
         .first<Account>()
+      if (account!.mfa_enabled)
+        fail(
+          403,
+          'Two-factor authentication is enabled. Sign in with your password, then use this passkey.',
+        )
       return this.loginResponse(request, account!, 200, key!.id)
+    }
+
+    if (path === '/v1/auth/mfa/verify' && method === 'POST') {
+      const input = await body(request)
+      const ticket = await this.mfaTicket(input.ticket)
+      await this.mfaAttempt(ticket)
+      await this.mfaCode(ticket.account_id, input.code)
+      return this.mfaFinish(request, ticket)
+    }
+    if (path === '/v1/auth/mfa/key/options' && method === 'POST') {
+      const input = await body(request)
+      const ticket = await this.mfaTicket(input.ticket)
+      const { results } = await this.env.DB.prepare(
+        'SELECT id,transports FROM passkeys WHERE account_id=? AND rp_id=?',
+      )
+        .bind(ticket.account_id, url.hostname)
+        .all<{ id: string; transports: string }>()
+      if (!results.length) fail(400, 'No passkey or security key registered')
+      const options = await generateAuthenticationOptions({
+        rpID: url.hostname,
+        userVerification: 'preferred',
+        allowCredentials: results.map((k) => ({ id: k.id })),
+      })
+      const id = await this.challenge(
+        request,
+        'mfa:' + ticket.id,
+        ticket.account_id,
+        options.challenge,
+      )
+      const response = json(options)
+      response.headers.set('X-Extend-Challenge', id)
+      setCookie(response, request, CHALLENGE_COOKIE, id, 300)
+      return response
+    }
+    if (path === '/v1/auth/mfa/key/verify' && method === 'POST') {
+      const input = await body(request)
+      const ticket = await this.mfaTicket(input.ticket)
+      await this.mfaAttempt(ticket)
+      const challenge = await this.consumeChallenge(request, 'mfa:' + ticket.id)
+      const key = await this.env.DB.prepare(
+        'SELECT * FROM passkeys WHERE id=? AND account_id=? AND rp_id=?',
+      )
+        .bind(text(input.id, 2048, 'key'), ticket.account_id, url.hostname)
+        .first<Passkey>()
+      if (!key || challenge.account_id !== ticket.account_id)
+        fail(401, 'Could not verify security key')
+      let verified
+      try {
+        verified = await verifyAuthenticationResponse({
+          response: authentication(input),
+          expectedChallenge: challenge.challenge,
+          expectedOrigin: challenge.origin,
+          expectedRPID: url.hostname,
+          credential: {
+            id: key!.id,
+            publicKey: new Uint8Array(
+              Buffer.from(key!.public_key, 'base64url'),
+            ),
+            counter: key!.counter,
+          },
+          requireUserVerification: false,
+        })
+      } catch {
+        fail(401, 'Could not verify security key')
+      }
+      if (!verified!.verified) fail(401, 'Could not verify security key')
+      const changed = await this.env.DB.prepare(
+        'UPDATE passkeys SET counter=? WHERE id=? AND account_id=? AND counter=?',
+      )
+        .bind(
+          verified!.authenticationInfo.newCounter,
+          key!.id,
+          ticket.account_id,
+          key!.counter,
+        )
+        .run()
+      if (!changed.meta.changes) fail(401, 'Security key changed. Try again.')
+      return this.mfaFinish(request, ticket)
     }
 
     if (path === '/v1/auth/recovery/request' && method === 'POST') {
@@ -594,7 +952,7 @@ export class AccountService extends DurableObject<Env> {
             'DELETE FROM sessions WHERE account_id = ? AND EXISTS (SELECT 1 FROM accounts WHERE id = ? AND password_hash = ?)',
           ).bind(link!.account_id, link!.account_id, replacement),
           this.env.DB.prepare(
-            'DELETE FROM passkeys WHERE account_id = ? AND EXISTS (SELECT 1 FROM accounts WHERE id = ? AND password_hash = ?)',
+            'DELETE FROM passkeys WHERE account_id = ? AND EXISTS (SELECT 1 FROM accounts WHERE id = ? AND password_hash = ? AND mfa_enabled=0)',
           ).bind(link!.account_id, link!.account_id, replacement),
           this.env.DB.prepare(
             'DELETE FROM email_tokens WHERE account_id = ? AND EXISTS (SELECT 1 FROM accounts WHERE id = ? AND password_hash = ?)',
@@ -613,10 +971,147 @@ export class AccountService extends DurableObject<Env> {
     const account = session.account_id
     const db = this.env.DB
 
+    if (path === '/v1/mfa' && method === 'GET') {
+      const user = await db
+        .prepare('SELECT mfa_enabled FROM accounts WHERE id=?')
+        .bind(account)
+        .first<{ mfa_enabled: number }>()
+      return json({
+        enabled: !!user!.mfa_enabled,
+        ...(await this.mfaInfo(account)),
+      })
+    }
+    if (path === '/v1/mfa/reauth' && method === 'POST') {
+      const input = await body(request)
+      const user = await db
+        .prepare('SELECT * FROM accounts WHERE id=?')
+        .bind(account)
+        .first<Account>()
+      this.limit('reauth:' + account, 5)
+      if (!verifyPassword(password(input.password), user!.password_hash))
+        fail(401, 'Password is incorrect')
+      if (user!.mfa_enabled)
+        return this.mfaPending(user!, 'manage', session.token_hash)
+      const changed = await db
+        .prepare(
+          `UPDATE sessions SET elevated_until=? WHERE token_hash=? AND expires_at>? AND mfa_version=?
+        AND EXISTS(SELECT 1 FROM accounts WHERE id=? AND password_hash=? AND mfa_version=?)`,
+        )
+        .bind(
+          now() + 300,
+          session.token_hash,
+          now(),
+          user!.mfa_version,
+          account,
+          user!.password_hash,
+          user!.mfa_version,
+        )
+        .run()
+      if (!changed.meta.changes) fail(401, 'Session changed. Sign in again.')
+      return json({ success: true })
+    }
+    if (path === '/v1/mfa/totp/setup' && method === 'POST') {
+      const user = await this.elevated(session)
+      if (!this.env.MFA_ENCRYPTION_KEY)
+        fail(503, 'Authenticator setup is not configured on this server')
+      const secret = newTotpSecret()
+      await db
+        .prepare('INSERT OR REPLACE INTO totp_setup VALUES (?,?,?,?,?)')
+        .bind(
+          session.token_hash,
+          account,
+          sealSecret(secret, this.env.MFA_ENCRYPTION_KEY!, account),
+          user.mfa_version,
+          now() + 300,
+        )
+        .run()
+      return json({
+        secret,
+        uri: `otpauth://totp/${encodeURIComponent('extend.computer:' + user.email)}?secret=${secret}&issuer=extend.computer&algorithm=SHA1&digits=6&period=30`,
+      })
+    }
+    if (path === '/v1/mfa/totp/confirm' && method === 'POST') {
+      const user = await this.elevated(session)
+      const input = await body(request)
+      const setup = await db
+        .prepare(
+          'SELECT secret FROM totp_setup WHERE session_hash=? AND account_id=? AND version=? AND expires_at>?',
+        )
+        .bind(session.token_hash, account, user.mfa_version, now())
+        .first<{ secret: string }>()
+      if (!setup || !this.env.MFA_ENCRYPTION_KEY)
+        fail(400, 'Setup expired. Start again.')
+      this.limit('totp-setup:' + account, 5)
+      const step = matchTotp(
+        openSecret(setup!.secret, this.env.MFA_ENCRYPTION_KEY!, account),
+        input.code,
+        now(),
+      )
+      if (step === null)
+        fail(
+          400,
+          'Code is incorrect. Try the current code from your authenticator.',
+        )
+      return this.mfaChange(session, true, (version) => [
+        db
+          .prepare(
+            `INSERT OR REPLACE INTO totp_factors SELECT ?,?,? WHERE EXISTS(SELECT 1 FROM accounts WHERE id=? AND mfa_version=?)`,
+          )
+          .bind(account, setup!.secret, step, account, version),
+        db
+          .prepare('DELETE FROM totp_setup WHERE session_hash=?')
+          .bind(session.token_hash),
+      ])
+    }
+    if (path === '/v1/mfa/enable' && method === 'POST') {
+      await this.elevated(session)
+      const info = await this.mfaInfo(account)
+      if (!info.totp && !info.keys)
+        fail(400, 'Add an authenticator or security key first')
+      return this.mfaChange(session, true)
+    }
+    if (path === '/v1/mfa/recovery-codes' && method === 'POST') {
+      const user = await this.elevated(session)
+      if (!user.mfa_enabled) fail(400, 'Enable two-factor authentication first')
+      return this.mfaChange(session, true)
+    }
+    if (path === '/v1/mfa/disable' && method === 'POST') {
+      const user = await this.elevated(session)
+      return this.mfaChange(session, false, (version) => [
+        db
+          .prepare(
+            'DELETE FROM totp_factors WHERE account_id=? AND EXISTS(SELECT 1 FROM accounts WHERE id=? AND mfa_version=?)',
+          )
+          .bind(account, account, version),
+        db.prepare('DELETE FROM totp_setup WHERE account_id=?').bind(account),
+      ])
+    }
+    if (path === '/v1/mfa/totp' && method === 'DELETE') {
+      const user = await this.elevated(session)
+      const info = await this.mfaInfo(account)
+      if (user.mfa_enabled && !info.keys)
+        fail(
+          400,
+          'Add a security key first, or turn off two-factor authentication.',
+        )
+      return this.mfaChange(
+        session,
+        !!user.mfa_enabled,
+        (version) => [
+          db
+            .prepare(
+              'DELETE FROM totp_factors WHERE account_id=? AND EXISTS(SELECT 1 FROM accounts WHERE id=? AND mfa_version=?)',
+            )
+            .bind(account, account, version),
+        ],
+        false,
+      )
+    }
+
     if (path === '/v1/account' && method === 'GET') {
       const user = await db
         .prepare(
-          'SELECT id, email, created_at, email_verified FROM accounts WHERE id = ?',
+          'SELECT id, email, created_at, email_verified, mfa_enabled FROM accounts WHERE id = ?',
         )
         .bind(account)
         .first()
@@ -649,6 +1144,11 @@ export class AccountService extends DurableObject<Env> {
       return empty()
     }
     if (path === '/v1/account/password' && method === 'POST') {
+      const owner = await db
+        .prepare('SELECT mfa_enabled FROM accounts WHERE id=?')
+        .bind(account)
+        .first<{ mfa_enabled: number }>()
+      if (owner!.mfa_enabled) await this.elevated(session)
       const input = await body(request)
       const current = await db
         .prepare('SELECT password_hash FROM accounts WHERE id = ?')
@@ -665,13 +1165,14 @@ export class AccountService extends DurableObject<Env> {
       const changed = await db.batch([
         db
           .prepare(
-            'UPDATE accounts SET password_hash = ? WHERE id = ? AND password_hash = ? AND EXISTS (SELECT 1 FROM sessions WHERE token_hash = ? AND expires_at > ?)',
+            'UPDATE accounts SET password_hash = ? WHERE id = ? AND password_hash = ? AND EXISTS (SELECT 1 FROM sessions WHERE token_hash = ? AND account_id=accounts.id AND expires_at > ? AND mfa_version=accounts.mfa_version AND (accounts.mfa_enabled=0 OR elevated_until>?))',
           )
           .bind(
             hash,
             account,
             current!.password_hash,
             session.token_hash,
+            now(),
             now(),
           ),
         db
@@ -775,13 +1276,20 @@ export class AccountService extends DurableObject<Env> {
     if (path === '/v1/passkeys' && method === 'GET') {
       const { results } = await db
         .prepare(
-          'SELECT id, name, created_at, rp_id FROM passkeys WHERE account_id = ? ORDER BY created_at',
+          'SELECT id, name, created_at, rp_id, purpose FROM passkeys WHERE account_id = ? ORDER BY created_at',
         )
         .bind(account)
         .all()
       return json({ passkeys: results })
     }
     if (path === '/v1/passkeys/register/options' && method === 'POST') {
+      const input = request.body ? await body(request) : {}
+      const factor = input.factor === true
+      const owner = await db
+        .prepare('SELECT * FROM accounts WHERE id=?')
+        .bind(account)
+        .first<Account>()
+      if (factor || owner!.mfa_enabled) await this.elevated(session)
       const user = await db
         .prepare('SELECT email FROM accounts WHERE id = ?')
         .bind(account)
@@ -798,57 +1306,135 @@ export class AccountService extends DurableObject<Env> {
         userID: new Uint8Array(Buffer.from(account, 'hex')),
         attestationType: 'none',
         authenticatorSelection: {
-          residentKey: 'required',
-          userVerification: 'required',
+          residentKey: factor ? 'preferred' : 'required',
+          userVerification: factor ? 'preferred' : 'required',
         },
         excludeCredentials: results.map((k) => ({ id: k.id })),
       })
       const id = await this.challenge(
         request,
-        'register',
+        'register:' + session.token_hash,
         account,
-        options.challenge,
+        JSON.stringify({
+          challenge: options.challenge,
+          purpose: factor ? 'factor' : 'login',
+          version: owner!.mfa_version,
+        }),
       )
       const response = json(options)
+      response.headers.set('X-Extend-Challenge', id)
       setCookie(response, request, CHALLENGE_COOKIE, id, 300)
       return response
     }
     if (path === '/v1/passkeys/register/verify' && method === 'POST') {
       const input = await body(request)
-      const challenge = await this.consumeChallenge(request, 'register')
+      const challenge = await this.consumeChallenge(
+        request,
+        'register:' + session.token_hash,
+      )
+      const ceremony = JSON.parse(challenge.challenge) as {
+        challenge: string
+        purpose: string
+        version: number
+      }
+      const owner = await db
+        .prepare('SELECT * FROM accounts WHERE id=?')
+        .bind(account)
+        .first<Account>()
+      if (owner!.mfa_version !== ceremony.version)
+        fail(403, 'Security settings changed. Start again.')
+      if (ceremony.purpose === 'factor' || owner!.mfa_enabled)
+        await this.elevated(session)
       if (challenge.account_id !== account)
         fail(401, 'Passkey request belongs to another session')
       let verification
       try {
         verification = await verifyRegistrationResponse({
           response: registration(input),
-          expectedChallenge: challenge.challenge,
+          expectedChallenge: ceremony.challenge,
           expectedOrigin: challenge.origin,
           expectedRPID: url.hostname,
-          requireUserVerification: true,
+          requireUserVerification: ceremony.purpose === 'login',
         })
       } catch {
         fail(400, 'Could not verify passkey')
       }
       if (!verification!.verified) fail(400, 'Could not verify passkey')
       const credential = verification!.registrationInfo!.credential
-      await db
-        .prepare('INSERT INTO passkeys VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-        .bind(
-          credential.id,
-          account,
-          Buffer.from(credential.publicKey).toString('base64url'),
-          credential.counter,
-          JSON.stringify(credential.transports ?? []),
-          'Passkey',
-          url.hostname,
-          now(),
+      const insert = (version: number) =>
+        db
+          .prepare(
+            `INSERT INTO passkeys (id,account_id,public_key,counter,transports,name,rp_id,created_at,purpose)
+        SELECT ?,?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM accounts WHERE id=? AND mfa_version=?)
+        AND EXISTS(SELECT 1 FROM sessions WHERE token_hash=? AND account_id=? AND expires_at>? AND (?=0 OR elevated_until>?))`,
+          )
+          .bind(
+            credential.id,
+            account,
+            Buffer.from(credential.publicKey).toString('base64url'),
+            credential.counter,
+            JSON.stringify(credential.transports ?? []),
+            text(
+              input.name ??
+                (ceremony.purpose === 'factor' ? 'Security key' : 'Passkey'),
+              80,
+              'key name',
+            ),
+            url.hostname,
+            now(),
+            ceremony.purpose,
+            account,
+            version,
+            session.token_hash,
+            account,
+            now(),
+            ceremony.purpose === 'factor' && !owner!.mfa_enabled ? 1 : 0,
+            now(),
+          )
+      if (owner!.mfa_enabled)
+        return this.mfaChange(
+          session,
+          true,
+          (version) => [insert(version)],
+          false,
         )
-        .run()
+      const inserted = await insert(owner!.mfa_version).run()
+      if (!inserted.meta.changes)
+        fail(403, 'Session or security settings changed. Start again.')
       return json({ success: true }, 201)
     }
     const passkeyPath = path.match(/^\/v1\/passkeys\/([^/]+)$/)
     if (passkeyPath && method === 'DELETE') {
+      const owner = await db
+        .prepare('SELECT * FROM accounts WHERE id=?')
+        .bind(account)
+        .first<Account>()
+      if (owner!.mfa_enabled) {
+        await this.elevated(session)
+        const info = await this.mfaInfo(account)
+        const key = await db
+          .prepare('SELECT id FROM passkeys WHERE id=? AND account_id=?')
+          .bind(passkeyPath[1], account)
+          .first()
+        if (!key) fail(404, 'Passkey not found')
+        if (!info.totp && info.keys <= 1)
+          fail(
+            400,
+            'Add another factor first, or turn off two-factor authentication.',
+          )
+        return this.mfaChange(
+          session,
+          true,
+          (version) => [
+            db
+              .prepare(
+                'DELETE FROM passkeys WHERE id=? AND account_id=? AND EXISTS(SELECT 1 FROM accounts WHERE id=? AND mfa_version=?)',
+              )
+              .bind(passkeyPath[1], account, account, version),
+          ],
+          false,
+        )
+      }
       const removed = await db
         .prepare('DELETE FROM passkeys WHERE id = ? AND account_id = ?')
         .bind(passkeyPath[1], account)
@@ -868,7 +1454,7 @@ export async function heartbeat(request: Request, env: Env): Promise<Response> {
   if (!id || !raw) return json({ error: 'Invalid device credentials' }, 401)
   const result = await env.DB.prepare(
     `UPDATE device_sessions SET last_seen = ? WHERE token_hash = ? AND device_id = ?
-    AND session_hash IN (SELECT token_hash FROM sessions WHERE expires_at > ?)`,
+    AND session_hash IN (SELECT s.token_hash FROM sessions s JOIN accounts a ON a.id=s.account_id WHERE s.expires_at > ? AND s.mfa_version=a.mfa_version)`,
   )
     .bind(now(), digest(raw), id, now())
     .run()

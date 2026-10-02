@@ -21,6 +21,9 @@ async fn main() -> anyhow::Result<()> {
         Config {
             signup_enabled,
             origin: std::env::var("EXTEND_ORIGIN").ok(),
+            mfa_encryption_key: std::env::var("EXTEND_MFA_ENCRYPTION_KEY")
+                .ok()
+                .filter(|key| !key.is_empty()),
         },
     )?;
     let listener = tokio::net::TcpListener::bind(bind).await?;

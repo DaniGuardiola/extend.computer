@@ -30,7 +30,7 @@ try {
   const verify=await seed('verify');assert.equal((await request('/auth/email/verify',{token:verify})).status,200)
   assert.equal((await request('/account',undefined,session)).data.email_verified,1)
   assert.equal((await request('/auth/email/verify',{token:verify})).status,400)
-  await sql(`INSERT INTO passkeys VALUES ('fixture-passkey','${id}','fixture-public-key',0,'[]','Fixture','localhost',unixepoch());`)
+  await sql(`INSERT INTO passkeys (id,account_id,public_key,counter,transports,name,rp_id,created_at) VALUES ('fixture-passkey','${id}','fixture-public-key',0,'[]','Fixture','localhost',unixepoch());`)
   const reset=await seed('reset');const wrongKind=await seed('verify')
   assert.equal((await request('/auth/recovery/complete',{token:wrongKind,password:'new-disposable-password'})).status,400)
   assert.equal((await request('/auth/recovery/complete',{token:reset,password:'short'})).status,400)

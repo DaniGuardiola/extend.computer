@@ -2,10 +2,12 @@ import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { ArrowRight, Fingerprint, MoveUpRight } from 'lucide-react'
 import type { PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/browser'
+import { SecondFactor, type MfaPending } from './SecondFactor'
 import { Brand } from './Brand'
 import { api, message } from '../lib/api'
 export function Auth({ signup = false }: { signup?: boolean }) {
   const navigate = useNavigate()
+  const [pending, setPending] = useState<MfaPending | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -14,10 +16,18 @@ export function Auth({ signup = false }: { signup?: boolean }) {
     setBusy(true)
     setError('')
     try {
-      await api('/auth/' + (signup ? 'signup' : 'login'), 'POST', {
-        email: data.get('email'),
-        password: data.get('password'),
-      })
+      const result = await api<MfaPending | { account: unknown }>(
+        '/auth/' + (signup ? 'signup' : 'login'),
+        'POST',
+        {
+          email: data.get('email'),
+          password: data.get('password'),
+        },
+      )
+      if ('mfa_required' in result) {
+        setPending(result)
+        return
+      }
       if (signup) {
         const settings = await api<{ email_enabled: boolean }>('/server')
         if (settings.email_enabled)
@@ -82,60 +92,70 @@ export function Auth({ signup = false }: { signup?: boolean }) {
               {error}
             </p>
           )}
-          <form onSubmit={submit}>
-            <label className="field">
-              Email
-              <input
-                name="email"
-                type="email"
-                autoComplete="email"
-                required
-                maxLength={254}
-                placeholder="you@example.com"
-              />
-            </label>
-            <label className="field">
-              Password
-              <input
-                name="password"
-                type="password"
-                autoComplete={signup ? 'new-password' : 'current-password'}
-                required
-                minLength={12}
-                maxLength={1024}
-                aria-describedby={signup ? 'password-hint' : undefined}
-              />
-            </label>
-            {signup && (
-              <p id="password-hint" className="field-hint">
-                At least 12 characters. You can add a passkey next.
-              </p>
-            )}
-            <button
-              className="button auth-submit"
-              disabled={busy}
-              type="submit"
-            >
-              {busy ? 'One moment…' : signup ? 'Create account' : 'Sign in'}
-              <ArrowRight size={16} />
-            </button>
-          </form>
-          {!signup && (
+          {pending ? (
+            <SecondFactor
+              pending={pending}
+              onVerified={() => navigate({ to: '/account' })}
+              onCancel={() => setPending(null)}
+            />
+          ) : (
             <>
-              <p className="auth-switch">
-                <Link to="/recover">Forgot your password?</Link>
-              </p>
-              <div className="auth-divider">
-                <span>or</span>
-              </div>
-              <button
-                className="button button-outline auth-submit"
-                disabled={busy}
-                onClick={passkey}
-              >
-                <Fingerprint size={17} />
-                Sign in with a passkey
-              </button>
+              <form onSubmit={submit}>
+                <label className="field">
+                  Email
+                  <input
+                    name="email"
+                    type="email"
+                    autoComplete="email"
+                    required
+                    maxLength={254}
+                    placeholder="you@example.com"
+                  />
+                </label>
+                <label className="field">
+                  Password
+                  <input
+                    name="password"
+                    type="password"
+                    autoComplete={signup ? 'new-password' : 'current-password'}
+                    required
+                    minLength={12}
+                    maxLength={1024}
+                    aria-describedby={signup ? 'password-hint' : undefined}
+                  />
+                </label>
+                {signup && (
+                  <p id="password-hint" className="field-hint">
+                    At least 12 characters. You can add a passkey next.
+                  </p>
+                )}
+                <button
+                  className="button auth-submit"
+                  disabled={busy}
+                  type="submit"
+                >
+                  {busy ? 'One moment…' : signup ? 'Create account' : 'Sign in'}
+                  <ArrowRight size={16} />
+                </button>
+              </form>
+              {!signup && (
+                <>
+                  <p className="auth-switch">
+                    <Link to="/recover">Forgot your password?</Link>
+                  </p>
+                  <div className="auth-divider">
+                    <span>or</span>
+                  </div>
+                  <button
+                    className="button button-outline auth-submit"
+                    disabled={busy}
+                    onClick={passkey}
+                  >
+                    <Fingerprint size={17} />
+                    Sign in with a passkey
+                  </button>
+                </>
+              )}
             </>
           )}
           <p className="auth-switch">

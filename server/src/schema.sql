@@ -40,4 +40,3 @@ CREATE TABLE IF NOT EXISTS passkeys (
     created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS passkeys_account ON passkeys(account_id);
-PRAGMA user_version = 2;

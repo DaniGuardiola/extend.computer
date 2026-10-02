@@ -19,7 +19,7 @@ test('email links keep tokens in fragments and explain recovery revocation', () 
     env.PUBLIC_ORIGIN,
   )
   assert.ok(email.text.includes('https://example.com/email#reset=' + token))
-  assert.ok(email.text.includes('sessions and passkeys will be revoked'))
+  assert.ok(email.text.includes('Two-factor authentication stays enabled'))
   assert.ok(email.html.includes('expires in 30 minutes'))
   assert.throws(() =>
     accountEmail('verify', 'user@example.com', token, 'http://example.com'),

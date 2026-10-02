@@ -13,6 +13,8 @@ import {
   Trash2,
 } from 'lucide-react'
 import type { PublicKeyCredentialCreationOptionsJSON } from '@simplewebauthn/browser'
+import { MfaControls } from '../components/MfaControls'
+import { VerifySecurity } from '../components/VerifySecurity'
 import { Brand } from '../components/Brand'
 import {
   api,
@@ -28,6 +30,9 @@ export const Route = createFileRoute('/account')({
 })
 type Removal = { kind: 'devices' | 'passkeys'; id: string; name: string }
 function Dashboard() {
+  const [verification, setVerification] = useState<
+    (() => Promise<void>) | null
+  >(null)
   const navigate = useNavigate()
   const [account, setAccount] = useState<Account | null>(null)
   const [devices, setDevices] = useState<Device[]>([])
@@ -86,8 +91,15 @@ function Dashboard() {
       setBusy(false)
     }
   }
+  function verify(work: () => Promise<void>) {
+    setVerification(() => work)
+  }
+  function protectedAction(work: () => Promise<void>, notice = '') {
+    if (account?.mfa_enabled) verify(() => action(work, notice))
+    else void action(work, notice)
+  }
   async function addPasskey() {
-    await action(async () => {
+    protectedAction(async () => {
       const { startRegistration } = await import('@simplewebauthn/browser')
       const optionsJSON = await api<PublicKeyCredentialCreationOptionsJSON>(
         '/passkeys/register/options',
@@ -99,12 +111,12 @@ function Dashboard() {
         await startRegistration({ optionsJSON }),
       )
       await refresh()
-    }, 'Passkey added. Next time, sign in with a touch.')
+    }, account?.mfa_enabled ? 'Passkey added as a second factor.' : 'Passkey added. Next time, sign in with a touch.')
   }
   async function changePassword(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const data = new FormData(event.currentTarget)
-    await action(async () => {
+    protectedAction(async () => {
       await api('/account/password', 'POST', {
         current_password: data.get('current'),
         password: data.get('password'),
@@ -242,6 +254,11 @@ function Dashboard() {
                 </div>
               )}
             </section>
+            <MfaControls
+              verify={verify}
+              onChange={refresh}
+              revision={`${account.mfa_enabled}:${passkeys.length}`}
+            />
             <section aria-labelledby="security-title">
               <div className="security-heading">
                 <div>
@@ -265,8 +282,11 @@ function Dashboard() {
                       <div>
                         <h3>{key.name}</h3>
                         <p>
+                          {key.purpose === 'factor' ? 'Second factor · ' : ''}
                           Added{' '}
-                          {new Date(key.created_at * 1000).toLocaleDateString()}{' '}
+                          {new Date(
+                            key.created_at * 1000,
+                          ).toLocaleDateString()}{' '}
                           · {key.rp_id}
                         </p>
                       </div>
@@ -292,10 +312,11 @@ function Dashboard() {
                     <div>
                       <Fingerprint size={19} />
                       <div>
-                        <h3>A touch beats a password.</h3>
+                        <h3>{account?.mfa_enabled ? 'Confirm with a passkey.' : 'A touch beats a password.'}</h3>
                         <p>
-                          Add a passkey to sign in with your fingerprint, face,
-                          or security key.
+                          {account?.mfa_enabled
+                            ? 'After your password, confirm with your fingerprint, face, or security key.'
+                            : 'Add a passkey to sign in with your fingerprint, face, or security key.'}
                         </p>
                       </div>
                     </div>
@@ -306,7 +327,7 @@ function Dashboard() {
                     <KeyRound size={19} />
                     <div>
                       <h3>Password</h3>
-                      <p>Keep a password as another way in.</p>
+                      <p>{account?.mfa_enabled ? 'Required before your second factor.' : 'Keep a password as another way in.'}</p>
                     </div>
                   </div>
                   <button
@@ -344,6 +365,12 @@ function Dashboard() {
         <span>Your devices. Your control.</span>
         <a href="/">Back to home ↗</a>
       </footer>
+      {verification && (
+        <VerifySecurity
+          onVerified={verification}
+          onClose={() => setVerification(null)}
+        />
+      )}
       <Ariakit.Dialog
         open={!!removal}
         onClose={() => !busy && setRemoval(null)}
@@ -366,17 +393,20 @@ function Dashboard() {
           <button
             className="button danger"
             disabled={busy}
-            onClick={() =>
-              action(async () => {
-                if (!removal) return
+            onClick={() => {
+              const target = removal
+              if (!target) return
+              setRemoval(null)
+              const work = async () => {
                 await api(
-                  '/' + removal.kind + '/' + encodeURIComponent(removal.id),
+                  '/' + target.kind + '/' + encodeURIComponent(target.id),
                   'DELETE',
                 )
-                setRemoval(null)
                 await refresh()
-              }, 'Removed.')
-            }
+              }
+              if (target.kind === 'passkeys') protectedAction(work, 'Removed.')
+              else void action(work, 'Removed.')
+            }}
           >
             Remove
           </button>

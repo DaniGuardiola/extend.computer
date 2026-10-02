@@ -84,3 +84,26 @@ After login, register the local engine identity, heartbeat while signed in, and 
 cargo test --manifest-path server/Cargo.toml
 cargo clippy --manifest-path server/Cargo.toml --all-targets -- -D warnings
 ```
+
+## Two-factor authentication
+
+TOTP authenticator apps, passkeys/security keys, and single-use recovery codes are supported. Set `EXTEND_MFA_ENCRYPTION_KEY` to a securely generated random 32-byte key encoded as 64 hexadecimal characters before configuring TOTP. Keep it stable and back it up securely with SQLite; losing it prevents decryption of authenticator secrets. Docker Compose forwards this variable. Passkey/security-key-only 2FA works without an encryption key, but requires `EXTEND_ORIGIN`. The standalone service is an API; the hosted dashboard remains a separate application.
+
+With 2FA enabled, password login returns `{ "mfa_required": true, "ticket": "...", "totp": true, "keys": false, "recovery": true }` instead of a bearer token. Complete `/v1/auth/mfa/verify` with `{ "ticket": "...", "code": "..." }` using TOTP or a recovery code to receive the normal session response. Tickets expire after five minutes, are single-use, and have bounded verification attempts. They do not authorize account/device APIs. Passwordless passkey login is blocked for accounts with 2FA; use password followed by the key.
+
+For key verification, POST `{ "ticket": "..." }` to `/v1/auth/mfa/key/options`, perform WebAuthn authentication, then POST `{ "ticket": "...", ...browserAssertion }` to `/v1/auth/mfa/key/verify`, returning the challenge header or cookie. The hosted Worker accepts the same shape. Both verify signatures, account ownership, origin, and one-time challenges.
+
+Authenticated management endpoints:
+
+| Method | Path | Body / result |
+| --- | --- | --- |
+| GET | `/v1/mfa` | Enabled state and enrolled factors |
+| POST | `/v1/mfa/reauth` | `{ "password": "..." }`; success or MFA ticket |
+| POST | `/v1/mfa/totp/setup` | Returns setup secret and `otpauth://` URI |
+| POST | `/v1/mfa/totp/confirm` | `{ "code": "123456" }`; enables TOTP and returns recovery codes |
+| DELETE | `/v1/mfa/totp` | Remove TOTP; cannot remove the last enabled factor |
+| POST | `/v1/mfa/enable` | Enable already enrolled keys; returns recovery codes |
+| POST | `/v1/mfa/recovery-codes` | Replace all recovery codes |
+| POST | `/v1/mfa/disable` | Disable 2FA |
+
+Management requires a fresh password check (and an enabled second factor), valid for five minutes on that exact session. Start security-key enrollment with `/v1/passkeys/register/options` and `{ "factor": true }`; these keys can work without a PIN and cannot perform passwordless login. Ordinary passkey registration still requires user verification. Security changes revoke other sessions, update the current session's security version, and invalidate pending tickets. Save recovery codes immediately; only their hashes remain on the server. `tests/mfa-browser.mjs` verifies touch-only key enrollment and login in isolated Chromium.

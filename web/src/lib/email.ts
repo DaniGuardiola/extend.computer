@@ -36,7 +36,7 @@ export function accountEmail(
   const description =
     kind === 'verify'
       ? 'Confirm this address belongs to you.'
-      : 'Choose a new password for your extend.computer account. Existing sessions and passkeys will be revoked.'
+      : 'Choose a new password for your extend.computer account. Existing sessions will be revoked. Two-factor authentication stays enabled. Passkeys are removed only when two-factor authentication is off.'
   return {
     to: [to],
     subject: `${title} · extend.computer`,

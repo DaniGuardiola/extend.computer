@@ -2,7 +2,7 @@
 import { chromium } from '../../web/node_modules/playwright/index.mjs'
 import assert from 'node:assert/strict'
 const url = process.env.EXTEND_TEST_URL ?? 'http://localhost:8081'
-const browser = await chromium.connectOverCDP(process.env.EXTEND_TEST_CDP)
+const browser = process.env.EXTEND_TEST_CDP ? await chromium.connectOverCDP(process.env.EXTEND_TEST_CDP) : await chromium.launch({ headless: true })
 const context = await browser.newContext()
 const page = await context.newPage()
 const cdp = await context.newCDPSession(page)

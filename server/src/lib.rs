@@ -25,6 +25,7 @@ use std::{
 };
 use tokio::sync::Semaphore;
 
+mod mfa;
 mod passkeys;
 
 const SESSION_SECONDS: i64 = 30 * 24 * 60 * 60;
@@ -36,6 +37,7 @@ const MAX_SESSIONS: i64 = 100;
 pub struct Config {
     pub signup_enabled: bool,
     pub origin: Option<String>,
+    pub mfa_encryption_key: Option<String>,
 }
 
 pub struct Server {
@@ -65,8 +67,21 @@ impl Server {
         let db = Connection::open(path)?;
         db.busy_timeout(Duration::from_secs(5))?;
         let version: i64 = db.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        anyhow::ensure!(version <= 2, "database schema is newer than this server");
+        anyhow::ensure!(version <= 3, "database schema is newer than this server");
+        if let Some(key) = config.mfa_encryption_key.as_deref() {
+            anyhow::ensure!(
+                hex::decode(key).is_ok_and(|k| k.len() == 32),
+                "EXTEND_MFA_ENCRYPTION_KEY must be 64 hex characters"
+            );
+        }
         db.execute_batch(include_str!("schema.sql"))?;
+        if version < 3 {
+            db.execute_batch(&format!(
+                "BEGIN IMMEDIATE; {} PRAGMA user_version=3; COMMIT;",
+                include_str!("schema_mfa.sql")
+            ))?;
+        }
+        db.pragma_update(None, "user_version", 3)?;
         Ok(Arc::new(Self {
             db: Mutex::new(db),
             passkeys: config
@@ -110,6 +125,16 @@ pub fn router(server: Arc<Server>) -> Router {
         )
         .route("/v1/passkeys/login/options", post(passkeys::login_options))
         .route("/v1/passkeys/login/verify", post(passkeys::login_verify))
+        .route("/v1/auth/mfa/verify", post(mfa::verify))
+        .route("/v1/auth/mfa/key/options", post(passkeys::mfa_options))
+        .route("/v1/auth/mfa/key/verify", post(passkeys::mfa_verify))
+        .route("/v1/mfa/reauth", post(mfa::reauth))
+        .route("/v1/mfa/totp/setup", post(mfa::setup))
+        .route("/v1/mfa/totp/confirm", post(mfa::confirm))
+        .route("/v1/mfa/enable", post(mfa::enable))
+        .route("/v1/mfa/disable", post(mfa::disable))
+        .route("/v1/mfa/recovery-codes", post(mfa::recovery))
+        .route("/v1/mfa/totp", delete(mfa::remove_totp))
         .route_layer(middleware::from_fn_with_state(
             server.clone(),
             throttle_auth,
@@ -119,6 +144,7 @@ pub fn router(server: Arc<Server>) -> Router {
         .route("/healthz", get(|| async { Json(json!({"status": "ok"})) }))
         .route("/v1/server", get(server_info))
         .route("/v1/account", get(account))
+        .route("/v1/mfa", get(mfa::info))
         .route("/v1/passkeys", get(passkeys::list))
         .route("/v1/passkeys/{id}", delete(passkeys::remove))
         .route("/v1/auth/logout", post(logout))
@@ -237,7 +263,7 @@ async fn signup(
             let tx = db.transaction()?;
             let id = random_token();
             let inserted = tx.execute(
-                "INSERT OR IGNORE INTO accounts VALUES (?, ?, ?, ?)",
+                "INSERT OR IGNORE INTO accounts (id,email,password_hash,created_at) VALUES (?, ?, ?, ?)",
                 params![id, input.email, hash, now()],
             )?;
             if inserted == 0 {
@@ -288,16 +314,44 @@ async fn login(
     })
     .await
     .map_err(|_| ApiError::internal())?;
-    let Some((id, _)) = record.filter(|_| valid) else {
+    let Some((id, hash)) = record.filter(|_| valid) else {
         return Err(ApiError::unauthorized());
     };
     server
-        .work(move |db| new_session(db, &id, &input.email))
+        .work(move |db| {
+            let (current, enabled): (String, bool) = db.query_row(
+                "SELECT password_hash,mfa_enabled FROM accounts WHERE id=?",
+                [&id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )?;
+            if current != hash {
+                return Err(ApiError::unauthorized());
+            }
+            if enabled {
+                mfa::pending(db, &id, "login", None)
+            } else {
+                new_session(db, &id, &input.email)
+            }
+        })
         .await
         .map(Json)
 }
 
 fn new_session(db: &Connection, account: &str, email: &str) -> Result<Value, ApiError> {
+    let enabled: bool = db.query_row(
+        "SELECT mfa_enabled FROM accounts WHERE id=?",
+        [account],
+        |r| r.get(0),
+    )?;
+    if enabled {
+        return Err(ApiError(
+            StatusCode::FORBIDDEN,
+            "Use your password and a second factor to sign in",
+        ));
+    }
+    issue_session(db, account, email)
+}
+fn issue_session(db: &Connection, account: &str, email: &str) -> Result<Value, ApiError> {
     let count: i64 = db.query_row(
         "SELECT COUNT(*) FROM sessions WHERE account_id = ?",
         [account],
@@ -309,8 +363,8 @@ fn new_session(db: &Connection, account: &str, email: &str) -> Result<Value, Api
     let token = random_token();
     let expires = now() + SESSION_SECONDS;
     db.execute(
-        "INSERT INTO sessions VALUES (?, ?, ?)",
-        params![token_hash(&token), account, expires],
+        "INSERT INTO sessions (token_hash,account_id,expires_at,mfa_version) SELECT ?,?,?,mfa_version FROM accounts WHERE id=?",
+        params![token_hash(&token), account, expires,account],
     )?;
     Ok(json!({"account": {"id": account, "email": email}, "token": token, "expires_at": expires}))
 }
@@ -329,7 +383,7 @@ fn bearer(headers: &HeaderMap) -> Result<String, ApiError> {
 
 fn owner(db: &Connection, session: &str) -> Result<String, ApiError> {
     db.query_row(
-        "SELECT account_id FROM sessions WHERE token_hash = ? AND expires_at > ?",
+        "SELECT s.account_id FROM sessions s JOIN accounts a ON a.id=s.account_id WHERE s.token_hash = ? AND s.expires_at > ? AND s.mfa_version=a.mfa_version",
         params![session, now()],
         |r| r.get(0),
     )
@@ -349,7 +403,11 @@ async fn account(
                 db.query_row("SELECT email FROM accounts WHERE id = ?", [&id], |r| {
                     r.get(0)
                 })?;
-            Ok(json!({"id": id, "email": email}))
+            let enabled: bool =
+                db.query_row("SELECT mfa_enabled FROM accounts WHERE id=?", [&id], |r| {
+                    r.get(0)
+                })?;
+            Ok(json!({"id": id, "email": email,"mfa_enabled":enabled}))
         })
         .await
         .map(Json)
@@ -482,8 +540,8 @@ async fn heartbeat(
     server
         .work(move |db| {
             let changed = db.execute(
-                "UPDATE device_sessions SET last_seen = ? WHERE token_hash = ? AND device_id = ?",
-                params![now(), credential, id],
+                "UPDATE device_sessions SET last_seen = ? WHERE token_hash = ? AND device_id = ? AND session_hash IN (SELECT s.token_hash FROM sessions s JOIN accounts a ON a.id=s.account_id WHERE s.expires_at>? AND s.mfa_version=a.mfa_version)",
+                params![now(), credential, id,now()],
             )?;
             if changed == 0 {
                 return Err(ApiError::unauthorized());
@@ -529,6 +587,7 @@ fn token_hash(token: &str) -> String {
     hex::encode(Sha256::digest(token.as_bytes()))
 }
 
+#[derive(Debug)]
 pub struct ApiError(StatusCode, &'static str);
 impl ApiError {
     fn bad(message: &'static str) -> Self {

@@ -38,6 +38,7 @@ export type Account = {
   created_at: number
   email_verified: number
   email_enabled: boolean
+  mfa_enabled: number
 }
 export type Device = {
   id: string
@@ -52,6 +53,7 @@ export type Passkey = {
   name: string
   created_at: number
   rp_id: string
+  purpose: string
 }
 export const message = (error: unknown) =>
   error instanceof Error ? error.message : 'Please try again.'

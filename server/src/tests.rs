@@ -63,6 +63,7 @@ fn setup() -> (tempfile::TempDir, Arc<Server>, Router) {
         Config {
             signup_enabled: true,
             origin: Some("http://localhost:8080".into()),
+            mfa_encryption_key: Some("12".repeat(32)),
         },
     )
     .unwrap();
@@ -436,5 +437,206 @@ async fn invalid_credentials_payloads_and_auth_flood_are_rejected() {
             .await
             .0,
         StatusCode::TOO_MANY_REQUESTS
+    );
+}
+
+#[tokio::test]
+async fn second_factor_gates_sessions_and_security_changes() {
+    let (_dir, server, app) = setup();
+    let password = "a sufficiently long password";
+    let session = signup(&app, "mfa@example.invalid").await;
+    let (_, other) = request(
+        &app,
+        "POST",
+        "/v1/auth/login",
+        None,
+        json!({"email":"mfa@example.invalid","password":password}),
+    )
+    .await;
+    assert_eq!(
+        request(
+            &app,
+            "POST",
+            "/v1/mfa/totp/setup",
+            Some(&session),
+            Value::Null
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        request(
+            &app,
+            "POST",
+            "/v1/mfa/reauth",
+            Some(&session),
+            json!({"password":password})
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    let (status, setup) = request(
+        &app,
+        "POST",
+        "/v1/mfa/totp/setup",
+        Some(&session),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let code = crate::mfa::otp(setup["secret"].as_str().unwrap(), now() / 30, 6).unwrap();
+    let (status, enabled) = request(
+        &app,
+        "POST",
+        "/v1/mfa/totp/confirm",
+        Some(&session),
+        json!({"code":code}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let codes = enabled["recovery_codes"].as_array().unwrap();
+    assert_eq!(codes.len(), 10);
+    assert_eq!(
+        request(
+            &app,
+            "GET",
+            "/v1/account",
+            other["token"].as_str(),
+            Value::Null
+        )
+        .await
+        .0,
+        StatusCode::UNAUTHORIZED
+    );
+    let (_, pending) = request(
+        &app,
+        "POST",
+        "/v1/auth/login",
+        None,
+        json!({"email":"mfa@example.invalid","password":password}),
+    )
+    .await;
+    assert_eq!(pending["mfa_required"], true);
+    assert!(pending["token"].is_null());
+    assert_eq!(
+        request(
+            &app,
+            "GET",
+            "/v1/account",
+            pending["ticket"].as_str(),
+            Value::Null
+        )
+        .await
+        .0,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        request(
+            &app,
+            "POST",
+            "/v1/auth/mfa/verify",
+            None,
+            json!({"ticket":pending["ticket"],"code":code})
+        )
+        .await
+        .0,
+        StatusCode::UNAUTHORIZED
+    );
+    let (status, login) = request(
+        &app,
+        "POST",
+        "/v1/auth/mfa/verify",
+        None,
+        json!({"ticket":pending["ticket"],"code":codes[0]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        request(
+            &app,
+            "POST",
+            "/v1/auth/mfa/verify",
+            None,
+            json!({"ticket":pending["ticket"],"code":codes[0]})
+        )
+        .await
+        .0,
+        StatusCode::UNAUTHORIZED
+    );
+    let authenticated = login["token"].as_str().unwrap();
+    assert_eq!(
+        request(
+            &app,
+            "POST",
+            "/v1/mfa/disable",
+            Some(authenticated),
+            Value::Null
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    let (_, stepup) = request(
+        &app,
+        "POST",
+        "/v1/mfa/reauth",
+        Some(authenticated),
+        json!({"password":password}),
+    )
+    .await;
+    assert_eq!(stepup["mfa_required"], true);
+    assert_eq!(
+        request(
+            &app,
+            "POST",
+            "/v1/auth/mfa/verify",
+            None,
+            json!({"ticket":stepup["ticket"],"code":codes[0]})
+        )
+        .await
+        .0,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        request(
+            &app,
+            "POST",
+            "/v1/auth/mfa/verify",
+            None,
+            json!({"ticket":stepup["ticket"],"code":codes[1]})
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        request(
+            &app,
+            "POST",
+            "/v1/mfa/disable",
+            Some(authenticated),
+            Value::Null
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        request(&app, "GET", "/v1/account", Some(&session), Value::Null)
+            .await
+            .0,
+        StatusCode::UNAUTHORIZED
+    );
+    assert!(
+        server
+            .db
+            .lock()
+            .unwrap()
+            .query_row("SELECT COUNT(*) FROM recovery_codes", [], |r| r
+                .get::<_, i64>(0))
+            .unwrap()
+            == 0
     );
 }
