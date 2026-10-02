@@ -1338,19 +1338,20 @@ h3 {
   line-height: 1.75;
   margin: 0;
 }
-.cursor-track {
+.share-cursor {
+  --cursor-tip: 3px;
   position: absolute;
-  left: 22%;
-  top: 48%;
+  left: 35%;
+  top: 45%;
   z-index: 4;
   pointer-events: none;
-  animation: desk-handoff 9s ease-in-out infinite;
 }
-.cursor-track .visual-cursor {
+.share-cursor .visual-cursor {
   position: static;
   display: block;
+  transform: none;
 }
-.cursor-track > span {
+.share-cursor > span {
   display: block;
   width: fit-content;
   margin-left: 20px;
@@ -1363,33 +1364,65 @@ h3 {
     monospace;
   letter-spacing: 1px;
 }
-@keyframes desk-handoff {
+.share-cursor-left {
+  animation:
+    share-left-path 9s ease-in-out infinite,
+    share-left-visible 9s step-end infinite;
+}
+.share-cursor-right {
+  left: calc(-1 * var(--cursor-tip));
+  top: 55%;
+  opacity: 0;
+  animation:
+    share-right-path 9s ease-in-out infinite,
+    share-right-visible 9s step-end infinite;
+}
+@keyframes share-left-path {
   0%,
   8%,
+  92%,
   100% {
-    left: 23%;
-    top: 46%;
+    left: 35%;
+    top: 45%;
   }
-  24% {
-    left: 44%;
-    top: 56%;
+  30%,
+  74% {
+    left: calc(100% - var(--cursor-tip));
+    top: 55%;
   }
-  38% {
-    left: 57%;
+}
+@keyframes share-right-path {
+  0%,
+  30%,
+  74%,
+  100% {
+    left: calc(-1 * var(--cursor-tip));
     top: 55%;
   }
   48%,
   60% {
-    left: 80%;
+    left: 60%;
     top: 57%;
   }
-  75% {
-    left: 66%;
-    top: 64%;
+}
+@keyframes share-left-visible {
+  0%,
+  74%,
+  100% {
+    opacity: 1;
   }
-  88% {
-    left: 40%;
-    top: 52%;
+  30% {
+    opacity: 0;
+  }
+}
+@keyframes share-right-visible {
+  0%,
+  74%,
+  100% {
+    opacity: 0;
+  }
+  30% {
+    opacity: 1;
   }
 }
 .workspace-picture {
@@ -1545,10 +1578,6 @@ h3 {
     transform: translateX(0);
   }
 }
-.mode-mirror .cursor-track,
-.mode-remote .cursor-track {
-  display: none;
-}
 .mirror-cursor {
   position: absolute;
   z-index: 3;
@@ -1608,7 +1637,10 @@ h3 {
   .mode-description p {
     font-size: 12px;
   }
-  .cursor-track > span {
+  .share-cursor {
+    --cursor-tip: 2px;
+  }
+  .share-cursor > span {
     font-size: 5px;
     padding: 3px 4px;
     margin-left: 10px;
@@ -1641,7 +1673,7 @@ h3 {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .cursor-track,
+  .share-cursor,
   .mirror-cursor,
   .extend-cursor,
   .workspace-window {

@@ -53,6 +53,15 @@ const modes = [
 
 type Mode = (typeof modes)[number]['id']
 
+function ShareCursor({ side }: { side: 'left' | 'right' }) {
+  return (
+    <div className={`share-cursor share-cursor-${side}`}>
+      <MousePointer2 className="visual-cursor" fill="currentColor" />
+      <span>YOU</span>
+    </div>
+  )
+}
+
 function Workspace({ side, mode }: { side: 'left' | 'right'; mode: Mode }) {
   return (
     <div className={`workspace-picture workspace-${side}`}>
@@ -150,6 +159,7 @@ function Desk() {
               ) : (
                 <Workspace side="left" mode={mode} />
               )}
+              {mode === 'share' ? <ShareCursor side="left" /> : null}
             </div>
             <div className="monitor-chin">
               <div />
@@ -180,17 +190,12 @@ function Desk() {
               ) : (
                 <Workspace side="right" mode={mode} />
               )}
+              {mode === 'share' ? <ShareCursor side="right" /> : null}
             </div>
             <div className="laptop-base">
               <div />
             </div>
           </div>
-          {mode === 'share' ? (
-            <div className="cursor-track" key={mode}>
-              <MousePointer2 className="visual-cursor" fill="currentColor" />
-              <span>YOU</span>
-            </div>
-          ) : null}
         </div>
         <div className="mode-description">
           <h2>{current.title}</h2>
