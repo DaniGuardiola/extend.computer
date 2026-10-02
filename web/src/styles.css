@@ -1672,179 +1672,114 @@ h3 {
 }
 @keyframes extend-grab {
   0%,
+  26%,
+  86%,
   100% {
-    left: 46%;
-    top: 40%;
-  }
-  8%,
-  38%,
-  74%,
-  94% {
     left: 46%;
     top: var(--extend-grab-top);
   }
-  42%,
-  46% {
+  31% {
+    left: calc(var(--mirror-circle-x) + 14px);
+    top: calc(var(--mirror-circle-y) - 12px);
+  }
+  36%,
+  40% {
     left: var(--mirror-circle-x);
     top: var(--mirror-circle-y);
   }
-  50%,
-  54% {
+  47% {
+    left: calc(var(--mirror-square-x) - 12px);
+    top: calc(var(--mirror-square-y) + 10px);
+  }
+  54%,
+  58% {
     left: var(--mirror-square-x);
     top: var(--mirror-square-y);
   }
-  58%,
-  62% {
+  65% {
+    left: calc(var(--mirror-toggle-x) - 12px);
+    top: calc(var(--mirror-toggle-y) - 10px);
+  }
+  72%,
+  76% {
     left: var(--mirror-toggle-x);
     top: var(--mirror-toggle-y);
   }
-  66%,
-  68% {
-    left: 92%;
-    top: 90%;
+  82% {
+    left: 50%;
+    top: calc(var(--extend-grab-top) + 10px);
   }
 }
 @keyframes extend-held {
   0%,
   38%,
-  48%,
   56%,
-  64%,
-  72%,
-  94%,
+  74%,
+  86%,
   100% {
-    opacity: 0;
-  }
-  8%,
-  44%,
-  52%,
-  60%,
-  68%,
-  74% {
     opacity: 1;
+  }
+  26%,
+  42%,
+  60%,
+  78% {
+    opacity: 0;
   }
 }
 @keyframes extend-click {
   0%,
-  43.99%,
-  51.99%,
-  59.99%,
-  67.99%,
-  74%,
+  37.99%,
+  55.99%,
+  73.99%,
+  86%,
   100% {
     transform: scale(1);
   }
-  44%,
-  52%,
-  60%,
-  68% {
+  38%,
+  56%,
+  74% {
     transform: scale(0.5);
   }
-  48%,
-  56%,
-  64%,
-  72% {
+  42%,
+  60%,
+  78% {
     transform: scale(1.6);
   }
 }
 @keyframes window-out {
   0%,
-  12%,
-  94%,
+  8%,
+  98%,
   100% {
     transform: translateX(0);
   }
-  38%,
-  78% {
+  26%,
+  88% {
     transform: translateX(150%);
   }
 }
 @keyframes window-in {
   0%,
-  12%,
-  94%,
+  8%,
+  98%,
   100% {
     transform: translateX(-150%);
   }
-  38%,
-  78% {
+  26%,
+  88% {
     transform: translateX(0);
   }
 }
-.mode-extend .workspace-art i:first-child {
-  animation: extend-select-circle var(--demo-duration) ease-out infinite;
+.mode-extend {
+  --demo-duration: 7s;
 }
-.mode-extend .workspace-art i:nth-child(2) {
-  animation: extend-select-square var(--demo-duration) ease-out infinite;
+.mode-extend .extend-cursor {
+  animation-timing-function: cubic-bezier(0.35, 0, 0.2, 1);
 }
-.mode-extend .workspace-art i:nth-child(3) {
-  animation: extend-fill-circle var(--demo-duration) ease-out infinite;
-}
-@keyframes extend-select-circle {
-  0%,
-  43.99%,
-  72%,
-  100% {
-    background: var(--acid);
-    transform: scale(1);
-  }
-  44% {
-    background: #b78bdd;
-    transform: scale(0.9);
-  }
-  48%,
-  67.99% {
-    background: #b78bdd;
-    transform: scale(1);
-  }
-  68% {
-    background: var(--acid);
-    transform: scale(1);
-  }
-}
-@keyframes extend-select-square {
-  0%,
-  51.99%,
-  72%,
-  100% {
-    background: #779d55;
-    transform: rotate(15deg);
-  }
-  52% {
-    background: #b78bdd;
-    transform: rotate(-12deg) scale(0.9);
-  }
-  56%,
-  67.99% {
-    background: #b78bdd;
-    transform: rotate(-12deg);
-  }
-  68% {
-    background: #779d55;
-    transform: rotate(15deg);
-  }
-}
-@keyframes extend-fill-circle {
-  0%,
-  59.99%,
-  72%,
-  100% {
-    background: transparent;
-    transform: scale(1);
-  }
-  60% {
-    background: var(--acid);
-    transform: scale(0.9);
-  }
-  64%,
-  67.99% {
-    background: var(--acid);
-    transform: scale(1);
-  }
-  68% {
-    background: transparent;
-    transform: scale(1);
-  }
+.mode-extend .workspace-art i {
+  transition:
+    background-color 180ms ease-out,
+    transform 180ms ease-out;
 }
 .laptop-wallpaper,
 .remote-local-workspace {

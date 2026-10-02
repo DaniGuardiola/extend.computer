@@ -16,7 +16,13 @@ import {
   MessageSquare,
   Sparkles,
 } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type RefObject,
+} from 'react'
 import * as Ariakit from '@ariakit/react'
 import { Brand } from '../components/Brand'
 
@@ -393,7 +399,88 @@ function WorkspaceCursor({ mode }: { mode: 'extend' | 'mirror' | 'remote' }) {
   )
 }
 
-function Workspace({ side, mode }: { side: 'left' | 'right'; mode: Mode }) {
+function useExtendArtwork(root: RefObject<HTMLElement | null>, mode: Mode) {
+  const [artwork, setArtwork] = useState<CSSProperties[]>([
+    { background: '#c2f269', transform: 'scale(1)' },
+    { background: '#779d55', transform: 'rotate(15deg)' },
+    { background: 'transparent', transform: 'scale(1)' },
+  ])
+  useEffect(() => {
+    if (mode !== 'extend') return
+    let frame = 0
+    let animation: Animation | undefined
+    let handled = 0
+    const choose = (options: string[], previous: unknown) => {
+      const candidates = options.filter((value) => value !== previous)
+      return candidates[Math.floor(Math.random() * candidates.length)]
+    }
+    const tick = () => {
+      animation ??= root.current
+        ?.querySelector('.workspace-right .extend-cursor')
+        ?.getAnimations()
+        .find((item) => (item as CSSAnimation).animationName === 'extend-grab')
+      if (animation && typeof animation.currentTime === 'number') {
+        const duration = Number(animation.effect!.getTiming().duration)
+        const cycle = Math.floor(animation.currentTime / duration)
+        const progress = (animation.currentTime % duration) / duration
+        const count =
+          cycle * 3 +
+          [0.38, 0.56, 0.74].filter((time) => progress >= time).length
+        // Skip old clicks after a long background interval.
+        handled = Math.max(handled, count - 6)
+        while (handled < count) {
+          const index = handled++ % 3
+          setArtwork((previous) =>
+            previous.map((shape, i) =>
+              i !== index
+                ? shape
+                : {
+                    background: choose(
+                      index === 2
+                        ? [
+                            'transparent',
+                            '#c2f269',
+                            '#b78bdd',
+                            '#72c6b7',
+                            '#efb57c',
+                          ]
+                        : ['#c2f269', '#b78bdd', '#72c6b7', '#efb57c'],
+                      shape.background,
+                    ),
+                    transform: choose(
+                      index === 1
+                        ? [
+                            'rotate(-24deg)',
+                            'rotate(-12deg)',
+                            'rotate(12deg)',
+                            'rotate(24deg)',
+                            'rotate(38deg)',
+                          ]
+                        : ['scale(0.88)', 'scale(1)', 'scale(1.12)'],
+                      shape.transform,
+                    ),
+                  },
+            ),
+          )
+        }
+      }
+      frame = requestAnimationFrame(tick)
+    }
+    frame = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(frame)
+  }, [root, mode])
+  return artwork
+}
+
+function Workspace({
+  side,
+  mode,
+  artwork,
+}: {
+  side: 'left' | 'right'
+  mode: Mode
+  artwork?: CSSProperties[]
+}) {
   if (mode === 'remote' && side === 'right') {
     return (
       <div className="workspace-picture remote-local-workspace">
@@ -427,9 +514,12 @@ function Workspace({ side, mode }: { side: 'left' | 'right'; mode: Mode }) {
           </span>
         </div>
         <div className="workspace-art">
-          <i />
-          <i />
-          <i />
+          {[0, 1, 2].map((index) => (
+            <i
+              key={index}
+              style={mode === 'extend' ? artwork?.[index] : undefined}
+            />
+          ))}
         </div>
         <span className="workspace-caption">Good things take space.</span>
         {mode === 'extend' || mode === 'mirror' || mode === 'remote' ? (
@@ -442,6 +532,8 @@ function Workspace({ side, mode }: { side: 'left' | 'right'; mode: Mode }) {
 
 function Desk() {
   const [mode, setMode] = useState<Mode>('extend')
+  const ref = useRef<HTMLElement>(null)
+  const artwork = useExtendArtwork(ref, mode)
   const [paused, setPaused] = useState(false)
   const current = modes.find((item) => item.id === mode)!
   const tabs = Ariakit.useTabStore({
@@ -450,6 +542,7 @@ function Desk() {
   })
   return (
     <section
+      ref={ref}
       className={`desk-visual mode-${mode} ${paused ? 'demo-paused' : ''}`}
       aria-label="Explore the four modes"
     >
@@ -488,7 +581,7 @@ function Desk() {
                   </div>
                 </div>
               ) : (
-                <Workspace side="left" mode={mode} />
+                <Workspace side="left" mode={mode} artwork={artwork} />
               )}
               {mode === 'share' ? <ShareCursor side="left" /> : null}
             </div>
@@ -510,7 +603,7 @@ function Desk() {
                   <ShareTyping side="right" />
                 </div>
               ) : (
-                <Workspace side="right" mode={mode} />
+                <Workspace side="right" mode={mode} artwork={artwork} />
               )}
               {mode === 'share' ? <ShareCursor side="right" /> : null}
             </div>
