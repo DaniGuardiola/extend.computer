@@ -1678,36 +1678,20 @@ h3 {
     left: 46%;
     top: var(--extend-grab-top);
   }
-  31% {
-    left: calc(var(--mirror-circle-x) + 14px);
-    top: calc(var(--mirror-circle-y) - 12px);
-  }
   36%,
   40% {
     left: var(--mirror-circle-x);
     top: var(--mirror-circle-y);
-  }
-  47% {
-    left: calc(var(--mirror-square-x) - 12px);
-    top: calc(var(--mirror-square-y) + 10px);
   }
   54%,
   58% {
     left: var(--mirror-square-x);
     top: var(--mirror-square-y);
   }
-  65% {
-    left: calc(var(--mirror-toggle-x) - 12px);
-    top: calc(var(--mirror-toggle-y) - 10px);
-  }
   72%,
   76% {
     left: var(--mirror-toggle-x);
     top: var(--mirror-toggle-y);
-  }
-  82% {
-    left: 50%;
-    top: calc(var(--extend-grab-top) + 10px);
   }
 }
 @keyframes extend-held {
@@ -2544,4 +2528,35 @@ h3 {
     padding: 0;
     height: calc(100% - 17px);
   }
+}
+
+.mfa-section {
+  margin-block: 2.5rem;
+}
+.mfa-section h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.mfa-actions {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.totp-qr {
+  display: block;
+  width: 220px;
+  height: 220px;
+  margin: 1rem auto;
+}
+.recovery-codes {
+  overflow: auto;
+  font-size: 0.8rem;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.second-factor .button {
+  margin-bottom: 0.8rem;
 }
