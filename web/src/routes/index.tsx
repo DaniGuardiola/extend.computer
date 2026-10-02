@@ -10,7 +10,7 @@ import {
   Laptop,
   Terminal,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import * as Ariakit from '@ariakit/react'
 import { Brand } from '../components/Brand'
 
@@ -54,10 +54,53 @@ const modes = [
 type Mode = (typeof modes)[number]['id']
 
 function ShareCursor({ side }: { side: 'left' | 'right' }) {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const cursor = ref.current!
+    const screen = cursor.parentElement!
+    const field = screen.querySelector<HTMLElement>(`.share-typing-${side}`)!
+    let active = true
+    const update = () => {
+      if (!active) return
+      const bounds = screen.getBoundingClientRect()
+      const target = field.getBoundingClientRect()
+      const tip = Number.parseFloat(
+        getComputedStyle(cursor).getPropertyValue('--cursor-tip'),
+      )
+      cursor.style.setProperty(
+        '--type-x',
+        `${target.left + target.width * 0.9 - bounds.left - screen.clientLeft - tip}px`,
+      )
+      cursor.style.setProperty(
+        '--type-y',
+        `${target.top + target.height / 2 - bounds.top - screen.clientTop - tip}px`,
+      )
+    }
+    const observer = new ResizeObserver(update)
+    observer.observe(screen)
+    observer.observe(field)
+    update()
+    void document.fonts.ready.then(update)
+    return () => {
+      active = false
+      observer.disconnect()
+    }
+  }, [side])
   return (
-    <div className={`share-cursor share-cursor-${side}`}>
+    <div ref={ref} className={`share-cursor share-cursor-${side}`}>
       <MousePointer2 className="visual-cursor" fill="currentColor" />
       <span>YOU</span>
+    </div>
+  )
+}
+
+function ShareTyping({ side }: { side: 'left' | 'right' }) {
+  return (
+    <div className={`share-typing share-typing-${side}`}>
+      <span className="accent">›</span>
+      <span className="share-typed-text">
+        {side === 'left' ? 'hello, desktop' : 'hello, laptop'}
+      </span>
     </div>
   )
 }
@@ -173,6 +216,7 @@ function Desk() {
                       <br />
                       <b>✓</b> keep going
                     </p>
+                    <ShareTyping side="left" />
                   </div>
                 </div>
               ) : (
@@ -205,6 +249,7 @@ function Desk() {
                     your flow<span className="accent">.</span>
                   </span>
                   <div className="wallpaper-orbit" />
+                  <ShareTyping side="right" />
                 </div>
               ) : (
                 <Workspace side="right" mode={mode} />
