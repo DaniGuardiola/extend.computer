@@ -9,6 +9,9 @@ import {
   Radio,
   Laptop,
   Terminal,
+  Command,
+  Wifi,
+  Battery,
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import * as Ariakit from '@ariakit/react'
@@ -52,6 +55,31 @@ const modes = [
 ] as const
 
 type Mode = (typeof modes)[number]['id']
+
+function ScreenMenuBar({
+  app,
+  purple = false,
+}: {
+  app: string
+  purple?: boolean
+}) {
+  return (
+    <div className={`screen-toolbar os-bar ${purple ? 'os-bar-purple' : ''}`}>
+      <div className="os-menu">
+        <Command />
+        <strong>{app}</strong>
+        <span>File</span>
+        <span>Edit</span>
+        <span>View</span>
+      </div>
+      <div className="os-status">
+        <Wifi />
+        <Battery />
+        <span>9:41</span>
+      </div>
+    </div>
+  )
+}
 
 function ShareCursor({ side }: { side: 'left' | 'right' }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -274,6 +302,7 @@ function Workspace({ side, mode }: { side: 'left' | 'right'; mode: Mode }) {
             <i className="status-dot" />
           </div>
           <div className="remote-viewport">
+            <ScreenMenuBar app="Canvas" />
             <Workspace side="left" mode="remote" />
           </div>
         </div>
@@ -349,10 +378,7 @@ function Desk() {
         <div className="computers" aria-hidden="true">
           <div className="computer monitor">
             <div className="screen">
-              <div className="screen-toolbar">
-                <span className="window-dots">● ● ●</span>
-                <span>{mode === 'remote' ? 'REMOTE MAC' : 'DESKTOP'}</span>
-              </div>
+              <ScreenMenuBar app={mode === 'share' ? 'Terminal' : 'Canvas'} />
               {mode === 'share' ? (
                 <div className="screen-content">
                   <div className="screen-greeting">
@@ -377,16 +403,16 @@ function Desk() {
           </div>
           <div className="computer laptop">
             <div className="screen">
-              <div className="screen-toolbar">
-                <span className="window-dots">● ● ●</span>
-                <span>
-                  {mode === 'extend'
-                    ? 'EXTRA DISPLAY'
+              <ScreenMenuBar
+                app={
+                  mode === 'share'
+                    ? 'Notes'
                     : mode === 'remote'
-                      ? 'THIS MAC'
-                      : 'LAPTOP'}
-                </span>
-              </div>
+                      ? 'extend.computer'
+                      : 'Canvas'
+                }
+                purple={mode === 'share' || mode === 'remote'}
+              />
               {mode === 'share' ? (
                 <div className="laptop-wallpaper">
                   <span>

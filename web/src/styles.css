@@ -329,24 +329,37 @@ h3 {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  height: 28px;
+  padding: 0 10px;
   font:
-    6px ui-monospace,
-    monospace;
-  color: #738368;
-  padding: 10px 14px;
-  letter-spacing: 1px;
-  border-bottom: 1px solid #303c26;
+    7px 'Inter Variable',
+    sans-serif;
+  color: #d5e2c8;
+  background: #24331f;
+  border-bottom: 1px solid #39492d;
 }
-.window-dots {
-  font-size: 5px;
-  letter-spacing: 3px;
+.os-bar-purple {
+  color: #ecdef3;
+  background: #3c2e49;
+  border-color: #685274;
+}
+.os-menu,
+.os-status {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  white-space: nowrap;
+}
+.os-bar svg {
+  width: 10px;
+  height: 10px;
 }
 .screen-content {
   display: flex;
   padding: 16px 20px 8px;
   align-items: center;
   gap: 8px;
-  height: calc(100% - 30px);
+  height: calc(100% - 28px);
 }
 .screen-greeting {
   width: 53%;
@@ -1105,12 +1118,17 @@ h3 {
     border-width: 3px;
   }
   .screen-toolbar {
-    padding: 5px 7px;
+    height: 17px;
+    padding: 0 5px;
     font-size: 4px;
   }
-  .window-dots {
-    font-size: 3px;
-    letter-spacing: 1px;
+  .os-menu,
+  .os-status {
+    gap: 4px;
+  }
+  .os-bar svg {
+    width: 6px;
+    height: 6px;
   }
   .screen-content {
     padding: 7px;
@@ -1742,7 +1760,20 @@ h3 {
   min-height: 0;
 }
 .remote-viewport > .workspace-picture {
-  inset: 0;
+  inset: 14px 0 0;
+}
+.remote-viewport .os-bar {
+  height: 14px;
+  padding: 0 4px;
+  font-size: 4px;
+}
+.remote-viewport .os-menu,
+.remote-viewport .os-status {
+  gap: 4px;
+}
+.remote-viewport .os-bar svg {
+  width: 6px;
+  height: 6px;
 }
 .remote-viewport .workspace-window-bar {
   padding: 4px;
@@ -2086,6 +2117,22 @@ h3 {
   }
   .mirror-drag-cursor {
     --mirror-grab-top: 2px;
+  }
+  .remote-viewport > .workspace-picture {
+    inset-block-start: 9px;
+  }
+  .remote-viewport .os-bar {
+    height: 9px;
+    font-size: 2px;
+    padding: 0 2px;
+  }
+  .remote-viewport .os-menu,
+  .remote-viewport .os-status {
+    gap: 2px;
+  }
+  .remote-viewport .os-bar svg {
+    width: 4px;
+    height: 4px;
   }
   .remote-local-note {
     padding: 4px;
