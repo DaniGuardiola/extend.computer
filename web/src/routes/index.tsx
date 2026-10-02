@@ -208,10 +208,10 @@ function ShareCursor({ side }: { side: 'left' | 'right' }) {
         } else if (name === `share-${side}-visible`) {
           const initial = side === 'left' ? 1 : 0
           effect.setKeyframes([
-            { opacity: initial, offset: 0 },
-            { opacity: 1 - initial, offset: outbound },
-            { opacity: initial, offset: inbound },
-            { opacity: initial, offset: 1 },
+            { opacity: initial, offset: 0, easing: 'steps(1, end)' },
+            { opacity: 1 - initial, offset: outbound, easing: 'steps(1, end)' },
+            { opacity: initial, offset: inbound, easing: 'steps(1, end)' },
+            { opacity: initial, offset: 1, easing: 'steps(1, end)' },
           ])
         }
       }
@@ -485,7 +485,7 @@ function useExtendArtwork(root: RefObject<HTMLElement | null>, mode: Mode) {
     { background: 'transparent', transform: 'scale(1)' },
   ])
   useEffect(() => {
-    if (mode !== 'extend') return
+    if (mode !== 'extend' && mode !== 'mirror') return
     let frame = 0
     let animation: Animation | undefined
     let handled = 0
@@ -497,18 +497,23 @@ function useExtendArtwork(root: RefObject<HTMLElement | null>, mode: Mode) {
       animation ??= root.current
         ?.querySelector('.workspace-right .extend-cursor')
         ?.getAnimations()
-        .find((item) => (item as CSSAnimation).animationName === 'extend-grab')
+        .find(
+          (item) =>
+            (item as CSSAnimation).animationName ===
+            (mode === 'extend' ? 'extend-grab' : 'mirror-grab'),
+        )
       if (animation && typeof animation.currentTime === 'number') {
         const duration = Number(animation.effect!.getTiming().duration)
         const cycle = Math.floor(animation.currentTime / duration)
         const progress = (animation.currentTime % duration) / duration
+        const clicks = mode === 'extend' ? [0.38, 0.52, 0.66] : [0.56, 0.74]
         const count =
-          cycle * 3 +
-          [0.38, 0.56, 0.74].filter((time) => progress >= time).length
+          cycle * clicks.length +
+          clicks.filter((time) => progress >= time).length
         // Skip old clicks after a long background interval.
         handled = Math.max(handled, count - 6)
         while (handled < count) {
-          const index = handled++ % 3
+          const index = handled++ % clicks.length
           setArtwork((previous) =>
             previous.map((shape, i) =>
               i !== index
@@ -635,7 +640,11 @@ function Workspace({
           {[0, 1, 2].map((index) => (
             <i
               key={index}
-              style={mode === 'extend' ? artwork?.[index] : undefined}
+              style={
+                mode === 'extend' || mode === 'mirror'
+                  ? artwork?.[index]
+                  : undefined
+              }
             />
           ))}
         </div>
@@ -652,6 +661,34 @@ function Desk() {
   const [mode, setMode] = useState<Mode>('extend')
   const ref = useRef<HTMLElement>(null)
   const artwork = useExtendArtwork(ref, mode)
+  useEffect(() => {
+    if (mode !== 'remote') return
+    let frame = 0
+    let cycle = -1
+    const tick = () => {
+      const root = ref.current!
+      const animation = root
+        .querySelector('.remote-cursor')
+        ?.getAnimations()
+        .find((item) => (item as CSSAnimation).animationName === 'remote-move')
+      if (animation && typeof animation.currentTime === 'number') {
+        const duration = Number(animation.effect!.getTiming().duration)
+        const nextCycle = Math.floor(animation.currentTime / duration)
+        if (nextCycle !== cycle) {
+          cycle = nextCycle
+          root.style.setProperty('--remote-drag-x', `${3 + Math.random() * 6}%`)
+          root.style.setProperty('--remote-drag-y', `${4 + Math.random() * 6}%`)
+          root.style.setProperty(
+            '--remote-grab-x',
+            `${40 + Math.random() * 16}%`,
+          )
+        }
+      }
+      frame = requestAnimationFrame(tick)
+    }
+    frame = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(frame)
+  }, [mode])
   const [paused, setPaused] = useState(false)
   const current = modes.find((item) => item.id === mode)!
   const tabs = Ariakit.useTabStore({
