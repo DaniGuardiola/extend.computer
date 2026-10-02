@@ -221,6 +221,42 @@ function ShareTyping({ side }: { side: 'left' | 'right' }) {
   )
 }
 
+function MirrorCursor() {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const cursor = ref.current!
+    const window = cursor.parentElement!
+    const update = () => {
+      const bounds = window.getBoundingClientRect()
+      const tip =
+        (cursor.querySelector('svg')!.getBoundingClientRect().width * 3) / 24
+      for (const [index, name] of ['circle', 'square'].entries()) {
+        const shape = window
+          .querySelectorAll('.workspace-art i')
+          [index].getBoundingClientRect()
+        cursor.style.setProperty(
+          `--mirror-${name}-x`,
+          `${shape.left + shape.width / 2 - bounds.left - window.clientLeft - tip}px`,
+        )
+        cursor.style.setProperty(
+          `--mirror-${name}-y`,
+          `${shape.top + shape.height / 2 - bounds.top - window.clientTop - tip}px`,
+        )
+      }
+    }
+    const observer = new ResizeObserver(update)
+    observer.observe(window)
+    observer.observe(window.querySelector('.workspace-art')!)
+    update()
+    return () => observer.disconnect()
+  }, [])
+  return (
+    <div ref={ref} className="extend-cursor mirror-drag-cursor">
+      <MousePointer2 fill="currentColor" />
+    </div>
+  )
+}
+
 function Workspace({ side, mode }: { side: 'left' | 'right'; mode: Mode }) {
   if (mode === 'remote' && side === 'right') {
     return (
@@ -266,13 +302,12 @@ function Workspace({ side, mode }: { side: 'left' | 'right'; mode: Mode }) {
           <i />
         </div>
         <span className="workspace-caption">Good things take space.</span>
-        {mode === 'extend' || mode === 'mirror' ? (
-          <div
-            className={`extend-cursor ${mode === 'mirror' ? 'mirror-drag-cursor' : ''}`}
-          >
+        {mode === 'extend' ? (
+          <div className="extend-cursor">
             <MousePointer2 fill="currentColor" />
           </div>
         ) : null}
+        {mode === 'mirror' ? <MirrorCursor /> : null}
       </div>
     </div>
   )

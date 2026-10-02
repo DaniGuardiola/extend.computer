@@ -1769,56 +1769,154 @@ h3 {
     infinite;
 }
 .mirror-drag-cursor::before {
-  animation: mirror-held var(--demo-duration) step-end infinite;
+  animation:
+    mirror-held var(--demo-duration) step-end infinite,
+    mirror-click var(--demo-duration) linear infinite;
 }
 @keyframes mirror-window-circle {
   0%,
-  12%,
-  76%,
+  10%,
+  42%,
   100% {
     transform: translate(0, 0);
   }
-  20% {
+  14% {
     transform: translate(5.66%, 2.05%);
   }
-  28% {
+  18% {
     transform: translate(8%, 7%);
   }
-  36% {
+  22% {
     transform: translate(5.66%, 11.95%);
   }
-  44% {
+  26% {
     transform: translate(0, 14%);
   }
-  52% {
+  30% {
     transform: translate(-5.66%, 11.95%);
   }
-  60% {
+  34% {
     transform: translate(-8%, 7%);
   }
-  68% {
+  38% {
     transform: translate(-5.66%, 2.05%);
   }
 }
 @keyframes mirror-grab {
   0%,
-  86%,
   100% {
+    left: 46%;
     top: 40%;
   }
+  90%,
+  94% {
+    left: 92%;
+    top: 90%;
+  }
   6%,
-  76% {
+  42% {
+    left: 46%;
     top: var(--mirror-grab-top);
+  }
+  54%,
+  62% {
+    left: var(--mirror-circle-x);
+    top: var(--mirror-circle-y);
+  }
+  72%,
+  80% {
+    left: var(--mirror-square-x);
+    top: var(--mirror-square-y);
   }
 }
 @keyframes mirror-held {
   0%,
-  76%,
+  42%,
   100% {
     opacity: 0;
   }
-  6% {
+  6%,
+  56%,
+  74%,
+  90% {
     opacity: 1;
+  }
+  60%,
+  78%,
+  94% {
+    opacity: 0;
+  }
+}
+@keyframes mirror-click {
+  0%,
+  55.99%,
+  73.99%,
+  89.99%,
+  100% {
+    transform: scale(1);
+  }
+  56%,
+  74%,
+  90% {
+    transform: scale(0.5);
+  }
+  60%,
+  78%,
+  94% {
+    transform: scale(1.6);
+  }
+}
+.mode-mirror .workspace-art i:first-child {
+  animation: mirror-select-circle var(--demo-duration) ease-out infinite;
+}
+.mode-mirror .workspace-art i:nth-child(2) {
+  animation: mirror-select-square var(--demo-duration) ease-out infinite;
+}
+@keyframes mirror-select-circle {
+  0%,
+  55.99%,
+  74%,
+  100% {
+    background: var(--acid);
+    transform: scale(1);
+    box-shadow: none;
+  }
+  56% {
+    background: #b78bdd;
+    transform: scale(0.92);
+    box-shadow: 0 0 0 2px #dcc3ee;
+  }
+  60%,
+  73.99% {
+    background: #b78bdd;
+    transform: scale(1);
+    box-shadow: 0 0 0 2px #dcc3ee;
+  }
+}
+@keyframes mirror-select-square {
+  0%,
+  73.99%,
+  94%,
+  100% {
+    background: #779d55;
+    transform: rotate(15deg);
+    box-shadow: none;
+  }
+  74% {
+    background: #b78bdd;
+    transform: rotate(-12deg) scale(0.92);
+    box-shadow: 0 0 0 2px #dcc3ee;
+  }
+  78%,
+  89.99% {
+    background: #b78bdd;
+    transform: rotate(-12deg);
+    box-shadow: 0 0 0 2px #dcc3ee;
+  }
+  90% {
+    background: #779d55;
+    transform: rotate(15deg);
+    box-shadow: none;
   }
 }
 .remote-cursor svg {
