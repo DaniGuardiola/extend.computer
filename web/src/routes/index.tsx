@@ -221,7 +221,7 @@ function ShareTyping({ side }: { side: 'left' | 'right' }) {
   )
 }
 
-function MirrorCursor() {
+function WorkspaceCursor({ mode }: { mode: 'mirror' | 'remote' }) {
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const cursor = ref.current!
@@ -230,7 +230,7 @@ function MirrorCursor() {
       const bounds = window.getBoundingClientRect()
       const tip =
         (cursor.querySelector('svg')!.getBoundingClientRect().width * 3) / 24
-      for (const [index, name] of ['circle', 'square'].entries()) {
+      for (const [index, name] of ['circle', 'square', 'toggle'].entries()) {
         const shape = window
           .querySelectorAll('.workspace-art i')
           [index].getBoundingClientRect()
@@ -249,9 +249,14 @@ function MirrorCursor() {
     observer.observe(window.querySelector('.workspace-art')!)
     update()
     return () => observer.disconnect()
-  }, [])
+  }, [mode])
   return (
-    <div ref={ref} className="extend-cursor mirror-drag-cursor">
+    <div
+      ref={ref}
+      className={
+        mode === 'mirror' ? 'extend-cursor mirror-drag-cursor' : 'remote-cursor'
+      }
+    >
       <MousePointer2 fill="currentColor" />
     </div>
   )
@@ -278,11 +283,6 @@ function Workspace({ side, mode }: { side: 'left' | 'right'; mode: Mode }) {
   return (
     <div className={`workspace-picture workspace-${side}`}>
       <div className="workspace-grid" />
-      {mode === 'remote' ? (
-        <div className="remote-cursor">
-          <MousePointer2 fill="currentColor" />
-        </div>
-      ) : null}
       <div className="workspace-window">
         <div className="workspace-window-bar">
           ● ● ●{' '}
@@ -307,7 +307,9 @@ function Workspace({ side, mode }: { side: 'left' | 'right'; mode: Mode }) {
             <MousePointer2 fill="currentColor" />
           </div>
         ) : null}
-        {mode === 'mirror' ? <MirrorCursor /> : null}
+        {mode === 'mirror' || mode === 'remote' ? (
+          <WorkspaceCursor mode={mode} />
+        ) : null}
       </div>
     </div>
   )
