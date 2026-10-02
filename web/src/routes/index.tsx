@@ -34,20 +34,20 @@ const modes = [
     detail: 'YOUR KEYBOARD + MOUSE',
   },
   {
-    id: 'mirror',
-    label: 'Mirror screen',
-    title: 'Your screen. A different seat.',
-    description:
-      'Bring one Mac’s screen onto another. See the same workspace and control it from wherever you’re sitting.',
-    detail: 'SAME SCREEN. NEW PERSPECTIVE.',
-  },
-  {
     id: 'remote',
     label: 'Remote desktop',
     title: 'Your other Mac. Right here.',
     description:
       'Open another Mac’s desktop in a window on yours. Use its apps and files while keeping your own workspace.',
     detail: 'ANOTHER MAC. WITHIN REACH.',
+  },
+  {
+    id: 'mirror',
+    label: 'Mirror screen',
+    title: 'Your screen. A different seat.',
+    description:
+      'Bring one Mac’s screen onto another. See the same workspace and control it from wherever you’re sitting.',
+    detail: 'SAME SCREEN. NEW PERSPECTIVE.',
   },
 ] as const
 
