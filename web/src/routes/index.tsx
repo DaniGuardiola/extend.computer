@@ -122,28 +122,37 @@ function ShareCursor({ side }: { side: 'left' | 'right' }) {
       .querySelector<HTMLElement>(
         side === 'left' ? '.laptop .screen' : '.monitor .screen',
       )!
+    const peerField = peer.querySelector<HTMLElement>(
+      `.share-typing-${side === 'left' ? 'right' : 'left'} .share-typing-input`,
+    )!
     let active = true
     const update = () => {
       if (!active) return
       const bounds = screen.getBoundingClientRect()
       const target = field.getBoundingClientRect()
       const peerBounds = peer.getBoundingClientRect()
-      const sharedTop = Math.max(
-        bounds.top + screen.clientTop,
-        peerBounds.top + peer.clientTop,
-      )
-      const sharedBottom = Math.min(
-        bounds.bottom - screen.clientTop,
-        peerBounds.bottom - peer.clientTop,
-      )
-      const leftField = (
-        side === 'left' ? screen : peer
-      ).querySelector<HTMLElement>('.share-typing-left .share-typing-input')!
-      const leftTarget = leftField.getBoundingClientRect()
-      const crossingY = Math.min(
-        sharedBottom,
-        Math.max(sharedTop, leftTarget.top + leftTarget.height / 2),
-      )
+      const peerTarget = peerField.getBoundingClientRect()
+      const leftTarget = side === 'left' ? target : peerTarget
+      const rightTarget = side === 'right' ? target : peerTarget
+      const leftBounds = side === 'left' ? bounds : peerBounds
+      const rightBounds = side === 'right' ? bounds : peerBounds
+      const leftScreen = side === 'left' ? screen : peer
+      const rightScreen = side === 'right' ? screen : peer
+      const leftDistance =
+        leftBounds.left +
+        leftScreen.clientLeft +
+        (leftBounds.width - leftScreen.clientLeft * 2) -
+        (leftTarget.left + leftTarget.width * 0.9)
+      const rightDistance =
+        rightTarget.left +
+        rightTarget.width * 0.35 -
+        (rightBounds.left + rightScreen.clientLeft)
+      // Treat the display edges as adjacent, with one slope across the handoff.
+      const leftY = leftTarget.top + leftTarget.height / 2
+      const rightY = rightTarget.top + rightTarget.height / 2
+      const crossingY =
+        leftY +
+        ((rightY - leftY) * leftDistance) / (leftDistance + rightDistance)
       const tip = Number.parseFloat(
         getComputedStyle(cursor).getPropertyValue('--cursor-tip'),
       )
@@ -164,6 +173,7 @@ function ShareCursor({ side }: { side: 'left' | 'right' }) {
     observer.observe(screen)
     observer.observe(field)
     observer.observe(peer)
+    observer.observe(peerField)
     update()
     void document.fonts.ready.then(update)
     return () => {

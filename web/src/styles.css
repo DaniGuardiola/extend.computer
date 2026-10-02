@@ -1423,7 +1423,7 @@ h3 {
 }
 .share-cursor {
   --cursor-tip: 3px;
-  --cursor-entry: -64px;
+  --cursor-entry: calc(0px - var(--cursor-tip));
   position: absolute;
   left: 72%;
   top: var(--type-y, 55%);
@@ -1482,11 +1482,6 @@ h3 {
   82%,
   100% {
     left: var(--cursor-entry);
-    top: var(--cross-y);
-  }
-  36%,
-  76% {
-    left: var(--type-x);
     top: var(--cross-y);
   }
   42%,
