@@ -252,7 +252,9 @@ function ShareTyping({ side }: { side: 'left' | 'right' }) {
     let animation: Animation | undefined
     let cycle = -1
     let submitted = false
-    let responded = false
+    let reply = ''
+    let replyCount = 0
+    let nextTokenAt = Infinity
     let phrase = ''
     let input = ''
     let history =
@@ -276,7 +278,6 @@ function ShareTyping({ side }: { side: 'left' | 'right' }) {
           cycle = currentCycle
           phrase = nextPhrase()
           submitted = false
-          responded = false
         }
         const start = side === 'left' ? 0.06 : 0.46
         const finish = side === 'left' ? 0.2 : 0.68
@@ -294,17 +295,28 @@ function ShareTyping({ side }: { side: 'left' | 'right' }) {
             side === 'left' ? [...history.slice(-1), phrase] : [phrase, '…']
           submitted = true
           nextInput = ''
-          setTerminal({ history, input: '' })
-        } else if (
-          side === 'right' &&
-          submitted &&
-          !responded &&
-          progress >= 0.78
-        ) {
-          responded = true
-          history = [phrase, replies[phrases.indexOf(phrase)]]
+          if (side === 'right') {
+            reply = replies[phrases.indexOf(phrase)]
+            replyCount = 0
+            nextTokenAt = animation.currentTime + duration * 0.08
+          }
           setTerminal({ history, input: '' })
         } else if (nextInput !== input) {
+          setTerminal({ history, input: nextInput })
+        }
+        if (side === 'right' && animation.currentTime >= nextTokenAt) {
+          while (
+            replyCount < reply.length &&
+            animation.currentTime >= nextTokenAt
+          ) {
+            replyCount = Math.min(
+              reply.length,
+              replyCount + 1 + Math.floor(Math.random() * 4),
+            )
+            nextTokenAt += 45 + Math.random() * 65
+          }
+          history = [history[0], reply.slice(0, replyCount)]
+          if (replyCount === reply.length) nextTokenAt = Infinity
           setTerminal({ history, input: nextInput })
         }
         input = nextInput
