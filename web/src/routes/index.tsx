@@ -12,6 +12,9 @@ import {
   Command,
   Wifi,
   Battery,
+  Grid2X2,
+  MessageSquare,
+  Sparkles,
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import * as Ariakit from '@ariakit/react'
@@ -81,6 +84,25 @@ function ScreenMenuBar({
   )
 }
 
+function ScreenTaskbar({ remote }: { remote: boolean }) {
+  return (
+    <div className="screen-taskbar">
+      <div className="taskbar-apps">
+        <Grid2X2 />
+        <span className="taskbar-active">
+          {remote ? <Laptop /> : <MessageSquare />}
+        </span>
+        <span className="taskbar-search">Search</span>
+      </div>
+      <div className="taskbar-status">
+        <Wifi />
+        <Battery />
+        <span>9:41</span>
+      </div>
+    </div>
+  )
+}
+
 function ShareCursor({ side }: { side: 'left' | 'right' }) {
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -89,26 +111,46 @@ function ShareCursor({ side }: { side: 'left' | 'right' }) {
     const field = screen.querySelector<HTMLElement>(
       `.share-typing-${side} .share-typing-input`,
     )!
+    const peer = screen
+      .closest('.computers')!
+      .querySelector<HTMLElement>(
+        side === 'left' ? '.laptop .screen' : '.monitor .screen',
+      )!
     let active = true
     const update = () => {
       if (!active) return
       const bounds = screen.getBoundingClientRect()
       const target = field.getBoundingClientRect()
+      const peerBounds = peer.getBoundingClientRect()
+      const sharedTop = Math.max(
+        bounds.top + screen.clientTop,
+        peerBounds.top + peer.clientTop,
+      )
+      const sharedBottom = Math.min(
+        bounds.bottom - screen.clientTop,
+        peerBounds.bottom - peer.clientTop,
+      )
+      const crossingY = sharedTop + (sharedBottom - sharedTop) * 0.6
       const tip = Number.parseFloat(
         getComputedStyle(cursor).getPropertyValue('--cursor-tip'),
       )
       cursor.style.setProperty(
         '--type-x',
-        `${target.left + target.width * 0.9 - bounds.left - screen.clientLeft - tip}px`,
+        `${target.left + target.width * (side === 'left' ? 0.9 : 0.35) - bounds.left - screen.clientLeft - tip}px`,
       )
       cursor.style.setProperty(
         '--type-y',
         `${target.top + target.height / 2 - bounds.top - screen.clientTop - tip}px`,
       )
+      cursor.style.setProperty(
+        '--cross-y',
+        `${crossingY - bounds.top - screen.clientTop - tip}px`,
+      )
     }
     const observer = new ResizeObserver(update)
     observer.observe(screen)
     observer.observe(field)
+    observer.observe(peer)
     update()
     void document.fonts.ready.then(update)
     return () => {
@@ -127,7 +169,10 @@ function ShareCursor({ side }: { side: 'left' | 'right' }) {
 function ShareTyping({ side }: { side: 'left' | 'right' }) {
   const ref = useRef<HTMLDivElement>(null)
   const [terminal, setTerminal] = useState({
-    history: ['connected', 'ready to type'],
+    history:
+      side === 'left'
+        ? ['connected', 'ready to type']
+        : ['Any ideas?', 'Let’s make something.'],
     input: '',
   })
   useEffect(() => {
@@ -144,15 +189,25 @@ function ShareTyping({ side }: { side: 'left' | 'right' }) {
             'stay in flow',
           ]
         : [
-            'hello, laptop',
-            'same keyboard',
-            'new workspace',
-            'keep creating',
-            'over here now',
-            'pick up here',
-            'more ideas',
-            'one smooth hop',
+            'brainstorm',
+            'name this idea',
+            'next steps?',
+            'make it simple',
+            'a new angle',
+            'one more idea',
+            'help me focus',
+            'what comes next',
           ]
+    const replies = [
+      'Let’s explore.',
+      'How about Orbit?',
+      'Start small.',
+      'Less is more.',
+      'Try this…',
+      'Here’s a spark.',
+      'One step at a time.',
+      'Keep going.',
+    ]
     const recent: string[] = []
     let deck: string[] = []
     const nextPhrase = () => {
@@ -174,9 +229,13 @@ function ShareTyping({ side }: { side: 'left' | 'right' }) {
     let animation: Animation | undefined
     let cycle = -1
     let submitted = false
+    let responded = false
     let phrase = ''
     let input = ''
-    let history = ['connected', 'ready to type']
+    let history =
+      side === 'left'
+        ? ['connected', 'ready to type']
+        : ['Any ideas?', 'Let’s make something.']
     const tick = () => {
       animation ??= ref.current
         ?.closest('.screen')
@@ -194,6 +253,7 @@ function ShareTyping({ side }: { side: 'left' | 'right' }) {
           cycle = currentCycle
           phrase = nextPhrase()
           submitted = false
+          responded = false
         }
         const start = side === 'left' ? 0.06 : 0.46
         const finish = side === 'left' ? 0.2 : 0.68
@@ -207,9 +267,19 @@ function ShareTyping({ side }: { side: 'left' | 'right' }) {
         )
         let nextInput = submitted ? '' : phrase.slice(0, count)
         if (!submitted && progress >= enter) {
-          history = [...history.slice(-1), phrase]
+          history =
+            side === 'left' ? [...history.slice(-1), phrase] : [phrase, '…']
           submitted = true
           nextInput = ''
+          setTerminal({ history, input: '' })
+        } else if (
+          side === 'right' &&
+          submitted &&
+          !responded &&
+          progress >= 0.78
+        ) {
+          responded = true
+          history = [phrase, replies[phrases.indexOf(phrase)]]
           setTerminal({ history, input: '' })
         } else if (nextInput !== input) {
           setTerminal({ history, input: nextInput })
@@ -222,7 +292,13 @@ function ShareTyping({ side }: { side: 'left' | 'right' }) {
       cancelAnimationFrame(frame)
       animation = undefined
       if (motion.matches) {
-        setTerminal({ history: ['connected', phrases[0]], input: '' })
+        setTerminal({
+          history:
+            side === 'left'
+              ? ['connected', phrases[0]]
+              : [phrases[0], replies[0]],
+          input: '',
+        })
       } else {
         frame = requestAnimationFrame(tick)
       }
@@ -235,15 +311,38 @@ function ShareTyping({ side }: { side: 'left' | 'right' }) {
     }
   }, [side])
   return (
-    <div ref={ref} className={`share-typing share-typing-${side}`}>
+    <div
+      ref={ref}
+      className={`share-typing share-typing-${side} ${side === 'right' ? 'share-chat' : ''}`}
+    >
+      {side === 'right' ? (
+        <div className="share-chat-header">
+          <Sparkles /> AI chat
+        </div>
+      ) : null}
       <div className="share-terminal-history">
         {terminal.history.map((line, index) => (
-          <div key={index}>› {line}</div>
+          <div
+            key={index}
+            className={
+              side === 'right'
+                ? `chat-message ${index === 0 ? 'chat-user' : 'chat-assistant'}`
+                : undefined
+            }
+          >
+            {side === 'left' ? '› ' : ''}
+            {line}
+          </div>
         ))}
       </div>
       <div className="share-typing-input">
-        <span className="accent">›</span>
-        <span className="share-typed-text">{terminal.input}</span>
+        {side === 'left' ? <span className="accent">›</span> : null}
+        <span
+          className={`share-typed-text ${side === 'right' && !terminal.input ? 'chat-placeholder' : ''}`}
+        >
+          {terminal.input || (side === 'right' ? 'Ask anything…' : '')}
+        </span>
+        {side === 'right' ? <ArrowUpRight className="chat-send" /> : null}
       </div>
     </div>
   )
@@ -400,23 +499,13 @@ function Desk() {
           </div>
           <div className="computer laptop">
             <div className="screen">
-              <ScreenMenuBar
-                app={
-                  mode === 'share'
-                    ? 'Notes'
-                    : mode === 'remote'
-                      ? 'extend.computer'
-                      : 'Canvas'
-                }
-                purple={mode === 'share' || mode === 'remote'}
-              />
+              {mode === 'share' || mode === 'remote' ? (
+                <ScreenTaskbar remote={mode === 'remote'} />
+              ) : (
+                <ScreenMenuBar app="Canvas" />
+              )}
               {mode === 'share' ? (
                 <div className="laptop-wallpaper">
-                  <span>
-                    Keep
-                    <br />
-                    your flow<span className="accent">.</span>
-                  </span>
                   <div className="wallpaper-orbit" />
                   <ShareTyping side="right" />
                 </div>

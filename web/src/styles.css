@@ -1463,17 +1463,22 @@ h3 {
 }
 @keyframes share-left-path {
   0%,
+  4%,
+  24%,
   96%,
   100% {
-    left: 72%;
-  }
-  4%,
-  24% {
     left: var(--type-x);
+    top: var(--type-y);
+  }
+  27%,
+  88% {
+    left: max(86%, var(--type-x));
+    top: var(--cross-y);
   }
   30%,
   82% {
     left: calc(100% - var(--cursor-tip));
+    top: var(--cross-y);
   }
 }
 @keyframes share-right-path {
@@ -1482,10 +1487,17 @@ h3 {
   82%,
   100% {
     left: var(--cursor-entry);
+    top: var(--cross-y);
+  }
+  36%,
+  76% {
+    left: 10%;
+    top: var(--cross-y);
   }
   42%,
   72% {
     left: var(--type-x);
+    top: var(--type-y);
   }
 }
 @keyframes share-left-visible {
@@ -2326,5 +2338,208 @@ h3 {
   .email-notice {
     flex-direction: column;
     align-items: stretch;
+  }
+}
+
+/* Independent purple desktops use a bottom taskbar. */
+.screen-taskbar {
+  position: absolute;
+  z-index: 5;
+  inset: auto 0 0;
+  height: 28px;
+  padding: 0 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #ecdef3;
+  background: #33263fe8;
+  border-top: 1px solid #7f6590;
+  font:
+    7px 'Inter Variable',
+    sans-serif;
+}
+.taskbar-apps,
+.taskbar-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.screen-taskbar svg {
+  width: 11px;
+  height: 11px;
+}
+.taskbar-active {
+  display: grid;
+  place-items: center;
+  padding: 4px;
+  border-radius: 3px;
+  background: #6b4e80;
+  border-bottom: 2px solid #d6b8ed;
+}
+.taskbar-search {
+  padding: 3px 12px;
+  border-radius: 4px;
+  background: #ffffff10;
+}
+.mode-share .laptop-wallpaper {
+  height: calc(100% - 28px);
+}
+.remote-local-workspace {
+  inset: 0 0 28px;
+}
+.share-chat {
+  inset: 10% 8%;
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 10px;
+  background: #35263f;
+  border-color: #a284b3;
+  font-family: 'Inter Variable', sans-serif;
+}
+.share-chat-header {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 650;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #70577f;
+}
+.share-chat-header svg {
+  width: 11px;
+  height: 11px;
+  color: #d1b0eb;
+}
+.share-chat .share-terminal-history {
+  flex: 1;
+  height: auto;
+  min-height: 0;
+  padding: 10px 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: end;
+  gap: 8px;
+  white-space: normal;
+}
+.chat-message {
+  padding: 6px 8px;
+  max-width: 90%;
+  border-radius: 7px;
+}
+.chat-user {
+  align-self: end;
+  background: #76518f;
+  color: #fff;
+}
+.chat-assistant {
+  align-self: start;
+  background: #4b385a;
+  color: #ecdef3;
+}
+.share-chat .share-typing-input {
+  height: 28px;
+  flex-shrink: 0;
+  padding: 4px 6px;
+  border: 1px solid #a082b4;
+  border-radius: 5px;
+}
+.share-chat .share-typed-text {
+  font-family: 'Inter Variable', sans-serif;
+  border: 0;
+}
+.chat-placeholder {
+  color: #b19ebf;
+}
+.chat-send {
+  width: 12px;
+  height: 12px;
+  margin-left: auto;
+  color: #d6b8ed;
+  animation: chat-send var(--demo-duration) ease-out infinite;
+}
+@keyframes chat-send {
+  0%,
+  69.99%,
+  76%,
+  100% {
+    transform: scale(1);
+    color: #d6b8ed;
+  }
+  70% {
+    transform: scale(0.8);
+    color: #fff;
+  }
+  72% {
+    transform: scale(1.2);
+    color: #fff;
+  }
+}
+@media (max-width: 600px) {
+  .screen-taskbar {
+    height: 17px;
+    padding: 0 5px;
+    font-size: 4px;
+  }
+  .screen-taskbar svg {
+    width: 6px;
+    height: 6px;
+  }
+  .taskbar-apps,
+  .taskbar-status {
+    gap: 4px;
+  }
+  .taskbar-active {
+    padding: 2px;
+    border-bottom-width: 1px;
+  }
+  .taskbar-search {
+    padding: 2px 4px;
+  }
+  .remote-local-workspace {
+    inset: 0 0 17px;
+  }
+  .share-chat {
+    padding: 3px;
+    font-size: 3.5px;
+    inset: 6% 6%;
+  }
+  .share-chat-header {
+    position: absolute;
+    top: -3px;
+    left: 4px;
+    gap: 2px;
+    padding: 0 2px;
+    border: 0;
+    background: #35263f;
+    font-size: 3px;
+  }
+  .share-chat-header svg {
+    width: 4px;
+    height: 4px;
+  }
+  .share-chat .share-terminal-history {
+    padding: 1px 0;
+    height: auto;
+    gap: 2px;
+  }
+  .share-chat .share-terminal-history > div:first-child {
+    display: block;
+  }
+  .chat-message {
+    padding: 1px 2px;
+    border-radius: 3px;
+  }
+  .share-chat .share-typing-input {
+    height: 9px;
+    padding: 1px 2px;
+    gap: 2px;
+  }
+  .share-chat .chat-send {
+    width: 6px;
+    height: 6px;
+  }
+  .mode-share .laptop-wallpaper {
+    padding: 0;
+    height: calc(100% - 17px);
   }
 }
