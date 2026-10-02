@@ -34,31 +34,31 @@ const modes = [
     label: 'Extend display',
     title: 'More room for your next idea.',
     description:
-      'Turn another Mac into an extra display. Spread your windows out and make a little more room to think.',
+      'Turn another device into an extra display. Spread your windows out and make a little more room to think.',
     detail: 'ONE DESKTOP. MORE SPACE.',
   },
   {
     id: 'share',
     label: 'Share input',
-    title: 'One keyboard. Every computer.',
+    title: 'One keyboard. Every device.',
     description:
-      'Slide your cursor between computers. Your keyboard follows, while each Mac keeps its own apps and workspace.',
+      'Slide your cursor between devices. Your keyboard follows, while each device keeps its own apps and workspace.',
     detail: 'YOUR KEYBOARD + MOUSE',
   },
   {
     id: 'remote',
     label: 'Remote desktop',
-    title: 'Your other Mac. Right here.',
+    title: 'Your other device. Right here.',
     description:
-      'Open another Mac’s desktop in a window on yours. Use its apps and files while keeping your own workspace.',
-    detail: 'ANOTHER MAC. WITHIN REACH.',
+      'Open another device’s workspace in a window on yours. Use its apps and files while keeping your own workspace.',
+    detail: 'ANOTHER DEVICE. WITHIN REACH.',
   },
   {
     id: 'mirror',
     label: 'Mirror screen',
     title: 'Your screen. A different seat.',
     description:
-      'Bring one Mac’s screen onto another. See the same workspace and control it from wherever you’re sitting.',
+      'Bring one device’s screen onto another. See the same workspace and control it from wherever you’re sitting.',
     detail: 'SAME SCREEN. NEW PERSPECTIVE.',
   },
 ] as const
@@ -569,7 +569,7 @@ function Workspace({
         <div className="remote-viewer">
           <div className="remote-viewer-bar">
             <span>● ● ●</span>
-            <span>DESKTOP MAC</span>
+            <span>REMOTE DEVICE</span>
             <i className="status-dot" />
           </div>
           <RemoteViewport />
@@ -658,7 +658,7 @@ function Desk() {
     >
       <div className="desk-topline">
         <span>
-          <i className="status-dot" /> TWO MACS. ONE FLOW.
+          <i className="status-dot" /> TWO DEVICES. ONE FLOW.
         </span>
         <span>01 — 02</span>
       </div>
@@ -762,7 +762,7 @@ function Landing() {
           <div className="hero-copy">
             <div className="eyebrow">
               <span className="mini-pill">EARLY ACCESS</span>
-              <span>MADE FOR MACOS</span>
+              <span>MACOS FIRST</span>
             </div>
             <h1>
               One desk.
@@ -771,7 +771,8 @@ function Landing() {
             </h1>
             <p className="hero-description">
               Your screens, keyboard and mouse,
-              <br className="desktop-break" /> across all your Macs. Keep going.
+              <br className="desktop-break" /> across all your devices. Keep
+              going.
             </p>
             <div className="hero-actions">
               <Link to="/signup" className="button primary">
@@ -781,7 +782,11 @@ function Landing() {
                 See how it works <ArrowUpRight size={16} />
               </a>
             </div>
-            <p className="hero-footnote">Free to use. Yours to host.</p>
+            <p className="hero-footnote">
+              Free to use. Yours to host.
+              <br />
+              Starting on macOS. More desktop and mobile platforms coming.
+            </p>
           </div>
           <div className="hero-index" aria-hidden="true">
             <span>EXTEND YOUR FLOW</span>
@@ -795,15 +800,15 @@ function Landing() {
             <h2>
               Your hands.
               <br />
-              All your computers.
+              All your devices.
             </h2>
           </div>
           <p>
-            Turn another Mac into an extra display.
+            Turn another device into an extra display.
             <br className="desktop-break" /> Share your keyboard. Mirror your
             screen.
             <br className="desktop-break" /> Control another desktop from yours.
-            <br className="desktop-break" /> Choose how your computers work
+            <br className="desktop-break" /> Choose how your devices work
             together.
           </p>
         </section>
@@ -811,9 +816,9 @@ function Landing() {
           <article>
             <Radio size={24} />
             <span className="feature-number">01</span>
-            <h3>Find your other Mac.</h3>
+            <h3>Find your other device.</h3>
             <p>
-              Pair nearby computers on your network. Local sharing works without
+              Pair nearby devices on your network. Local sharing works without
               an account.
             </p>
           </article>
@@ -844,7 +849,7 @@ function Landing() {
             <p className="eyebrow">YOUR DESK, REMEMBERED</p>
             <h2>A home for your devices.</h2>
             <p>
-              Sign in once. Find your computers in one place.
+              Sign in once. Find your devices in one place.
               <br />
               Your desk, ready wherever you are.
             </p>

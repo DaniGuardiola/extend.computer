@@ -16,14 +16,14 @@ export const Route = createRootRoute({
       {
         name: 'description',
         content:
-          'One keyboard. One mouse. All your computers. Keyboard and mouse sharing for macOS, with optional accounts and self-hosting.',
+          'Your screens, keyboard and mouse, across your devices. Extend displays, share input, mirror screens and access another workspace. Starting on macOS.',
       },
       { name: 'theme-color', content: '#141714' },
       { property: 'og:title', content: 'One desk. Zero borders.' },
       {
         property: 'og:description',
         content:
-          'Your keyboard and mouse, across your Macs. Meet extend.computer.',
+          'Your screens, keyboard and mouse, across your devices. Meet extend.computer.',
       },
       { property: 'og:type', content: 'website' },
     ],
