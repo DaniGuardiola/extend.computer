@@ -2032,24 +2032,52 @@ h3 {
   stroke: #142211;
   filter: drop-shadow(2px 3px 0 #00000044);
 }
+.mode-remote {
+  --demo-duration: 7s;
+}
+.mode-remote .workspace-window {
+  animation: remote-window-drag var(--demo-duration)
+    cubic-bezier(0.35, 0, 0.2, 1) infinite;
+}
+.remote-cursor {
+  --remote-grab-top: 7px;
+}
+@keyframes remote-window-drag {
+  0%,
+  28%,
+  94%,
+  100% {
+    transform: translate(0, 0);
+  }
+  40%,
+  82% {
+    transform: translate(6%, 8%);
+  }
+}
 @keyframes remote-move {
   0%,
-  94%,
   100% {
     left: 27%;
     top: 45%;
   }
-  20%,
-  28%,
-  68%,
-  76% {
+  10%,
+  18%,
+  50%,
+  58% {
     left: var(--mirror-toggle-x);
     top: var(--mirror-toggle-y);
   }
-  44%,
-  52% {
-    left: 45%;
-    top: 75%;
+  24%,
+  40%,
+  78%,
+  94% {
+    left: 46%;
+    top: var(--remote-grab-top);
+  }
+  64%,
+  72% {
+    left: var(--mirror-square-x);
+    top: var(--mirror-square-y);
   }
 }
 .remote-cursor::before {
@@ -2066,21 +2094,35 @@ h3 {
 }
 @keyframes remote-click {
   0%,
+  13.99%,
   23.99%,
-  71.99%,
+  40.01%,
+  53.99%,
+  67.99%,
+  77.99%,
+  94.01%,
   100% {
     opacity: 0;
     transform: scale(1);
   }
-  24%,
-  72% {
+  14%,
+  54%,
+  68% {
     opacity: 1;
     transform: scale(0.4);
   }
-  28%,
-  76% {
+  18%,
+  58%,
+  72% {
     opacity: 0;
     transform: scale(1.6);
+  }
+  24%,
+  40%,
+  78%,
+  94% {
+    opacity: 0.65;
+    transform: scale(1);
   }
 }
 .mode-remote .workspace-art i:nth-child(3) {
@@ -2088,32 +2130,57 @@ h3 {
 }
 @keyframes remote-toggle {
   0%,
-  23.99%,
-  80%,
+  13.99%,
+  62%,
   100% {
     background: transparent;
     transform: scale(1);
   }
-  24% {
+  14% {
     background: var(--acid);
     transform: scale(0.88);
   }
-  28% {
+  18% {
     background: var(--acid);
     transform: scale(1.08);
   }
-  32%,
-  71.99% {
+  22%,
+  53.99% {
     background: var(--acid);
     transform: scale(1);
   }
-  72% {
+  54% {
     background: transparent;
     transform: scale(0.88);
   }
-  76% {
+  58% {
     background: transparent;
     transform: scale(1.08);
+  }
+}
+.mode-remote .workspace-art i:nth-child(2) {
+  animation: remote-square-press var(--demo-duration) ease-out infinite;
+}
+@keyframes remote-square-press {
+  0%,
+  67.99%,
+  76%,
+  100% {
+    background: #779d55;
+    transform: rotate(15deg);
+  }
+  68% {
+    background: #b78bdd;
+    transform: rotate(25deg) scale(0.9);
+  }
+  72% {
+    background: #b78bdd;
+    transform: rotate(25deg);
+  }
+}
+@media (max-width: 600px) {
+  .remote-cursor {
+    --remote-grab-top: 2px;
   }
 }
 .demo-paused *,
