@@ -1340,9 +1340,10 @@ h3 {
 }
 .share-cursor {
   --cursor-tip: 3px;
+  --cursor-entry: -64px;
   position: absolute;
-  left: 35%;
-  top: 45%;
+  left: 72%;
+  top: 55%;
   z-index: 4;
   pointer-events: none;
 }
@@ -1366,62 +1367,61 @@ h3 {
 }
 .share-cursor-left {
   animation:
-    share-left-path 9s ease-in-out infinite,
-    share-left-visible 9s step-end infinite;
+    share-left-path 7s linear infinite,
+    share-left-visible 7s step-end infinite;
 }
 .share-cursor-right {
-  left: calc(-1 * var(--cursor-tip));
+  left: var(--cursor-entry);
   top: 55%;
   opacity: 0;
   animation:
-    share-right-path 9s ease-in-out infinite,
-    share-right-visible 9s step-end infinite;
+    share-right-path 7s linear infinite,
+    share-right-visible 7s step-end infinite;
 }
 @keyframes share-left-path {
   0%,
-  8%,
-  92%,
+  90%,
   100% {
-    left: 35%;
-    top: 45%;
+    left: 72%;
+    top: 55%;
   }
-  30%,
-  74% {
+  18%,
+  70% {
     left: calc(100% - var(--cursor-tip));
     top: 55%;
   }
 }
 @keyframes share-right-path {
   0%,
-  30%,
-  74%,
+  18%,
+  70%,
   100% {
-    left: calc(-1 * var(--cursor-tip));
+    left: var(--cursor-entry);
     top: 55%;
   }
-  48%,
-  60% {
+  45%,
+  55% {
     left: 60%;
     top: 57%;
   }
 }
 @keyframes share-left-visible {
   0%,
-  74%,
+  70%,
   100% {
     opacity: 1;
   }
-  30% {
+  18% {
     opacity: 0;
   }
 }
 @keyframes share-right-visible {
   0%,
-  74%,
+  70%,
   100% {
     opacity: 0;
   }
-  30% {
+  18% {
     opacity: 1;
   }
 }
@@ -1699,6 +1699,7 @@ h3 {
   }
   .share-cursor {
     --cursor-tip: 2px;
+    --cursor-entry: -40px;
   }
   .share-cursor > span {
     font-size: 5px;
