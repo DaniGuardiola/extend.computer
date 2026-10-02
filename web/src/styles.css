@@ -433,7 +433,6 @@ h3 {
 }
 .laptop-wallpaper {
   position: relative;
-  background: #314626;
   height: calc(100% - 28px);
   padding: 21px 20px;
   overflow: hidden;
@@ -454,17 +453,17 @@ h3 {
   width: 180px;
   height: 180px;
   border-radius: 50%;
-  border: 1px solid #658b41;
+  border: 1px solid #a486b5;
   position: absolute;
   bottom: -120px;
   right: -25px;
   box-shadow:
-    0 0 0 20px #3e5b2d,
-    0 0 0 21px #658b41,
-    0 0 0 40px #3e5b2d,
-    0 0 0 41px #658b41,
-    0 0 0 60px #3e5b2d,
-    0 0 0 61px #658b41;
+    0 0 0 20px #513d5f,
+    0 0 0 21px #a486b5,
+    0 0 0 40px #513d5f,
+    0 0 0 41px #a486b5,
+    0 0 0 60px #513d5f,
+    0 0 0 61px #a486b5;
 }
 .visual-cursor {
   position: absolute;
@@ -1607,6 +1606,7 @@ h3 {
     transform: translateX(0);
   }
 }
+.laptop-wallpaper,
 .remote-local-workspace {
   background:
     radial-gradient(ellipse at 85% 85%, #70517b 0, transparent 65%), #31263d;
