@@ -25,19 +25,23 @@ use std::{
 };
 use tokio::sync::Semaphore;
 
+mod passkeys;
+
 const SESSION_SECONDS: i64 = 30 * 24 * 60 * 60;
 const ONLINE_SECONDS: i64 = 90;
 const MAX_DEVICES: i64 = 100;
 const MAX_SESSIONS: i64 = 100;
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Default)]
 pub struct Config {
     pub signup_enabled: bool,
+    pub origin: Option<String>,
 }
 
 pub struct Server {
     db: Mutex<Connection>,
     config: Config,
+    passkeys: Option<passkeys::Passkeys>,
     password_workers: Arc<Semaphore>,
     auth_attempts: Mutex<HashMap<IpAddr, (Instant, u32)>>,
     // Equal password work for unknown and known accounts.
@@ -61,10 +65,15 @@ impl Server {
         let db = Connection::open(path)?;
         db.busy_timeout(Duration::from_secs(5))?;
         let version: i64 = db.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        anyhow::ensure!(version <= 1, "database schema is newer than this server");
+        anyhow::ensure!(version <= 2, "database schema is newer than this server");
         db.execute_batch(include_str!("schema.sql"))?;
         Ok(Arc::new(Self {
             db: Mutex::new(db),
+            passkeys: config
+                .origin
+                .as_deref()
+                .map(passkeys::Passkeys::new)
+                .transpose()?,
             config,
             password_workers: Arc::new(Semaphore::new(2)),
             auth_attempts: Mutex::new(HashMap::new()),
@@ -91,6 +100,16 @@ pub fn router(server: Arc<Server>) -> Router {
     let auth = Router::new()
         .route("/v1/auth/signup", post(signup))
         .route("/v1/auth/login", post(login))
+        .route(
+            "/v1/passkeys/register/options",
+            post(passkeys::register_options),
+        )
+        .route(
+            "/v1/passkeys/register/verify",
+            post(passkeys::register_verify),
+        )
+        .route("/v1/passkeys/login/options", post(passkeys::login_options))
+        .route("/v1/passkeys/login/verify", post(passkeys::login_verify))
         .route_layer(middleware::from_fn_with_state(
             server.clone(),
             throttle_auth,
@@ -100,6 +119,8 @@ pub fn router(server: Arc<Server>) -> Router {
         .route("/healthz", get(|| async { Json(json!({"status": "ok"})) }))
         .route("/v1/server", get(server_info))
         .route("/v1/account", get(account))
+        .route("/v1/passkeys", get(passkeys::list))
+        .route("/v1/passkeys/{id}", delete(passkeys::remove))
         .route("/v1/auth/logout", post(logout))
         .route("/v1/devices", get(devices).post(register_device))
         .route("/v1/devices/{id}", delete(revoke_device))
@@ -144,7 +165,7 @@ async fn throttle_auth(
 
 async fn server_info(State(server): State<Arc<Server>>) -> Json<Value> {
     Json(
-        json!({"api_version": 1, "signup_enabled": server.config.signup_enabled,
+        json!({"api_version": 1, "passkeys_enabled": server.passkeys.is_some(), "signup_enabled": server.config.signup_enabled,
         "heartbeat_interval_seconds": 30, "online_timeout_seconds": ONLINE_SECONDS}),
     )
 }

@@ -62,6 +62,7 @@ fn setup() -> (tempfile::TempDir, Arc<Server>, Router) {
         &dir.path().join("server.sqlite3"),
         Config {
             signup_enabled: true,
+            origin: Some("http://localhost:8080".into()),
         },
     )
     .unwrap();

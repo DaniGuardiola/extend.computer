@@ -30,4 +30,14 @@ CREATE TABLE IF NOT EXISTS device_sessions (
     UNIQUE(session_hash, device_id)
 );
 CREATE INDEX IF NOT EXISTS device_sessions_device ON device_sessions(device_id);
-PRAGMA user_version = 1;
+CREATE TABLE IF NOT EXISTS passkeys (
+    id TEXT PRIMARY KEY,
+    account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    credential TEXT NOT NULL,
+    counter INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    rp_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS passkeys_account ON passkeys(account_id);
+PRAGMA user_version = 2;

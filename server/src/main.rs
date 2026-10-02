@@ -16,7 +16,13 @@ async fn main() -> anyhow::Result<()> {
         Ok("false") | Err(std::env::VarError::NotPresent) => false,
         _ => anyhow::bail!("EXTEND_SIGNUP_ENABLED must be true or false"),
     };
-    let server = Server::open(&database, Config { signup_enabled })?;
+    let server = Server::open(
+        &database,
+        Config {
+            signup_enabled,
+            origin: std::env::var("EXTEND_ORIGIN").ok(),
+        },
+    )?;
     let listener = tokio::net::TcpListener::bind(bind).await?;
     println!(
         "extend.computer account server listening on {}",
