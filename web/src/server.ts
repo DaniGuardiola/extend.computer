@@ -16,6 +16,9 @@ export default {
           'DELETE FROM sessions WHERE token_hash IN (SELECT token_hash FROM sessions WHERE expires_at <= ? LIMIT 1000)',
         ).bind(stamp),
         env.DB.prepare(
+          'DELETE FROM email_tokens WHERE token_hash IN (SELECT token_hash FROM email_tokens WHERE expires_at <= ? LIMIT 1000)',
+        ).bind(stamp),
+        env.DB.prepare(
           'DELETE FROM challenges WHERE id IN (SELECT id FROM challenges WHERE expires_at <= ? LIMIT 1000)',
         ).bind(stamp),
       ]),

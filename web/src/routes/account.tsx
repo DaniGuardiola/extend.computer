@@ -168,6 +168,25 @@ function Dashboard() {
           </p>
         ) : (
           <>
+            {account.email_enabled && !account.email_verified ? (
+              <section className="email-notice" aria-label="Verify email">
+                <div>
+                  <h2>Keep a way back in.</h2>
+                  <p>Verify {account.email} to enable password recovery.</p>
+                </div>
+                <button
+                  className="button button-outline"
+                  disabled={busy}
+                  onClick={() =>
+                    action(async () => {
+                      await api('/auth/email/request', 'POST')
+                    }, 'Verification email requested. Check your inbox.')
+                  }
+                >
+                  Send verification email
+                </button>
+              </section>
+            ) : null}
             <section aria-label="Registered devices" className="device-list">
               {devices.length ? (
                 devices.map((device) => (

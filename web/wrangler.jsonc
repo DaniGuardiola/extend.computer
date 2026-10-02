@@ -21,5 +21,5 @@
     "bindings": [{ "name": "ACCOUNTS", "class_name": "AccountService" }],
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["AccountService"] }],
-  "vars": { "SIGNUP_ENABLED": "true" },
+  "vars": { "SIGNUP_ENABLED": "true", "PUBLIC_ORIGIN": "https://extend.computer" },
 }

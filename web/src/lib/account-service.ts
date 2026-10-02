@@ -9,6 +9,7 @@ import {
   type AuthenticationResponseJSON,
 } from '@simplewebauthn/server'
 import { hashPassword, verifyPassword } from './password'
+import { emailEnabled, sendAccountEmail, type EmailKind } from './email'
 
 const SESSION_SECONDS = 30 * 24 * 60 * 60
 const ONLINE_SECONDS = 90
@@ -172,7 +173,12 @@ function registration(
   }
 }
 
-type Account = { id: string; email: string; password_hash: string }
+type Account = {
+  id: string
+  email: string
+  password_hash: string
+  email_verified: number
+}
 type Session = { account_id: string; token_hash: string }
 type Passkey = {
   id: string
@@ -242,6 +248,78 @@ export class AccountService extends DurableObject<Env> {
       fail(429, 'Too many attempts. Try again in a minute.')
   }
 
+  // One named coordinator enforces account-wide free email budgets across all IP shards.
+  async reserveEmail(): Promise<boolean> {
+    const date = new Date().toISOString()
+    const day = 'mail-day:' + date.slice(0, 10)
+    const month = 'mail-month:' + date.slice(0, 7)
+    const sql = this.ctx.storage.sql
+    const stamp = now()
+    sql.exec('DELETE FROM attempts WHERE until <= ?', stamp)
+    for (const [key, max] of [
+      [day, 90],
+      [month, 2700],
+    ] as const) {
+      const row = sql
+        .exec<{ count: number }>(
+          'SELECT count FROM attempts WHERE key = ?',
+          key,
+        )
+        .toArray()[0]
+      if ((row?.count ?? 0) >= max) return false
+    }
+    const tomorrow =
+      Math.floor(Date.parse(date.slice(0, 10) + 'T00:00:00Z') / 1000) + 86400
+    const nextMonth = new Date(date)
+    nextMonth.setUTCDate(1)
+    nextMonth.setUTCMonth(nextMonth.getUTCMonth() + 1)
+    nextMonth.setUTCHours(0, 0, 0, 0)
+    for (const [key, until] of [
+      [day, tomorrow],
+      [month, Math.floor(nextMonth.getTime() / 1000)],
+    ] as const)
+      sql.exec(
+        'INSERT INTO attempts VALUES (?, 1, ?) ON CONFLICT(key) DO UPDATE SET count = count + 1',
+        key,
+        until,
+      )
+    return true
+  }
+
+  private async sendEmail(account: Account, kind: EmailKind): Promise<void> {
+    if (!emailEnabled(this.env))
+      fail(
+        503,
+        'Email is not available yet. You can still sign in with a passkey.',
+      )
+    const allowed = await this.env.DB.prepare(
+      'INSERT INTO email_cooldowns VALUES (?, ?) ON CONFLICT(account_id) DO UPDATE SET next_send = excluded.next_send WHERE next_send <= ? RETURNING account_id',
+    )
+      .bind(account.id, now() + 60, now())
+      .first()
+    if (!allowed) fail(429, 'Wait a minute before requesting another email.')
+    if (!(await this.env.ACCOUNTS.getByName('mail-budget').reserveEmail()))
+      fail(503, 'Email is temporarily unavailable. Try again later.')
+    const raw = token()
+    const id = digest(raw)
+    await this.env.DB.batch([
+      this.env.DB.prepare(
+        'DELETE FROM email_tokens WHERE account_id = ? AND kind = ?',
+      ).bind(account.id, kind),
+      this.env.DB.prepare(
+        'INSERT INTO email_tokens VALUES (?, ?, ?, ?, ?)',
+      ).bind(id, account.id, kind, account.password_hash, now() + 1800),
+    ])
+    try {
+      await sendAccountEmail(this.env, kind, account.email, raw)
+    } catch {
+      await this.env.DB.prepare('DELETE FROM email_tokens WHERE token_hash = ?')
+        .bind(id)
+        .run()
+      fail(503, 'Email is temporarily unavailable. Try again later.')
+    }
+  }
+
   private async session(request: Request): Promise<Session> {
     const raw = bearer(request) ?? cookie(request, COOKIE)
     if (!raw || !/^[a-f0-9]{64}$/.test(raw)) fail(401, 'Please sign in')
@@ -256,8 +334,9 @@ export class AccountService extends DurableObject<Env> {
 
   private async loginResponse(
     request: Request,
-    account: { id: string; email: string },
+    account: { id: string; email: string; password_hash?: string },
     status = 200,
+    passkey?: string,
   ) {
     const current = now()
     const count = await this.env.DB.prepare(
@@ -269,9 +348,26 @@ export class AccountService extends DurableObject<Env> {
       fail(429, 'Too many sessions. Sign out of an existing session first.')
     const raw = token()
     const expires_at = current + SESSION_SECONDS
-    await this.env.DB.prepare('INSERT INTO sessions VALUES (?, ?, ?, ?)')
-      .bind(digest(raw), account.id, expires_at, current)
+    const inserted = await this.env.DB.prepare(
+      `INSERT INTO sessions SELECT ?, id, ?, ? FROM accounts
+      WHERE id = ? AND (? IS NULL OR password_hash = ?)
+      AND (? IS NULL OR EXISTS (SELECT 1 FROM passkeys WHERE id = ? AND account_id = accounts.id))
+      AND (SELECT COUNT(*) FROM sessions WHERE account_id = accounts.id AND expires_at > ?) < 100`,
+    )
+      .bind(
+        digest(raw),
+        expires_at,
+        current,
+        account.id,
+        account.password_hash ?? null,
+        account.password_hash ?? null,
+        passkey ?? null,
+        passkey ?? null,
+        current,
+      )
       .run()
+    if (!inserted.meta.changes)
+      fail(401, 'Credentials changed. Please sign in again.')
     // Browser keeps only an HttpOnly cookie. Native callers opt in to the token response.
     const native = request.headers.get('X-Extend-Client') === 'desktop'
     const response = json(
@@ -346,6 +442,7 @@ export class AccountService extends DurableObject<Env> {
       return json({
         api_version: 1,
         signup_enabled: this.env.SIGNUP_ENABLED === 'true',
+        email_enabled: emailEnabled(this.env),
         heartbeat_interval_seconds: 30,
         online_timeout_seconds: ONLINE_SECONDS,
       })
@@ -364,7 +461,7 @@ export class AccountService extends DurableObject<Env> {
         const id = token()
         const hash = hashPassword(secret)
         const created = await this.env.DB.prepare(
-          'INSERT OR IGNORE INTO accounts VALUES (?, ?, ?, ?)',
+          'INSERT OR IGNORE INTO accounts (id, email, password_hash, created_at) VALUES (?, ?, ?, ?)',
         )
           .bind(id, address, hash, now())
           .run()
@@ -436,11 +533,80 @@ export class AccountService extends DurableObject<Env> {
         .run()
       if (!updated.meta.changes) fail(401, 'Passkey changed. Try again.')
       const account = await this.env.DB.prepare(
-        'SELECT id, email FROM accounts WHERE id = ?',
+        'SELECT id, email, password_hash FROM accounts WHERE id = ?',
       )
         .bind(key!.account_id)
         .first<Account>()
-      return this.loginResponse(request, account!)
+      return this.loginResponse(request, account!, 200, key!.id)
+    }
+
+    if (path === '/v1/auth/recovery/request' && method === 'POST') {
+      if (!emailEnabled(this.env))
+        fail(
+          503,
+          'Email recovery is not available yet. Try signing in with a passkey.',
+        )
+      const input = await body(request)
+      const address = email(input.email)
+      this.limit('recovery:' + digest(address), 3)
+      const account = await this.env.DB.prepare(
+        'SELECT * FROM accounts WHERE email = ? AND email_verified = 1',
+      )
+        .bind(address)
+        .first<Account>()
+      // Identical responses for unknown/unverified addresses, cooldowns, quotas and delivery errors.
+      if (account)
+        this.ctx.waitUntil(this.sendEmail(account, 'reset').catch(() => {}))
+      return json({ success: true })
+    }
+    if (
+      (path === '/v1/auth/email/verify' ||
+        path === '/v1/auth/recovery/complete') &&
+      method === 'POST'
+    ) {
+      const input = await body(request)
+      const raw = text(input.token, 64, 'email link')
+      if (!/^[a-f0-9]{64}$/.test(raw)) fail(400, 'Invalid or expired link')
+      const kind = path.endsWith('/verify') ? 'verify' : 'reset'
+      const replacement =
+        kind === 'reset' ? hashPassword(password(input.password)) : null
+      // One DELETE RETURNING atomically consumes a link, even across different DO shards.
+      const link = await this.env.DB.prepare(
+        'DELETE FROM email_tokens WHERE token_hash = ? AND kind = ? AND expires_at > ? RETURNING account_id, password_version',
+      )
+        .bind(digest(raw), kind, now())
+        .first<{ account_id: string; password_version: string }>()
+      if (!link) fail(400, 'Invalid or expired link. Request a new one.')
+      if (kind === 'verify') {
+        const changed = await this.env.DB.prepare(
+          'UPDATE accounts SET email_verified = 1 WHERE id = ? AND password_hash = ?',
+        )
+          .bind(link!.account_id, link!.password_version)
+          .run()
+        if (!changed.meta.changes)
+          fail(400, 'Invalid or expired link. Request a new one.')
+      } else {
+        const updated = await this.env.DB.batch([
+          this.env.DB.prepare(
+            'UPDATE accounts SET password_hash = ? WHERE id = ? AND password_hash = ?',
+          ).bind(replacement, link!.account_id, link!.password_version),
+          this.env.DB.prepare(
+            'DELETE FROM sessions WHERE account_id = ? AND EXISTS (SELECT 1 FROM accounts WHERE id = ? AND password_hash = ?)',
+          ).bind(link!.account_id, link!.account_id, replacement),
+          this.env.DB.prepare(
+            'DELETE FROM passkeys WHERE account_id = ? AND EXISTS (SELECT 1 FROM accounts WHERE id = ? AND password_hash = ?)',
+          ).bind(link!.account_id, link!.account_id, replacement),
+          this.env.DB.prepare(
+            'DELETE FROM email_tokens WHERE account_id = ? AND EXISTS (SELECT 1 FROM accounts WHERE id = ? AND password_hash = ?)',
+          ).bind(link!.account_id, link!.account_id, replacement),
+          this.env.DB.prepare(
+            'DELETE FROM challenges WHERE account_id = ? AND EXISTS (SELECT 1 FROM accounts WHERE id = ? AND password_hash = ?)',
+          ).bind(link!.account_id, link!.account_id, replacement),
+        ])
+        if (!updated[0]!.meta.changes)
+          fail(400, 'Invalid or expired link. Request a new one.')
+      }
+      return json({ success: true })
     }
 
     const session = await this.session(request)
@@ -448,12 +614,21 @@ export class AccountService extends DurableObject<Env> {
     const db = this.env.DB
 
     if (path === '/v1/account' && method === 'GET') {
-      return json(
-        await db
-          .prepare('SELECT id, email, created_at FROM accounts WHERE id = ?')
-          .bind(account)
-          .first(),
-      )
+      const user = await db
+        .prepare(
+          'SELECT id, email, created_at, email_verified FROM accounts WHERE id = ?',
+        )
+        .bind(account)
+        .first()
+      return json({ ...user, email_enabled: emailEnabled(this.env) })
+    }
+    if (path === '/v1/auth/email/request' && method === 'POST') {
+      const user = await db
+        .prepare('SELECT * FROM accounts WHERE id = ?')
+        .bind(account)
+        .first<Account>()
+      if (!user!.email_verified) await this.sendEmail(user!, 'verify')
+      return json({ success: true })
     }
     if (path === '/v1/auth/logout' && method === 'POST') {
       await db
@@ -487,16 +662,26 @@ export class AccountService extends DurableObject<Env> {
       )
         fail(401, 'Current password is incorrect')
       const hash = hashPassword(password(input.password))
-      await db.batch([
-        db
-          .prepare('UPDATE accounts SET password_hash = ? WHERE id = ?')
-          .bind(hash, account),
+      const changed = await db.batch([
         db
           .prepare(
-            'DELETE FROM sessions WHERE account_id = ? AND token_hash != ?',
+            'UPDATE accounts SET password_hash = ? WHERE id = ? AND password_hash = ? AND EXISTS (SELECT 1 FROM sessions WHERE token_hash = ? AND expires_at > ?)',
           )
-          .bind(account, session.token_hash),
+          .bind(
+            hash,
+            account,
+            current!.password_hash,
+            session.token_hash,
+            now(),
+          ),
+        db
+          .prepare(
+            'DELETE FROM sessions WHERE account_id = ? AND token_hash != ? AND EXISTS (SELECT 1 FROM accounts WHERE id = ? AND password_hash = ?)',
+          )
+          .bind(account, session.token_hash, account, hash),
       ])
+      if (!changed[0]!.meta.changes)
+        fail(401, 'Credentials changed. Please sign in again.')
       return empty()
     }
 

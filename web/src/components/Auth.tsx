@@ -18,6 +18,11 @@ export function Auth({ signup = false }: { signup?: boolean }) {
         email: data.get('email'),
         password: data.get('password'),
       })
+      if (signup) {
+        const settings = await api<{ email_enabled: boolean }>('/server')
+        if (settings.email_enabled)
+          await api('/auth/email/request', 'POST').catch(() => {})
+      }
       await navigate({ to: '/account' })
     } catch (error) {
       setError(message(error))
@@ -117,6 +122,9 @@ export function Auth({ signup = false }: { signup?: boolean }) {
           </form>
           {!signup && (
             <>
+              <p className="auth-switch">
+                <Link to="/recover">Forgot your password?</Link>
+              </p>
               <div className="auth-divider">
                 <span>or</span>
               </div>

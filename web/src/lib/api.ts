@@ -32,7 +32,13 @@ export async function api<T>(
     )
   return data as T
 }
-export type Account = { id: string; email: string; created_at: number }
+export type Account = {
+  id: string
+  email: string
+  created_at: number
+  email_verified: number
+  email_enabled: boolean
+}
 export type Device = {
   id: string
   name: string
