@@ -14,6 +14,7 @@ export function EmailFlow({ recovery = false }: { recovery?: boolean }) {
   const [busy, setBusy] = useState(false)
   const [done, setDone] = useState(false)
   const [error, setError] = useState('')
+  const [errorAttempt, setErrorAttempt] = useState(0)
   useEffect(() => {
     if (recovery) return
     const match = window.location.hash.match(/^#(verify|reset)=([a-f0-9]{64})$/)
@@ -27,7 +28,6 @@ export function EmailFlow({ recovery = false }: { recovery?: boolean }) {
     event.preventDefault()
     const data = new FormData(event.currentTarget)
     setBusy(true)
-    setError('')
     try {
       if (recovery)
         await api('/auth/recovery/request', 'POST', {
@@ -47,9 +47,11 @@ export function EmailFlow({ recovery = false }: { recovery?: boolean }) {
           },
         )
       setDone(true)
+      setError('')
       setLink(null)
     } catch (error) {
       setError(message(error))
+      setErrorAttempt((attempt) => attempt + 1)
     } finally {
       setBusy(false)
     }
@@ -81,7 +83,11 @@ export function EmailFlow({ recovery = false }: { recovery?: boolean }) {
                   : 'Verify your email'}
           </h1>
           {error ? (
-            <p className="message error-message" role="alert">
+            <p
+              key={errorAttempt}
+              className="message error-message auth-error-enter"
+              role="alert"
+            >
               {error}
             </p>
           ) : null}

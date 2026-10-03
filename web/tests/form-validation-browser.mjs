@@ -64,10 +64,52 @@ try {
   )
   await page.goto(origin + '/recover')
   await page.waitForLoadState('networkidle')
+  let holdRecovery
+  await page.route('**/api/v1/auth/recovery/request', async (route) => {
+    if (holdRecovery) await holdRecovery
+    await route.fulfill({
+      status: 503,
+      json: { error: 'Email recovery is not available yet.' },
+    })
+  })
   await page
     .getByRole('button', { name: 'Send reset link', exact: true })
     .click()
   await page.getByText('Enter your email.', { exact: true }).waitFor()
+  await email.fill('review@example.invalid')
+  await page
+    .getByRole('button', { name: 'Send reset link', exact: true })
+    .click()
+  await page
+    .getByText('Email recovery is not available yet.', { exact: true })
+    .waitFor()
+  const recoveryPosition = await email.boundingBox()
+  await page.getByRole('alert').evaluate((element) => {
+    element.dataset.previousAttempt = 'true'
+  })
+  let releaseRecovery
+  holdRecovery = new Promise((resolve) => {
+    releaseRecovery = resolve
+  })
+  await page
+    .getByRole('button', { name: 'Send reset link', exact: true })
+    .click()
+  await page.getByRole('button', { name: 'One moment…', exact: true }).waitFor()
+  assert.deepEqual(await email.boundingBox(), recoveryPosition)
+  assert.equal(
+    await page.getByRole('alert').textContent(),
+    'Email recovery is not available yet.',
+  )
+  releaseRecovery()
+  holdRecovery = undefined
+  await page
+    .getByRole('button', { name: 'Send reset link', exact: true })
+    .waitFor()
+  assert.deepEqual(await email.boundingBox(), recoveryPosition)
+  assert.equal(
+    await page.getByRole('alert').getAttribute('data-previous-attempt'),
+    null,
+  )
   await page.goto(origin + '/signup')
   await page.waitForLoadState('networkidle')
   await page

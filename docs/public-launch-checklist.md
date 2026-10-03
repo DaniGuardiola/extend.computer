@@ -89,6 +89,13 @@ update continuity and support the published data/protocol formats.
 
 ## Verify the first public release pipeline
 
+- [ ] Verify password recovery and email verification end to end on the public
+  account service: configured sender/credentials, delivery, reset link, expiry,
+  one-use tokens, and preserved two-factor authentication. The local UI review
+  currently reports “Email recovery is not available yet” because email is
+  disabled in the development environment; confirm intended preview behavior
+  and ensure release users can recover their accounts.
+
 - [ ] Build a new release in public GitHub Actions. Private/local test binaries
   have no public CI provenance and must not be relabeled as attested builds.
 - [ ] Verify Apple notarization is **Accepted**, app and DMG tickets are stapled,

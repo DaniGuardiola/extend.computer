@@ -26,6 +26,15 @@ npm run test:api # requires a running local server
 
 ## Deploy
 
+The official Worker is connected to `DaniGuardiola/extend.computer` through
+Cloudflare Workers Builds. Pushes to `main` build and deploy automatically from
+the `web` directory using Node 24.19.0. The build command is `npm run build`;
+the deploy command is `npm run db:remote && npx wrangler deploy`, so required D1
+migrations run before the Worker update. Preview builds are disabled. Deployment
+credentials are managed by Cloudflare; no GitHub deployment secret is required.
+
+Manual deployment remains available:
+
 ```sh
 npm run deploy
 ```
