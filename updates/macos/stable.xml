@@ -1,10 +1,13 @@
 <?xml version="1.0" encoding="utf-8" standalone="yes"?><!-- sparkle-sign-warning:
 IMPORTANT: This file was signed by Sparkle. Any modifications to this file requires re-signing this file with generate_appcast or sign_update! The signed signature will be embedded at the end of this file.
---><rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0"><channel><title>extend.computer updates</title><item><title>extend.computer 0.1.0</title><sparkle:version>1</sparkle:version><sparkle:shortVersionString>0.1.0</sparkle:shortVersionString><sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion><description>&lt;h3&gt;Initial preview&lt;/h3&gt;
+--><rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0"><channel><title>extend.computer updates</title><item><title>extend.computer 0.2.0</title><sparkle:version>3</sparkle:version><sparkle:shortVersionString>0.2.0</sparkle:shortVersionString><sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion><description>&lt;h3&gt;Minor Changes&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href="https://github.com/DaniGuardiola/extend.computer/commit/b99827c6e1dde9aa78fc7b729fd8557d80fc9681"&gt;&lt;code&gt;b99827c&lt;/code&gt;&lt;/a&gt; Thanks &lt;a href="https://github.com/DaniGuardiola"&gt;@DaniGuardiola&lt;/a&gt;! - Add native macOS updates, update channels, and offline release history. Check device protocol compatibility before starting a connection.&lt;/li&gt;
+&lt;/ul&gt;</description><enclosure url="https://github.com/DaniGuardiola/extend.computer/releases/download/v0.2.0/extend.computer-0.2.0-universal.dmg" length="14266489" type="application/octet-stream" sparkle:edSignature="P0xXDdQsz+1d/Qe2WfpWV7IewUUXRoilsClSEQXPvh624uT0vmQ7P4EUxVpXh+yPMU7cI+387rsnCFss2kcRAA=="></enclosure></item><item><title>extend.computer 0.1.0</title><sparkle:version>1</sparkle:version><sparkle:shortVersionString>0.1.0</sparkle:shortVersionString><sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion><description>&lt;h3&gt;Initial preview&lt;/h3&gt;
 &lt;ul&gt;
 &lt;li&gt;Pair Macs and share keyboard and mouse control over encrypted connections.&lt;/li&gt;
 &lt;li&gt;Manage accounts, device permissions, and local device settings.&lt;/li&gt;
 &lt;/ul&gt;</description><enclosure url="https://github.com/DaniGuardiola/extend.computer/releases/download/v0.1.0/extend.computer-0.1.0-universal.dmg" length="14141761" type="application/octet-stream" sparkle:edSignature="V4zFxK/Wkh2G2T0kNva1sHB34VuTcfCU36iA9LGGsgVllSIrelT9+cNo1pB1Hzi5IPYJ5C0dEwYGQQ3IxgAaAQ=="></enclosure></item></channel></rss><!-- sparkle-signatures:
-edSignature: tvy9LWhFmqmZBNmG6hwowiyPZrHiVfXajynVDFNZ0pc3uhcAXAfISJPQpLqKcino7XIERZohPI3Lp1XUcCMODQ==
-length: 1220
+edSignature: WpRwBvk3q8hUA9F66L6eOxNnuleeYwVtUJ3nhHsriwh9KVPl3iTz7Y5qx+AKxeUYGlBT7Te4anwV2WO5AchgAQ==
+length: 2215
 -->
