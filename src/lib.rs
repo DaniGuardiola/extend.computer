@@ -20,3 +20,5 @@ pub mod reconnect;
 pub mod error;
 
 mod verification;
+
+pub mod protocol;

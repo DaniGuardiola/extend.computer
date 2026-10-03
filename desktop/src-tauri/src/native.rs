@@ -56,16 +56,17 @@ pub fn permissions(path: &Path) -> Result<Permissions> {
     }
     let status = read_status(path)?;
     let wifi_status = crate::wifi_permission::status();
+    #[cfg(not(test))]
+    let wifi_ready = wifi_status == 1 && extend_computer_agent::low_jitter::ready();
+    #[cfg(test)]
+    let wifi_ready = status.contains("wifi=true");
     Ok(Permissions {
         listen: status.contains("listen=true"),
         post: status.contains("post=true"),
         available: true,
-        #[cfg(not(test))]
-        wifi: wifi_status == 1 && extend_computer_agent::low_jitter::ready(),
-        #[cfg(test)]
-        wifi: status.contains("wifi=true"),
+        wifi: wifi_ready,
         wifi_pending: wifi_status == 2,
         wifi_installing: wifi_status == 4,
-        wifi_setup_failed: wifi_status == -1,
+        wifi_setup_failed: wifi_status == -1 || (wifi_status == 1 && !wifi_ready),
     })
 }

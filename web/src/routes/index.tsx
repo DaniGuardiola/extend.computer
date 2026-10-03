@@ -15,6 +15,7 @@ import {
   Grid2X2,
   MessageSquare,
   Sparkles,
+  Download,
 } from 'lucide-react'
 import {
   useEffect,
@@ -775,17 +776,20 @@ function Landing() {
               going.
             </p>
             <div className="hero-actions">
-              <Link to="/signup" className="button primary">
-                Get started <ArrowUpRight size={20} />
-              </Link>
-              <a href="#how-it-works" className="source-link">
-                See how it works <ArrowUpRight size={16} />
+              <a
+                href="https://github.com/DaniGuardiola/extend.computer/releases/latest/download/extend.computer-macos-universal.dmg"
+                className="button primary"
+              >
+                Download for macOS <Download size={20} />
               </a>
+              <Link to="/signup" className="source-link">
+                Create an account <ArrowUpRight size={16} />
+              </Link>
             </div>
             <p className="hero-footnote">
               Free to use. Yours to host.
               <br />
-              Starting on macOS. More desktop and mobile platforms coming.
+              macOS 13 or later. Apple Silicon and Intel.
             </p>
           </div>
           <div className="hero-index" aria-hidden="true">

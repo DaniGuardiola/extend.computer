@@ -8,7 +8,7 @@ mod macos {
     use std::{ffi::CString, sync::OnceLock};
     struct Bridge {
         status: unsafe extern "C" fn() -> i32,
-        allow: unsafe extern "C" fn() -> i32,
+        allow: unsafe extern "C" fn(i32) -> i32,
     }
     static BRIDGE: OnceLock<Bridge> = OnceLock::new();
 
@@ -39,7 +39,7 @@ mod macos {
                 std::mem::transmute::<*mut libc::c_void, unsafe extern "C" fn() -> i32>(status)
             },
             allow: unsafe {
-                std::mem::transmute::<*mut libc::c_void, unsafe extern "C" fn() -> i32>(allow)
+                std::mem::transmute::<*mut libc::c_void, unsafe extern "C" fn(i32) -> i32>(allow)
             },
         };
         let _ = BRIDGE.set(bridge);
@@ -48,11 +48,11 @@ mod macos {
     pub fn status() -> i32 {
         BRIDGE.get().map_or(-2, |b| unsafe { (b.status)() })
     }
-    pub fn open() -> Result<()> {
+    pub fn open(repair: bool) -> Result<()> {
         let bridge = BRIDGE
             .get()
             .context("Wi-Fi permission setup is unavailable. Reopen the installed app.")?;
-        super::registration_result(unsafe { (bridge.allow)() })
+        super::registration_result(unsafe { (bridge.allow)(i32::from(repair)) })
     }
 }
 
@@ -85,13 +85,14 @@ pub fn status() -> i32 {
     }
 }
 /// Call on the GUI main thread, so ServiceManagement uses the app's identity.
-pub fn open() -> Result<()> {
+pub fn open(repair: bool) -> Result<()> {
     #[cfg(target_os = "macos")]
     {
-        macos::open()
+        macos::open(repair)
     }
     #[cfg(not(target_os = "macos"))]
     {
+        let _ = repair;
         anyhow::bail!("Wi-Fi optimization is available on macOS.")
     }
 }

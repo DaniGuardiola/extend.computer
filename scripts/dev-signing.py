@@ -87,10 +87,11 @@ def setup():
     print('Development signing identity ready:', fingerprint())
 
 
-def sign(path, identifier):
+def sign(path, identifier, *, hardened_runtime=False):
     if not identifier.endswith('.development'):
         raise RuntimeError('Refusing to dev-sign a production bundle identifier')
     pin = fingerprint()
     requirement = f'identifier "{identifier}" and certificate leaf = H"{pin}"'
-    run('/usr/bin/codesign', '--force', '--sign', pin, '--keychain', KEYCHAIN, '--timestamp=none', '--identifier', identifier, '--requirements', '=designated => ' + requirement, path)
+    options = ['--options', 'runtime'] if hardened_runtime else []
+    run('/usr/bin/codesign', '--force', '--sign', pin, '--keychain', KEYCHAIN, '--timestamp=none', '--identifier', identifier, '--requirements', '=designated => ' + requirement, *options, path)
     run('/usr/bin/codesign', '--verify', '--strict', '-R', '=' + requirement, path)

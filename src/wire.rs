@@ -96,6 +96,8 @@ pub struct Channel {
     stream: TcpStream,
     noise: TransportState,
     read_budget: Duration,
+    protocol: u16,
+    capabilities: Vec<String>,
 }
 
 impl Channel {
@@ -104,7 +106,20 @@ impl Channel {
             stream,
             noise,
             read_budget: Duration::from_secs(10),
+            protocol: 0,
+            capabilities: Vec::new(),
         }
+    }
+    pub(crate) fn set_protocol(&mut self, protocol: u16, capabilities: Vec<String>) {
+        self.protocol = protocol;
+        self.capabilities = capabilities;
+    }
+    pub fn require_capability(&self, capability: &str) -> Result<()> {
+        ensure!(
+            self.protocol > 0 && self.capabilities.iter().any(|c| c == capability),
+            crate::error::EngineError::FeatureUnavailable
+        );
+        Ok(())
     }
     pub fn send<T: Serialize>(&mut self, message: &T) -> Result<()> {
         let plaintext = serde_json::to_vec(message)?;

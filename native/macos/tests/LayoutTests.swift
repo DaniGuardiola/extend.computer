@@ -1,7 +1,24 @@
 import Foundation
+import CoreGraphics
 
 @main struct LayoutTests {
     static func main() throws {
+        // Main external display above/right of the built-in laptop display.
+        // The laptop's left edge must hand off even though it is not main.
+        let external = EdgeDisplay(id: 5, bounds: CGRect(x: 0, y: 0, width: 2560, height: 1440))
+        let laptop = EdgeDisplay(id: 1, bounds: CGRect(x: -1728, y: 773, width: 1728, height: 1117))
+        let displays = [external, laptop]
+        precondition(edgeDisplay(at: CGPoint(x: -1728, y: 900), in: displays) == laptop)
+        precondition(edgeIsExposed(display: laptop, side: .left, y: 127, in: displays))
+        precondition(!edgeIsExposed(display: external, side: .left, y: 900, in: displays))
+        precondition(edgeIsExposed(display: external, side: .left, y: 200, in: displays))
+        precondition(!edgeIsExposed(display: laptop, side: .right, y: 127, in: displays))
+        precondition(edgeIsExposed(display: laptop, side: .right, y: 1000, in: displays))
+        var secondary = try EdgeLayout(localWidth: laptop.bounds.width, localHeight: laptop.bounds.height,
+                                       remoteWidth: 1512, remoteHeight: 982, side: .left, offsetY: 0)
+        precondition(secondary.motion(local: EdgePoint(x: 0, y: 127), dx: -2, dy: 0, exposed: true) == .remote(EdgePoint(x: 1, y: 127.0 / 981)))
+        precondition(secondary.motion(local: EdgePoint(x: 0, y: 127), dx: 1, dy: 0, exposed: true) == .returned(EdgePoint(x: 4, y: 127)))
+        print("PASS secondary display selection, external/laptop seams, exposed outer edges, secondary handoff and return")
         var left = try EdgeLayout(localWidth: 1920, localHeight: 1080, remoteWidth: 1280, remoteHeight: 800, side: .left, offsetY: 100)
         precondition(left.motion(local: EdgePoint(x: 0, y: 50), dx: -2, dy: 0, exposed: true) == .local)
         precondition(left.motion(local: EdgePoint(x: 0, y: 150), dx: -2, dy: 0, exposed: false) == .local)

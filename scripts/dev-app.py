@@ -47,7 +47,7 @@ def build():
         daemon['AssociatedBundleIdentifiers'] = ['computer.extend.desktop.development']
         daemon_plist.write_bytes(plistlib.dumps(daemon))
         with signing.signing_keychain():
-            signing.sign(app/'Contents/Library/LaunchServices/ExtendComputerLowJitter', 'computer.extend.lowjitter.broker.development')
+            signing.sign(app/'Contents/Library/LaunchServices/ExtendComputerLowJitter', 'computer.extend.lowjitter.broker.development', hardened_runtime=True)
             for library in sorted(app.rglob('*.dylib')):
                 signing.sign(library, 'computer.extend.library.' + library.stem + '.development')
             signing.sign(helper, 'computer.extend.prototype.cursor.development')

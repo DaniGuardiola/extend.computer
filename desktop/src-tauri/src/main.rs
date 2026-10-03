@@ -1,14 +1,15 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod accounts;
-mod relay;
 mod approval;
 mod discovery;
 mod native;
 mod peers;
 mod permission_flow;
+mod relay;
 mod runtime;
 #[cfg(target_os = "macos")]
 mod traffic_lights;
+mod updates;
 mod wifi_permission;
 use peers::Device;
 use runtime::{Desktop, LocalDeviceInfo, Snapshot};
@@ -109,14 +110,19 @@ async fn open_permission(
     state: State<'_>,
     permission: String,
 ) -> Result<(), String> {
-    if permission == "wifi" && wifi_permission::status() != 1 && state.snapshot().map_err(error)?.session.is_some() {
+    let repair_wifi = if permission == "wifi" {
+        background(|| Ok(!extend_computer_agent::low_jitter::ready())).await?
+    } else {
+        false
+    };
+    if repair_wifi && state.snapshot().map_err(error)?.session.is_some() {
         return Err("Disconnect before changing Wi-Fi optimization permissions.".into());
     }
     let resources = permission_flow::resources(&app).map_err(error)?;
     let (send, receive) = std::sync::mpsc::channel();
     app.run_on_main_thread(move || {
         let _ = send.send(if permission == "wifi" {
-            wifi_permission::open()
+            wifi_permission::open(repair_wifi)
         } else {
             permission_flow::open(&resources, &permission)
         });
@@ -229,9 +235,13 @@ fn main() {
             accounts.start();
             app.manage(accounts);
             app.manage(desktop.clone());
+            updates::initialize(app.handle(), &desktop)?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            updates::update_settings,
+            updates::check_for_updates,
+            updates::configure_updates,
             account_status,
             account_refresh,
             account_configure,
@@ -265,6 +275,9 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("Could not run extend.computer")
         .run(|app, event| {
+            if matches!(&event, tauri::RunEvent::Ready) {
+                updates::install_menu();
+            }
             #[cfg(target_os = "macos")]
             if matches!(
                 &event,

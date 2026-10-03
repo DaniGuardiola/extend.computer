@@ -20,8 +20,18 @@ struct Queue {
     ended: bool,
     user_stopped: bool,
     failed: bool,
+    stop_reason: Option<String>,
 }
 impl Queue {
+    fn stopped(&mut self, line: &str) -> bool {
+        if line != "STOP" && !line.starts_with("STOP ") {
+            return false;
+        }
+        self.user_stopped = line == "STOP user";
+        self.stop_reason = Some(line.to_owned());
+        self.ended = true;
+        true
+    }
     fn push(&mut self, event: Captured) {
         if matches!(event, Captured::Move(..))
             && matches!(self.events.back(), Some(Captured::Move(..)))
@@ -147,11 +157,7 @@ fn run(
                 writer.lock().unwrap().failed = true;
                 break;
             };
-            if line == "STOP user" {
-                writer.lock().unwrap().user_stopped = true;
-                break;
-            }
-            if line == "STOP" {
+            if writer.lock().unwrap().stopped(&line) {
                 break;
             }
             if line == "REMOTE" {
@@ -235,6 +241,15 @@ fn run(
                     bail!("input capture failed or queue overflowed");
                 }
                 if q.ended {
+                    if session.is_some() && duration.is_none() && !q.user_stopped {
+                        let detail = match q.stop_reason.as_deref() {
+                            Some("STOP display-changed") => "The display layout changed. Reconnect to use the new layout.",
+                            Some("STOP capture-disabled") => "macOS stopped input capture. Check Accessibility and Input Monitoring, then reconnect.",
+                            Some("STOP heartbeat-timeout") => "The input connection stopped responding. Reconnect and try again.",
+                            _ => "The input helper stopped unexpectedly. Reconnect and try again.",
+                        };
+                        bail!(detail);
+                    }
                     break;
                 }
                 q.events.pop_front()
@@ -275,6 +290,25 @@ fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn native_stop_reasons_preserve_emergency_escape() {
+        for reason in [
+            "STOP",
+            "STOP display-changed",
+            "STOP capture-disabled",
+            "STOP heartbeat-timeout",
+        ] {
+            let mut queue = Queue::default();
+            assert!(queue.stopped(reason));
+            assert!(queue.ended && !queue.user_stopped);
+            assert_eq!(queue.stop_reason.as_deref(), Some(reason));
+        }
+        let mut queue = Queue::default();
+        assert!(!queue.stopped("REMOTE"));
+        assert!(!queue.ended);
+        assert!(queue.stopped("STOP user"));
+        assert!(queue.ended && queue.user_stopped);
+    }
     #[test]
     fn motion_coalesces_only_between_transitions() {
         let mut q = Queue::default();

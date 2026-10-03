@@ -1,7 +1,23 @@
 import Foundation
+import CoreGraphics
 
 struct EdgePoint: Equatable { var x: Double; var y: Double }
 enum EdgeSide: String { case left, right }
+
+struct EdgeDisplay: Equatable {
+    let id: UInt32
+    let bounds: CGRect
+}
+
+func edgeDisplay(at point: CGPoint, in displays: [EdgeDisplay]) -> EdgeDisplay? {
+    displays.first { $0.bounds.contains(point) }
+}
+
+func edgeIsExposed(display: EdgeDisplay, side: EdgeSide, y: Double, in displays: [EdgeDisplay]) -> Bool {
+    let outside = CGPoint(x: side == .left ? display.bounds.minX - 1 : display.bounds.maxX,
+                          y: display.bounds.minY + y)
+    return !displays.contains { $0.id != display.id && $0.bounds.contains(outside) }
+}
 enum EdgeMotion: Equatable {
     case local
     case remote(EdgePoint)

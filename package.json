@@ -1,0 +1,13 @@
+{
+  "name": "extend-computer-workspace",
+  "private": true,
+  "workspaces": [
+    "desktop"
+  ],
+  "scripts": {
+    "changeset": "npm run changeset --prefix desktop --",
+    "release:version": "npm run release:version --prefix desktop",
+    "release:check": "python3 scripts/release.py check"
+  },
+  "license": "MIT"
+}

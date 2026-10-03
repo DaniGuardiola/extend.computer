@@ -49,3 +49,28 @@ Use the prepared `sudo /usr/bin/python3 .build/development/install.py upgrade` c
 ## GUI permissions integration (2026-09-18)
 
 The GUI now requires this helper for eligible Wi-Fi keyboard/mouse sessions and exposes installation/repair as Wi-Fi optimization in Permissions. GUI fallback to ordinary Wi-Fi is no longer allowed. `status` includes `protocol=2`; `session` holds a pipe-bound lease until EOF while renewing off the input thread. The older `lease` and `test-30s` diagnostic commands retain their 30-second bound. Renewal rejects an externally reactivated AWDL interface, causing required sessions to end. No periodic broker replacement is needed. The GUI now bundles an app-owned LaunchDaemon and uses native SMAppService registration. Development and production have separate service identities; the manual installer above is only for legacy standalone diagnostics. See [native permission setup](../../../docs/wifi-permissions.md).
+## Administrator-installed signed development broker
+
+If macOS approves the development app but rejects its SMAppService daemon with
+`Launch Constraint Violation`, prepare the explicit development installer:
+
+```sh
+npm --prefix desktop run desktop:wifi:prepare
+sudo /usr/bin/python3 target/development/wifi-admin/install.py
+```
+
+Disconnect input sharing first. This installs a root-owned copy of the bundled
+signed broker with a separate launch-daemon label. It retains the same certificate
+pin, console-user checks, protocol, lease expiry, and recovery journal. It does
+not install the legacy ad-hoc helper or change production registration. The app
+still requires a successful authenticated status response before showing Allowed.
+Click the Wi-Fi setup button once to remove the rejected SMAppService registration.
+
+After rebuilding the broker, uninstall and prepare/install again. To uninstall:
+
+```sh
+sudo /usr/bin/python3 target/development/wifi-admin/install.py uninstall
+```
+
+Uninstall restores any interrupted Wi-Fi obligation and preserves its recovery
+journal. No global background-item reset or system certificate trust changes.

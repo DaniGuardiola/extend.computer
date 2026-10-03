@@ -22,7 +22,7 @@ use zeroize::Zeroizing;
 
 const BASE: &str = "Noise_XX_25519_ChaChaPoly_SHA256";
 const PAIRED: &str = "Noise_XXpsk0_25519_ChaChaPoly_SHA256";
-const MAGIC: &[u8; 8] = b"EXTEND04";
+const MAGIC: &[u8; 8] = b"EXTEND05";
 
 #[derive(Clone, Copy, Debug)]
 pub enum Decision {
@@ -168,6 +168,7 @@ fn handshake(
     initiator: bool,
     deadline: Instant,
     context: &[u8],
+    expected_peer: Option<&str>,
 ) -> Result<(Channel, String, Vec<u8>)> {
     let pairing = if let Some(code) = code {
         Some(pake(&mut stream, code, initiator, deadline)?)
@@ -215,12 +216,13 @@ fn handshake(
             .ok_or_else(|| anyhow::anyhow!("missing peer identity"))?,
     );
     ensure!(peer != identity.fingerprint(), "self connection rejected");
+    if let Some(expected) = expected_peer {
+        ensure!(peer == expected, EngineError::PeerIdentityChanged);
+    }
     let transcript = noise.get_handshake_hash().to_vec();
-    Ok((
-        Channel::new(stream, noise.into_transport_mode()?),
-        peer,
-        transcript,
-    ))
+    let mut channel = Channel::new(stream, noise.into_transport_mode()?);
+    crate::protocol::exchange(&mut channel)?;
+    Ok((channel, peer, transcript))
 }
 
 /// Single diagnostic session. Caller must obtain local consent through the callback.
@@ -328,7 +330,7 @@ pub fn serve_connection_with_verification(
     let deadline = Instant::now() + Duration::from_secs(10);
     let mut hello = [0; 9];
     wire::read_exact_until(&mut stream, &mut hello, deadline)?;
-    ensure!(&hello[..8] == MAGIC, "unsupported protocol");
+    ensure!(&hello[..8] == MAGIC, EngineError::ProtocolIncompatible);
     let claim = match hello[8] {
         b'P' | b'S' => Some(
             window
@@ -353,6 +355,7 @@ pub fn serve_connection_with_verification(
             b'U' => b"extend.computer/v1/unpair",
             _ => b"extend.computer/v1/reconnect/probe",
         },
+        None,
     )?;
     if hello[8] == b'U' {
         // An authenticated identity can remove only its own record, never a
@@ -464,6 +467,7 @@ pub fn serve_connection_with_verification(
                 pending_cursor = 0;
             }
             Message::RequestControl { remembered_only } => {
+                channel.require_capability(crate::protocol::CONTROL)?;
                 ensure!(cursor_deadline.is_none(), "control already requested");
                 let remembered = store.peer(&peer)?.is_some_and(|p| p.automatic_input);
                 if remembered_only && !remembered {
@@ -487,6 +491,7 @@ pub fn serve_connection_with_verification(
                 channel.send(&Message::ControlGranted { display })?;
             }
             Message::RequestInput => {
+                channel.require_capability(crate::protocol::INPUT)?;
                 ensure!(cursor_deadline.is_none(), "control already requested");
                 ensure!(
                     cursor.approve_input(&peer)?,
@@ -512,6 +517,7 @@ pub fn serve_connection_with_verification(
                 next_sequence += 1;
             }
             Message::RequestCursor => {
+                channel.require_capability(crate::protocol::CURSOR)?;
                 ensure!(cursor_deadline.is_none(), "cursor already requested");
                 ensure!(cursor.approve(&peer)?, EngineError::LocalConsentDenied);
                 ensure!(!store.is_revoked(&peer)?, "device revoked");
@@ -561,6 +567,7 @@ pub fn pairing_status(mut stream: TcpStream, identity: &Identity, expected: &str
         true,
         Instant::now() + Duration::from_secs(10),
         b"extend.computer/v1/reconnect/probe",
+        Some(expected),
     )?;
     ensure!(peer == expected, EngineError::PeerIdentityChanged);
     match channel.receive()? {
@@ -594,6 +601,7 @@ pub fn exchange_device_name(
         true,
         Instant::now() + Duration::from_secs(10),
         b"extend.computer/v1/reconnect/probe",
+        Some(expected),
     )?;
     ensure!(peer == expected, EngineError::PeerIdentityChanged);
     ensure!(
@@ -635,6 +643,7 @@ pub fn notify_unpair_if(
         true,
         Instant::now() + Duration::from_secs(10),
         b"extend.computer/v1/unpair",
+        Some(expected),
     )?;
     ensure!(peer == expected, EngineError::PeerIdentityChanged);
     ensure!(
@@ -667,6 +676,7 @@ pub fn pair_visually(
         true,
         Instant::now() + Duration::from_secs(10),
         b"extend.computer/v1/visual-pair",
+        None,
     )?;
     ensure!(!store.is_revoked(&peer)?, "device revoked");
     crate::verification::verify(&mut channel, &transcript, true, |symbols| {
@@ -711,6 +721,7 @@ impl Client {
             true,
             Instant::now() + Duration::from_secs(10),
             b"extend.computer/v1/reconnect/probe",
+            expected_peer,
         )?;
         if let Some(expected) = expected_peer {
             ensure!(peer == expected, EngineError::PeerIdentityChanged);
@@ -769,6 +780,7 @@ impl Client {
         }
     }
     pub fn request_control(&mut self, remembered_only: bool) -> Result<DisplaySize> {
+        self.channel.require_capability(crate::protocol::CONTROL)?;
         ensure!(!self.store.is_revoked(&self.peer)?, "device revoked");
         self.channel
             .send(&Message::RequestControl { remembered_only })?;
@@ -782,6 +794,7 @@ impl Client {
         display.validate()
     }
     pub fn request_input(&mut self) -> Result<DisplaySize> {
+        self.channel.require_capability(crate::protocol::INPUT)?;
         ensure!(!self.store.is_revoked(&self.peer)?, "device revoked");
         self.channel.send(&Message::RequestInput)?;
         self.channel.consent_timeout()?;
@@ -804,6 +817,7 @@ impl Client {
         Ok(())
     }
     pub fn request_cursor(&mut self) -> Result<DisplaySize> {
+        self.channel.require_capability(crate::protocol::CURSOR)?;
         ensure!(!self.store.is_revoked(&self.peer)?, "device revoked");
         self.channel.send(&Message::RequestCursor)?;
         self.channel.consent_timeout()?;

@@ -26,7 +26,7 @@ pub fn serve_presence(
     wire::read_exact_until(&mut stream, &mut hello, deadline)?;
     ensure!(
         &hello[..8] == MAGIC && hello[8] == b'H',
-        "unsupported presence protocol"
+        EngineError::ProtocolIncompatible
     );
     let (mut channel, peer, _) = handshake(
         stream,
@@ -35,6 +35,7 @@ pub fn serve_presence(
         false,
         deadline,
         b"extend.computer/v1/presence",
+        None,
     )?;
     if store.peer(&peer).ok().flatten().is_none() {
         channel.send(&Message::NotPaired)?;
@@ -67,6 +68,7 @@ pub fn query_presence(
         true,
         Instant::now() + Duration::from_secs(3),
         b"extend.computer/v1/presence",
+        Some(expected),
     )?;
     ensure!(peer == expected, EngineError::PeerIdentityChanged);
     match channel.receive()? {
@@ -169,6 +171,7 @@ mod tests {
                 true,
                 Instant::now() + Duration::from_secs(3),
                 b"extend.computer/v1/presence",
+                None,
             )
             .unwrap();
             assert!(matches!(channel.receive().unwrap(), Message::Ready));

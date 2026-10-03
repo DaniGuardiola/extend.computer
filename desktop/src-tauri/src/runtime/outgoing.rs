@@ -144,55 +144,94 @@ impl Desktop {
         let (id, cancelled) = self.reserve(SessionKind::Outgoing, Some(peer.clone()))?;
         let app = self.clone();
         std::thread::spawn(move || {
-            let result = (|| -> Result<()> {
-                let identity = app.identity()?;
-                ensure!(!cancelled.load(Ordering::SeqCst), "Connection cancelled");
-                let address = device.address.parse::<SocketAddr>()?;
-                let socket = if address.ip().is_unspecified() {
-                    app.account_tunnel(&peer, "control")?
-                } else {
-                    extend_computer_agent::low_jitter::require_ready_for_peer(address.ip())?;
-                    TcpStream::connect_timeout(&address, Duration::from_millis(700))
-                        .map_err(anyhow::Error::from)
-                        .or_else(|_| app.account_tunnel(&peer, "control"))?
-                };
-                app.set_socket(id, &socket)?;
-                let client = match Client::connect(
-                    socket,
-                    &identity,
-                    &app.store()?,
-                    None,
-                    Some(&peer),
-                    |_, _| Decision::Once,
-                ) {
-                    Ok(client) => client,
-                    Err(error)
-                        if error.downcast_ref::<extend_computer_agent::error::EngineError>()
-                            == Some(&extend_computer_agent::error::EngineError::PeerUnpaired) =>
-                    {
-                        app.apply_peer_unpaired(&peer, id)?;
-                        return Ok(());
+            let mut connected_once = false;
+            let mut retries = 0;
+            let result = loop {
+                let result = (|| -> Result<()> {
+                    if let Some(saved) = app.devices.lock().unwrap().get(&peer) {
+                        device = saved.clone();
                     }
-                    Err(error) => return Err(error),
-                };
-                extend_computer_agent::control::send_session_with_ready(
-                    client,
-                    &app.helper,
-                    true,
-                    &device.edge,
-                    0.,
-                    None,
-                    false,
-                    || app.stage(id, Phase::Connected, None),
-                    || {
-                        app.devices
-                            .lock()
-                            .unwrap()
-                            .get(&peer)
-                            .map(|device| device.edge.clone())
-                    },
-                )
-            })();
+                    let identity = app.identity()?;
+                    ensure!(!cancelled.load(Ordering::SeqCst), "Connection cancelled");
+                    let address = device.address.parse::<SocketAddr>()?;
+                    let socket = if address.ip().is_unspecified() {
+                        app.account_tunnel(&peer, "control")?
+                    } else {
+                        extend_computer_agent::low_jitter::require_ready_for_peer(address.ip())?;
+                        TcpStream::connect_timeout(&address, Duration::from_millis(700))
+                            .map_err(anyhow::Error::from)
+                            .or_else(|_| app.account_tunnel(&peer, "control"))?
+                    };
+                    app.set_socket(id, &socket)?;
+                    let client = match Client::connect(
+                        socket,
+                        &identity,
+                        &app.store()?,
+                        None,
+                        Some(&peer),
+                        |_, _| Decision::Once,
+                    ) {
+                        Ok(client) => client,
+                        Err(error)
+                            if error
+                                .downcast_ref::<extend_computer_agent::error::EngineError>()
+                                == Some(
+                                    &extend_computer_agent::error::EngineError::PeerUnpaired,
+                                ) =>
+                        {
+                            app.apply_peer_unpaired(&peer, id)?;
+                            return Ok(());
+                        }
+                        Err(error) => return Err(error),
+                    };
+                    extend_computer_agent::control::send_session_with_ready(
+                        client,
+                        &app.helper,
+                        true,
+                        &device.edge,
+                        0.,
+                        None,
+                        retries > 0,
+                        || {
+                            connected_once = true;
+                            app.stage(id, Phase::Connected, None);
+                        },
+                        || {
+                            app.devices
+                                .lock()
+                                .unwrap()
+                                .get(&peer)
+                                .map(|device| device.edge.clone())
+                        },
+                    )
+                })();
+                match result {
+                    Err(error)
+                        if connected_once
+                            && retries < 3
+                            && is_connection_error(&error)
+                            && !cancelled.load(Ordering::SeqCst) =>
+                    {
+                        retries += 1;
+                        if !app.prepare_reconnect(id) {
+                            break Ok(());
+                        }
+                        let wait = Duration::from_secs(1 << (retries - 1));
+                        eprintln!(
+                            "Control connection lost: {error:#}. Reconnecting in {}s.",
+                            wait.as_secs()
+                        );
+                        let until = Instant::now() + wait;
+                        while Instant::now() < until && !app.cancelled(id, &cancelled) {
+                            std::thread::sleep(Duration::from_millis(50));
+                        }
+                        if app.cancelled(id, &cancelled) {
+                            break Ok(());
+                        }
+                    }
+                    result => break result,
+                }
+            };
             app.finish(id, result);
         });
         Ok(())

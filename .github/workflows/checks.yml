@@ -1,0 +1,49 @@
+name: Pull request checks
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  desktop:
+    name: macOS checks
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable action; compiler pinned below
+        with:
+          toolchain: 1.98.1
+      - run: npm ci
+      - name: Validate versions and Changesets
+        run: |
+          python3 ../scripts/release.py check
+          npm run changeset -- status --output "$RUNNER_TEMP/changeset-status.json"
+        working-directory: desktop
+      - name: Summarize release plan
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: python3 scripts/changeset-summary.py "$RUNNER_TEMP/changeset-status.json"
+      - name: Build native resources and desktop frontend
+        run: |
+          sh scripts/build-cursor-helper.sh
+          npm run native:permissions --prefix desktop
+          npm run build --prefix desktop
+      - name: Test desktop and core
+        run: |
+          cargo test --locked
+          cargo test --manifest-path desktop/src-tauri/Cargo.toml --locked
+          python3 scripts/test-release.py

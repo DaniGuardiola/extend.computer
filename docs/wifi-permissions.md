@@ -2,7 +2,7 @@
 
 # Native Wi-Fi optimization permission
 
-The app uses Apple's `SMAppService.daemon(plistName:)` API on macOS 13 and later. Registration runs inside the GUI process through the signed Swift permissions bridge. It no longer invokes AppleScript, Python, sudo, or a separate installer. macOS owns approval in Login Items & Extensions and associates the background service with extend.computer. This is the modern approval flow, not an imitation of Duet's older Add Helper dialog.
+The app uses Apple's `SMAppService.daemon(plistName:)` API on macOS 13 and later. Registration runs inside the GUI process through the signed Swift permissions bridge without invoking AppleScript, Python, or sudo. macOS owns approval in Login Items & Extensions and associates the background service with extend.computer. Development also supports an explicit administrator-installed signed broker, described below.
 
 ## User flow
 
@@ -27,6 +27,19 @@ Install production apps in `/Applications` so the daemon remains available befor
 ## Legacy development installation
 
 The older standalone helper and manual installer remain diagnostic tools. They are no longer packaged or used by the desktop app. App bundles never fall back to the old globally installed helper. Existing legacy installations are not silently removed: use the documented legacy uninstall command after ending any old sessions. That command restores journaled AWDL state before deleting its files.
+
+## Explicit signed development installation
+
+On machines where macOS approves the local certificate but blocks daemon launch
+with `Launch Constraint Violation`, `npm --prefix desktop run desktop:wifi:prepare`
+prepares a separate administrator installer. See [installation and removal](../native/macos/LowJitter/README.md#administrator-installed-signed-development-broker).
+It copies the same signed bundled broker to a root-owned location, verifies its
+certificate pin and payload hash, and installs a separate `.development.manual`
+daemon label with the existing development Mach service. Production identities
+cannot use this path. The GUI accepts only the matching root-owned signed broker
+and still probes its authenticated service before reporting Allowed. No legacy
+ad-hoc helper, global background-item reset, or system certificate trust change is
+involved. The installer refuses to replace a running development service.
 
 ## Verification
 

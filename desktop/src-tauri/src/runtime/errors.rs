@@ -33,6 +33,7 @@ pub(crate) fn friendly_error(error: &anyhow::Error) -> String {
     }
     if let Some(failure) = error.downcast_ref::<EngineError>() {
         return match failure {
+            EngineError::ProtocolIncompatible | EngineError::FeatureUnavailable => return failure.to_string(),
             EngineError::PeerUnpaired => "The other device is no longer paired. Pair again to reconnect.",
             EngineError::PeerIdentityChanged => "This address belongs to a different device. Pair with it before connecting.",
             EngineError::LocalConsentDenied => "Connection declined on this device.",

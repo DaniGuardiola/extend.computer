@@ -217,6 +217,65 @@ fn actual_transport_drop_reconnects_with_pinned_identity_and_saved_control() {
 
 #[cfg(unix)]
 #[test]
+fn unexpected_native_capture_stop_reports_failure_instead_of_idle_success() {
+    use std::os::unix::fs::PermissionsExt;
+    for (ending, expected) in [
+        (
+            "printf 'STOP heartbeat-timeout\\n'\ncat >/dev/null",
+            "stopped responding",
+        ),
+        ("exit 0", "stopped unexpectedly"),
+    ] {
+        let a = Identity::generate();
+        let b = Identity::generate();
+        let ad = tempfile::tempdir().unwrap();
+        let bd = tempfile::tempdir().unwrap();
+        let at = TrustStore::open(ad.path()).unwrap();
+        let bt = TrustStore::open(bd.path()).unwrap();
+        let helper = ad.path().join("capture");
+        std::fs::write(
+            &helper,
+            format!("#!/bin/sh\nprintf 'READY 1512 982\\n'\nsleep 0.05\n{ending}\n"),
+        )
+        .unwrap();
+        std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let mut window = Some(PairingWindow::new(Duration::from_secs(30)));
+        let code = window.as_ref().unwrap().code().unwrap().to_owned();
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = thread::spawn(move || {
+            let _ = serve_connection_with_cursor(
+                listener.accept().unwrap().0,
+                &b,
+                &bt,
+                &mut window,
+                |_, _| Decision::Once,
+                &mut Sink {
+                    approvals: Arc::new(AtomicUsize::new(0)),
+                },
+            );
+        });
+        let client = Client::connect(
+            TcpStream::connect(address).unwrap(),
+            &a,
+            &at,
+            Some(&code),
+            None,
+            |_, _| Decision::Once,
+        )
+        .unwrap();
+        let error = extend_computer_agent::control::send_session(
+            client, &helper, false, "left", 0.0, None, false,
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains(expected), "{error:#}");
+        assert!(!extend_computer_agent::error::is_connection_failure(&error));
+        server.join().unwrap();
+    }
+}
+
+#[cfg(unix)]
+#[test]
 fn emergency_stop_wins_over_simultaneous_connection_failure() {
     use std::os::unix::fs::PermissionsExt;
     struct FailingHeartbeat;

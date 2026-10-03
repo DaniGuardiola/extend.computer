@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Opt-in signing boundary test; uses the already configured dev signing identity."""
 import importlib.util
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -21,7 +22,10 @@ with tempfile.TemporaryDirectory(prefix='extend-wifi-signing-') as temporary:
     shutil.copyfile(REPO/'native/macos/LowJitter/.build/bundled/ExtendComputerLowJitter', helper)
     with signing.signing_keychain():
         signing.sign(probe, 'computer.extend.desktop.development')
-        signing.sign(helper, 'computer.extend.lowjitter.broker.development')
+        signing.sign(helper, 'computer.extend.lowjitter.broker.development', hardened_runtime=True)
+        details = subprocess.run(['/usr/bin/codesign', '-dvv', str(helper)], text=True, capture_output=True, check=True)
+        flags = re.search(r'flags=0x([0-9a-f]+)', details.stderr)
+        assert flags and int(flags.group(1), 16) & 0x10000, 'Development signing must retain helper hardened runtime'
         assert subprocess.run([str(probe), str(helper)], capture_output=True).returncode == 0
         signing.sign(helper, 'computer.extend.unrelated.development')
         assert subprocess.run([str(probe), str(helper)], capture_output=True).returncode != 0

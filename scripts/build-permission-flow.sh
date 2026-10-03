@@ -7,6 +7,19 @@ if [ "$(/usr/sbin/sysctl -n sysctl.proc_translated 2>/dev/null || true)" = 1 ]; 
 fi
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 ARCH=${TAURI_ENV_ARCH:-${EXTEND_COMPUTER_BUILD_ARCH:-}}
+if [ "$ARCH" = universal ]; then
+  UNIVERSAL_BUILD="$ROOT/native/macos/Permissions/.build/universal"
+  mkdir -p "$UNIVERSAL_BUILD"
+  TAURI_ENV_ARCH=arm64 /bin/bash "$0"
+  for library in "$ROOT/desktop/src-tauri/permission-resources"/*.dylib; do cp "$library" "$UNIVERSAL_BUILD/$(basename "$library")"; done
+  TAURI_ENV_ARCH=x86_64 /bin/bash "$0"
+  for library in "$ROOT/desktop/src-tauri/permission-resources"/*.dylib; do
+    /usr/bin/xcrun lipo -create "$UNIVERSAL_BUILD/$(basename "$library")" "$library" -output "$library.universal"
+    mv "$library.universal" "$library"
+    /usr/bin/codesign --force --sign "${APPLE_SIGNING_IDENTITY:--}" --options runtime "$library"
+  done
+  exit 0
+fi
 case "$ARCH" in
   aarch64|arm64) ARCH=arm64 ;;
   x86_64|x64) ARCH=x86_64 ;;
@@ -45,4 +58,4 @@ build_sources PermissionFlow -lSystemSettingsKit
 build_module ExtendComputerPermissions "$PACKAGE"/Sources/ExtendComputerPermissions/*.swift "$ROOT"/native/macos/LowJitter/Service/*.swift -lPermissionFlow -lSystemSettingsKit
 /usr/bin/ditto "$PACKAGE/Vendor/PermissionFlow/Sources/PermissionFlow/Resources" "$DEST/PermissionFlow_PermissionFlow.bundle"
 cp "$PACKAGE/Vendor/PermissionFlow/LICENSE" "$DEST/PermissionFlow-LICENSE"
-for library in "$DEST"/*.dylib; do /usr/bin/codesign --force --sign - "$library"; done
+for library in "$DEST"/*.dylib; do /usr/bin/codesign --force --sign "${APPLE_SIGNING_IDENTITY:--}" --options runtime "$library"; done

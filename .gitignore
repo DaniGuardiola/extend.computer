@@ -1,12 +1,15 @@
 /target/
 /.extend-computer-state/
 /.test-state*/
+/extend.sqlite3
+/extend.sqlite3-*
 *.log
 .DS_Store
 
 /.local-dev.md
 
 /desktop/node_modules/
+/node_modules/
 /desktop/dist/
 /desktop/target/
 /desktop/src-tauri/target/
@@ -17,3 +20,9 @@
 
 __pycache__/
 *.py[cod]
+
+/native/macos/Updater/vendor/
+/desktop/src-tauri/updater-resources/
+/desktop/src-tauri/release-info.plist
+/desktop/src-tauri/tauri.release.json
+/release-output/

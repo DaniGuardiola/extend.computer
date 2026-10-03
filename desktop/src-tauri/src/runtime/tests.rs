@@ -159,7 +159,13 @@ esac
             .unwrap()
             .automatic_input
     );
-    wait(|| receiver.snapshot().unwrap().session.is_some_and(|s| s.phase == Phase::Connected));
+    wait(|| {
+        receiver
+            .snapshot()
+            .unwrap()
+            .session
+            .is_some_and(|s| s.phase == Phase::Connected)
+    });
     assert!(receiver.approvals.current().is_none());
     let session_id = sender.snapshot().unwrap().session.unwrap().id;
     let mut changed = device.clone();
@@ -173,6 +179,56 @@ esac
     assert_eq!(session.id, session_id);
     assert!(session.phase == Phase::Connected);
     assert!(receiver.approvals.current().is_none());
+    // A real socket failure reconnects the existing outgoing job using the
+    // pinned peer and remembered control grant, without another approval.
+    let old_receiver_job = receiver.inner.lock().unwrap().job.as_ref().unwrap().view.id;
+    receiver
+        .inner
+        .lock()
+        .unwrap()
+        .job
+        .as_ref()
+        .unwrap()
+        .socket
+        .as_ref()
+        .unwrap()
+        .shutdown(Shutdown::Both)
+        .unwrap();
+    wait(|| {
+        receiver
+            .snapshot()
+            .unwrap()
+            .session
+            .is_some_and(|s| s.id != old_receiver_job && s.phase == Phase::Connected)
+    });
+    wait(|| {
+        sender
+            .snapshot()
+            .unwrap()
+            .session
+            .is_some_and(|s| s.id == session_id && s.phase == Phase::Connected)
+    });
+    assert!(receiver.approvals.current().is_none());
+    // Cancellation during reconnect backoff must prevent a later restart.
+    receiver
+        .inner
+        .lock()
+        .unwrap()
+        .job
+        .as_ref()
+        .unwrap()
+        .socket
+        .as_ref()
+        .unwrap()
+        .shutdown(Shutdown::Both)
+        .unwrap();
+    wait(|| {
+        sender
+            .snapshot()
+            .unwrap()
+            .session
+            .is_some_and(|s| s.phase == Phase::Connecting)
+    });
     sender.disconnect();
     wait(|| {
         sender.snapshot().unwrap().session.is_none()
@@ -189,7 +245,13 @@ esac
     assert!(receiver.approvals.current().is_none());
     receiver.receive_at(false, port).unwrap();
     sender.connect(receiver_id, device).unwrap();
-    wait(|| sender.snapshot().unwrap().session.is_some_and(|s| s.phase == Phase::Connected));
+    wait(|| {
+        sender
+            .snapshot()
+            .unwrap()
+            .session
+            .is_some_and(|s| s.phase == Phase::Connected)
+    });
     assert!(receiver.approvals.current().is_none());
     sender.disconnect();
     wait(|| {
@@ -711,7 +773,10 @@ fn custom_local_name_persists_and_resets_without_changing_identity() {
     let restarted = Desktop::new(root.clone(), helper.clone()).unwrap();
     assert_eq!(restarted.local_name(), "Desk Mac");
     restarted.set_local_device_name(" ".into()).unwrap();
-    assert_eq!(Desktop::new(root, helper).unwrap().local_name(), peers::local_name());
+    assert_eq!(
+        Desktop::new(root, helper).unwrap().local_name(),
+        peers::local_name()
+    );
 }
 
 #[test]
@@ -799,4 +864,18 @@ esac
     wait(|| receiver.snapshot().unwrap().session.is_none());
     sender.shutdown();
     receiver.shutdown();
+}
+
+#[test]
+fn installation_reservation_blocks_new_sessions_and_can_be_canceled() {
+    let temp = tempfile::tempdir().unwrap();
+    let app = Desktop::new(temp.path().join("app"), temp.path().join("helper")).unwrap();
+    let (id, _) = app.reserve(SessionKind::Pair, None).unwrap();
+    assert!(!app.prepare_update());
+    app.finish(id, Ok(()));
+    assert!(app.prepare_update());
+    assert!(app.reserve(SessionKind::Pair, None).is_err());
+    app.cancel_update();
+    assert!(app.reserve(SessionKind::Pair, None).is_ok());
+    app.shutdown();
 }

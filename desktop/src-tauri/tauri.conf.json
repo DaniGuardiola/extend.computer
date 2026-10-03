@@ -41,7 +41,10 @@
       "files": {
         "Library/LaunchServices/ExtendComputerLowJitter": "../../native/macos/LowJitter/.build/bundled/ExtendComputerLowJitter",
         "Library/LaunchDaemons/computer.extend.lowjitter.plist": "../../native/macos/LowJitter/Service/computer.extend.lowjitter.plist"
-      }
+      },
+      "frameworks": [
+        "../../native/macos/Updater/vendor/Sparkle.framework"
+      ]
     },
     "icon": [
       "icons/32x32.png",
@@ -56,7 +59,9 @@
       "permission-resources/libPermissionFlow.dylib": "libPermissionFlow.dylib",
       "permission-resources/libSystemSettingsKit.dylib": "libSystemSettingsKit.dylib",
       "permission-resources/PermissionFlow_PermissionFlow.bundle": "PermissionFlow_PermissionFlow.bundle",
-      "permission-resources/PermissionFlow-LICENSE": "PermissionFlow-LICENSE"
+      "permission-resources/PermissionFlow-LICENSE": "PermissionFlow-LICENSE",
+      "updater-resources/libExtendUpdater.dylib": "libExtendUpdater.dylib",
+      "updater-resources/Sparkle-LICENSE": "Sparkle-LICENSE"
     }
   }
 }

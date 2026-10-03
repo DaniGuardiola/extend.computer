@@ -2,12 +2,20 @@ import Foundation
 import CoreGraphics
 import ApplicationServices
 
+private func activeEdgeDisplays() -> [EdgeDisplay]? {
+    var identifiers = [CGDirectDisplayID](repeating: 0, count: 32)
+    var count: UInt32 = 0
+    guard CGGetActiveDisplayList(UInt32(identifiers.count), &identifiers, &count) == .success else { return nil }
+    return identifiers.prefix(Int(count)).map { EdgeDisplay(id: $0, bounds: CGDisplayBounds($0)) }
+}
+
 private final class EdgeCaptureContext {
     var layout: EdgeLayout
     let input: InputCapture
     let persistent: Bool
-    let bounds: CGRect
-    let display: CGDirectDisplayID
+    var bounds: CGRect
+    var display: CGDirectDisplayID
+    let displays: [EdgeDisplay]
     let runLoop: CFRunLoop
     var lastAck = ProcessInfo.processInfo.systemUptime
     let started = ProcessInfo.processInfo.systemUptime
@@ -21,10 +29,11 @@ private final class EdgeCaptureContext {
     var cursorProbeUntil: TimeInterval = 0
     var cursorProbeRows = [String]()
 
-    init(layout: EdgeLayout, bounds: CGRect, display: CGDirectDisplayID, fullInput: Bool, persistent: Bool) {
+    init(layout: EdgeLayout, bounds: CGRect, display: CGDirectDisplayID, displays: [EdgeDisplay], fullInput: Bool, persistent: Bool) {
         self.persistent = persistent
         self.input = InputCapture(enabled: fullInput)
         self.layout = layout; self.bounds = bounds; self.display = display
+        self.displays = displays
         self.runLoop = CFRunLoopGetCurrent()
     }
     func hideCursor() {
@@ -38,30 +47,36 @@ private final class EdgeCaptureContext {
     func warp(_ point: EdgePoint) {
         CGWarpMouseCursorPosition(CGPoint(x: bounds.minX + point.x, y: bounds.minY + point.y))
     }
-    func stop(userRequested: Bool = false) {
+    func stop(userRequested: Bool = false, reason: String = "input-closed") {
         guard !stopped else { return }
         stopped = true
         input.release()
         restoreCursor()
         if let point = layout.cancel() { warp(point) }
-        output(userRequested ? "STOP user" : "STOP")
+        output(userRequested ? "STOP user" : "STOP \(reason)")
         CFRunLoopStop(runLoop)
     }
     func exposed(at y: Double) -> Bool {
-        var displays = [CGDirectDisplayID](repeating: 0, count: 32)
-        var count: UInt32 = 0
-        guard CGGetActiveDisplayList(UInt32(displays.count), &displays, &count) == .success else { return false }
-        let outside = CGPoint(x: layout.side == .left ? bounds.minX - 1 : bounds.maxX,
-                              y: bounds.minY + y)
-        return !displays.prefix(Int(count)).contains { $0 != display && CGDisplayBounds($0).contains(outside) }
+        edgeIsExposed(display: EdgeDisplay(id: display, bounds: bounds), side: layout.side, y: y, in: displays)
+    }
+    func selectDisplay(at point: CGPoint) -> Bool {
+        guard let selected = edgeDisplay(at: point, in: displays) else { return false }
+        if selected.id == display { return true }
+        guard let next = try? EdgeLayout(localWidth: selected.bounds.width, localHeight: selected.bounds.height,
+                                        remoteWidth: layout.remoteWidth, remoteHeight: layout.remoteHeight,
+                                        side: layout.side, offsetY: layout.offsetY) else { return false }
+        // Keep the source display fixed while remote, so return/cancel restores
+        // the cursor to the display that actually handed control over.
+        layout = next; bounds = selected.bounds; display = selected.id
+        return true
     }
     func handle(_ type: CGEventType, _ event: CGEvent) -> Unmanaged<CGEvent>? {
         if stopped { return Unmanaged.passUnretained(event) }
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-            stop(); return Unmanaged.passUnretained(event)
+            stop(reason: "capture-disabled"); return Unmanaged.passUnretained(event)
         }
-        if CGMainDisplayID() != display || CGDisplayBounds(display) != bounds {
-            stop(); return Unmanaged.passUnretained(event)
+        if CGDisplayIsActive(display) == 0 || CGDisplayBounds(display) != bounds {
+            stop(reason: "display-changed"); return Unmanaged.passUnretained(event)
         }
         if type == .keyDown, event.getIntegerValueField(.keyboardEventKeycode) == 53,
            event.flags.contains(.maskControl), event.flags.contains(.maskAlternate) {
@@ -72,6 +87,7 @@ private final class EdgeCaptureContext {
         }
         if input.handle(type, event, remote: layout.remotePosition != nil) { return nil }
         if type == .mouseMoved || (input.enabled && [.leftMouseDragged, .rightMouseDragged, .otherMouseDragged].contains(type)) {
+            if layout.remotePosition == nil && !selectDisplay(at: event.location) { return Unmanaged.passUnretained(event) }
             let now = ProcessInfo.processInfo.systemUptime
             if diagnostics && now < cursorProbeUntil && cursorProbeRows.count < 256 {
                 let visible = CGEvent(source: nil)?.location ?? .zero
@@ -136,10 +152,11 @@ func runEdgeCapture(side: EdgeSide, remoteWidth: Double, remoteHeight: Double, o
     }
     let display = CGMainDisplayID()
     let bounds = CGDisplayBounds(display)
+    guard let displays = activeEdgeDisplays() else { fail("Cannot read local display layout.") }
     let layout = try EdgeLayout(localWidth: bounds.width, localHeight: bounds.height,
                                 remoteWidth: remoteWidth, remoteHeight: remoteHeight,
                                 side: side, offsetY: offsetY)
-    let context = EdgeCaptureContext(layout: layout, bounds: bounds, display: display, fullInput: fullInput, persistent: persistent)
+    let context = EdgeCaptureContext(layout: layout, bounds: bounds, display: display, displays: displays, fullInput: fullInput, persistent: persistent)
     let events: [CGEventType] = [.mouseMoved, .leftMouseDown, .leftMouseUp, .rightMouseDown,
         .rightMouseUp, .otherMouseDown, .otherMouseUp, .leftMouseDragged, .rightMouseDragged,
         .otherMouseDragged, .scrollWheel, .keyDown, .keyUp, .flagsChanged]
@@ -155,7 +172,9 @@ func runEdgeCapture(side: EdgeSide, remoteWidth: Double, remoteHeight: Double, o
     CFRunLoopAddSource(context.runLoop, source, .commonModes)
     let timer = CFRunLoopTimerCreateWithHandler(kCFAllocatorDefault, CFAbsoluteTimeGetCurrent() + 0.1, 0.1, 0, 0) { _ in
         let now = ProcessInfo.processInfo.systemUptime
-        if now - context.lastAck > 2 || (!context.persistent && now - context.started >= 30) { context.stop() }
+        if activeEdgeDisplays() != context.displays { context.stop(reason: "display-changed"); return }
+        if now - context.lastAck > 2 { context.stop(reason: "heartbeat-timeout") }
+        else if !context.persistent && now - context.started >= 30 { context.stop(reason: "duration-limit") }
     }!
     CFRunLoopAddTimer(context.runLoop, timer, .commonModes)
     DispatchQueue.global().async {
@@ -165,7 +184,7 @@ func runEdgeCapture(side: EdgeSide, remoteWidth: Double, remoteHeight: Double, o
             CFRunLoopPerformBlock(context.runLoop, CFRunLoopMode.commonModes.rawValue) {
                 if let side { context.layout.setSide(side) }
                 else if valid { context.lastAck = ProcessInfo.processInfo.systemUptime }
-                else { context.stop() }
+                else { context.stop(reason: "invalid-command") }
             }
             CFRunLoopWakeUp(context.runLoop)
             if !valid { return }

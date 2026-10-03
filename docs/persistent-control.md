@@ -4,6 +4,23 @@
 
 `extend-computer control` provides full mouse and keyboard control until stopped or disconnected. The existing `extend-computer cursor --input` remains a short 30-second development mode. Both interfaces use the same session, permission, and native input engine.
 
+On Macs with several local screens, handoff uses the screen containing the cursor,
+not just the main display. Crossing an exposed left or right edge transfers
+control; seams between local screens keep normal local movement. Return and
+emergency cancellation restore the cursor to the screen that initiated handoff.
+Screen arrangement changes end capture safely. Persistent desktop sessions report
+unexpected capture shutdowns, including lost heartbeats, instead of treating them
+as a normal user stop.
+
+The desktop sender retries transport failures after an established connection up
+to three times, waiting 1, 2, and 4 seconds. It shows Connecting while recovering,
+pins the same peer identity, and requests only already remembered control on
+retries. Each capture starts locally with fresh input state. Disconnect cancels
+backoff; permission, identity, helper, and protocol failures are terminal. An
+unrecovered outgoing failure appears as an error instead of silently returning
+to idle. This recovery does not diagnose or eliminate the underlying network
+stall.
+
 ## Existing two-Mac launcher
 
 Replace `--input` with `--session` in the previous `scripts/two_mac_cursor.py` command. It starts both sides over the existing SSH setup, uses ephemeral test identities, and runs until Control-Option-Escape or Ctrl-C. Add `--seconds 75` for an optional automatic stop. This development launcher does not provide identity continuity or automatic reconnect across process restarts.

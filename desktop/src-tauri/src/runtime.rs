@@ -124,6 +124,7 @@ pub struct Desktop {
     inner: Mutex<Inner>,
     removals: Mutex<BTreeMap<String, String>>,
     closing: AtomicBool,
+    update_pending: AtomicBool,
     pub approvals: Approvals,
 }
 impl Desktop {
@@ -170,6 +171,7 @@ impl Desktop {
             approvals: Approvals::default(),
             removals: Mutex::new(removals),
             closing: AtomicBool::new(false),
+            update_pending: AtomicBool::new(false),
             inner: Mutex::new(Inner {
                 next: 0,
                 job: None,
@@ -280,7 +282,9 @@ impl Desktop {
         Ok(())
     }
     #[cfg(test)]
-    pub fn receive_test_port(self: &Arc<Self>, port: u16) -> Result<()> { self.receive_at(false, port) }
+    pub fn receive_test_port(self: &Arc<Self>, port: u16) -> Result<()> {
+        self.receive_at(false, port)
+    }
     #[cfg(test)]
     pub fn set_test_identity(&self, identity: Identity) {
         *self.identity.lock().unwrap() = Some(Arc::new(identity));
@@ -444,6 +448,7 @@ impl Desktop {
     }
     fn reserve(&self, kind: SessionKind, peer: Option<String>) -> Result<(u64, Arc<AtomicBool>)> {
         let mut i = self.inner.lock().unwrap();
+        ensure!(!self.closing.load(Ordering::SeqCst) && !self.update_pending.load(Ordering::SeqCst), "extend.computer is preparing an update. Try again after it restarts.");
         ensure!(i.job.is_none(), "Disconnect the current session first.");
         i.advertisement = None;
         i.next += 1;
@@ -489,8 +494,25 @@ impl Desktop {
             }
         }
     }
+    fn prepare_reconnect(&self, id: u64) -> bool {
+        let mut inner = self.inner.lock().unwrap();
+        let Some(job) = inner.job.as_mut().filter(|job| {
+            job.view.id == id
+                && job.view.kind == SessionKind::Outgoing
+                && !job.cancelled.load(Ordering::SeqCst)
+        }) else {
+            return false;
+        };
+        if !job.view.advance(Phase::Connecting) {
+            return false;
+        }
+        if let Some(socket) = job.socket.take() {
+            let _ = socket.shutdown(Shutdown::Both);
+        }
+        true
+    }
     fn finish(&self, id: u64, result: Result<()>) {
-        #[cfg(test)]
+        #[cfg(any(test, debug_assertions))]
         eprintln!(
             "job {id} finished: {}",
             result
@@ -504,7 +526,7 @@ impl Desktop {
             let job = i.job.take().unwrap();
             if !job.cancelled.load(Ordering::SeqCst) {
                 match result {
-                    Ok(()) => {},
+                    Ok(()) => {}
                     Err(e) => {
                         if e.is::<extend_computer_agent::low_jitter::PermissionRequired>() {
                             i.permission_request = Some(
@@ -516,7 +538,10 @@ impl Desktop {
                                 .into(),
                             );
                         }
-                        if !(job.view.phase == Phase::Connected && is_connection_error(&e)) {
+                        if !(job.view.kind == SessionKind::Incoming
+                            && job.view.phase == Phase::Connected
+                            && is_connection_error(&e))
+                        {
                             i.error = Some(friendly_error(&e));
                         }
                     }
@@ -587,6 +612,17 @@ impl Desktop {
             i.advertisement = None;
         }
         self.disconnect();
+    }
+    pub fn prepare_update(&self) -> bool {
+        // Reserve and update installation share this lock, preventing a new
+        // session from starting between the idle check and application exit.
+        let inner = self.inner.lock().unwrap();
+        if inner.job.is_some() { return false; }
+        self.update_pending.store(true, Ordering::SeqCst);
+        true
+    }
+    pub fn cancel_update(&self) {
+        self.update_pending.store(false, Ordering::SeqCst);
     }
     pub fn shutdown(&self) {
         self.closing.store(true, Ordering::SeqCst);

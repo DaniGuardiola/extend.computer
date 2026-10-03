@@ -9,6 +9,8 @@ pub enum EngineError {
     LocalConsentDenied,
     RemoteConsentDenied,
     RequestRejected,
+    ProtocolIncompatible,
+    FeatureUnavailable,
     HelperUnavailable,
     AuthenticationFailed,
 }
@@ -20,6 +22,8 @@ impl fmt::Display for EngineError {
             Self::PeerIdentityChanged => "peer identity changed",
             Self::LocalConsentDenied => "permission denied",
             Self::RemoteConsentDenied => "peer denied permission",
+            Self::ProtocolIncompatible => "These devices use incompatible connection protocols. Update extend.computer on both devices before connecting.",
+            Self::FeatureUnavailable => "The other device does not support this sharing feature. Update extend.computer on that device.",
             Self::RequestRejected => "request rejected or incompatible peer",
             Self::HelperUnavailable => {
                 "native helper unavailable or outdated; check permissions and rebuild both helpers"

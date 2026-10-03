@@ -17,7 +17,8 @@ export type LocalDeviceInfo = {
 export type Device = { name: string; address: string; edge: "left" | "right" };
 export type Peer = Device & {
   id: string;
-  availability: "checking" | "online" | "receiving_off" | "offline";
+  availability:
+    "checking" | "online" | "receiving_off" | "offline" | "update_required";
 };
 export type Candidate = { name: string; addresses: string[] };
 export type Request = {

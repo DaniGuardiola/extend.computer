@@ -7,19 +7,27 @@
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit && vite build",
     "tauri": "tauri",
-    "native:permissions": "bash ../scripts/build-permission-flow.sh && sh ../native/macos/LowJitter/build-bundled.sh",
+    "native:permissions": "bash ../scripts/build-permission-flow.sh && sh ../native/macos/LowJitter/build-bundled.sh && npm run native:updater",
     "desktop:dev": "python3 ../scripts/dev-app.py run",
     "desktop:build:dev": "python3 ../scripts/dev-app.py build",
-    "desktop:signing:setup": "python3 ../scripts/dev-app.py setup"
+    "desktop:signing:setup": "python3 ../scripts/dev-app.py setup",
+    "desktop:wifi:prepare": "python3 ../scripts/dev-wifi.py",
+    "native:updater": "bash ../scripts/build-updater.sh",
+    "changeset": "changeset",
+    "release:version": "changeset version && python3 ../scripts/release.py sync",
+    "release:check": "python3 ../scripts/release.py check"
   },
   "dependencies": {
     "@ariakit/react": "^0.4.0",
     "@tauri-apps/api": "^2.0.0",
     "lucide-react": "^1.47.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "react-markdown": "^10.1.0"
   },
   "devDependencies": {
+    "@changesets/changelog-github": "^1.0.1",
+    "@changesets/cli": "^3.0.3",
     "@tailwindcss/vite": "^4.0.0",
     "@tauri-apps/cli": "^2.0.0",
     "@types/react": "^19.0.0",
@@ -29,5 +37,10 @@
     "tailwindcss": "^4.0.0",
     "typescript": "^5.8.0",
     "vite": "^7.0.0"
-  }
+  },
+  "engines": {
+    "node": "^22.11 || ^24 || >=26",
+    "npm": ">=10.9.0"
+  },
+  "license": "MIT"
 }

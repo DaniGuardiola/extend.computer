@@ -1,16 +1,17 @@
 @import "tailwindcss";
 @theme {
-  --color-surface: #ffffff;
+  --color-surface: #f5f6f0;
   --color-selected: #ffffff;
   --color-success: #247547;
-  --color-attention: #946200;
+  --color-attention: #805400;
   --color-danger: #b42332;
-  --color-canvas: #f8f8f5;
-  --color-ink: #282c29;
-  --color-muted: #777c75;
-  --color-line: #e4e6df;
+  --color-canvas: #e9ece4;
+  --color-ink: #232b23;
+  --color-muted: #535e53;
+  --color-line: #c3cabe;
+  --color-control: #7c8975;
   --color-focus: #45603e;
-  --color-placeholder: #e9eae6;
+  --color-placeholder: #dbe0d5;
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 @layer base {
@@ -90,12 +91,17 @@
   .dialog {
     @apply fixed left-1/2 top-1/2 z-50 max-h-[90vh] w-[calc(100%-40px)] max-w-[480px] -translate-x-1/2 -translate-y-1/2 overflow-y-auto overscroll-contain rounded-2xl border border-line bg-surface p-7 shadow-xl;
   }
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--color-muted);
+    opacity: 1;
+  }
   .field {
     @apply flex flex-col gap-2 text-xs font-medium;
   }
   .field input,
   .field select {
-    @apply min-w-0 rounded-lg border border-line bg-surface px-3 py-2.5 text-sm font-normal;
+    @apply min-w-0 rounded-lg border border-control bg-surface px-3 py-2.5 text-sm font-normal;
   }
   .device-action {
     @apply flex min-h-20 flex-col items-center justify-center gap-2 rounded-lg px-2 py-3 text-center text-xs hover:bg-line/40 focus-visible:bg-line/40 disabled:cursor-default disabled:opacity-35 disabled:hover:bg-transparent disabled:focus-visible:bg-transparent;
@@ -120,6 +126,10 @@
 :root {
   color-scheme: light;
 }
+:root:not([data-theme="dark"]) {
+  --color-emerald-500: var(--color-success);
+  --color-amber-500: var(--color-attention);
+}
 :root[data-theme="dark"] {
   color-scheme: dark;
   --color-canvas: #191c19;
@@ -131,6 +141,7 @@
   --color-ink: #e2e7df;
   --color-muted: #a0a99c;
   --color-line: #363c33;
+  --color-control: #363c33;
   --color-focus: #6a7d6c;
   --color-placeholder: #2c302b;
 }
@@ -141,7 +152,7 @@
 
 @layer components {
   .select-button {
-    @apply inline-flex min-w-36 items-center justify-between gap-4 rounded-lg border border-line bg-surface px-3 py-2.5 text-xs text-ink hover:bg-line/30 focus-visible:bg-line/30;
+    @apply inline-flex min-w-36 items-center justify-between gap-4 rounded-lg border border-control bg-surface px-3 py-2.5 text-xs text-ink hover:bg-line/30 focus-visible:bg-line/30;
   }
   .select-popover {
     @apply z-[100] max-h-64 overflow-auto overscroll-contain rounded-lg border border-line bg-surface p-1 text-xs text-ink shadow-lg;
@@ -200,4 +211,22 @@
       0 0 0 2px color-mix(in srgb, var(--color-success) 22%, transparent),
       0 0 12px color-mix(in srgb, var(--color-success) 8%, transparent);
   }
+}
+
+.release-history h1,
+.release-history h2,
+.release-history h3 {
+  font-weight: 600;
+  margin: 1.25rem 0 0.5rem;
+}
+.release-history ul {
+  list-style: disc;
+  padding-left: 1.25rem;
+}
+.release-history li,
+.release-history p {
+  margin: 0.5rem 0;
+}
+.release-history a {
+  text-decoration: underline;
 }

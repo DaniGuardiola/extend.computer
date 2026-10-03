@@ -27,6 +27,9 @@ pub struct Session {
 impl Session {
     pub(super) fn advance(&mut self, next: Phase) -> bool {
         let valid = self.phase == next
+            || (self.kind == SessionKind::Outgoing
+                && self.phase == Phase::Connected
+                && next == Phase::Connecting)
             || matches!(
                 (self.phase, next),
                 (Phase::Connecting, Phase::Approval | Phase::Connected)
@@ -49,6 +52,25 @@ impl Session {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn only_outgoing_control_can_return_to_connecting() {
+        for kind in [
+            SessionKind::Outgoing,
+            SessionKind::Incoming,
+            SessionKind::Pair,
+        ] {
+            let mut session = Session {
+                id: 1,
+                kind,
+                phase: Phase::Connected,
+                peer: None,
+            };
+            assert_eq!(
+                session.advance(Phase::Connecting),
+                kind == SessionKind::Outgoing
+            );
+        }
+    }
     #[test]
     fn cancelled_sessions_cannot_be_revived_by_late_callbacks() {
         let mut s = Session {

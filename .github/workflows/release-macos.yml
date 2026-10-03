@@ -1,0 +1,161 @@
+name: Release macOS app
+on:
+  push:
+    branches: [main]
+    paths: ["desktop/package.json"]
+  workflow_dispatch:
+    inputs:
+      channel:
+        type: choice
+        options: [stable, beta, alpha, canary]
+        default: stable
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+  attestations: write
+concurrency:
+  group: desktop-release
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: macos-14
+    environment: desktop-release
+    env:
+      GH_TOKEN: ${{ secrets.RELEASE_GITHUB_TOKEN || github.token }}
+      RELEASE_REPOSITORY: ${{ vars.RELEASE_REPOSITORY || github.repository }}
+      RELEASE_TOKEN_CONFIGURED: ${{ secrets.RELEASE_GITHUB_TOKEN != '' }}
+      REQUESTED_CHANNEL: ${{ inputs.channel }}
+      REQUIRE_PROVENANCE: ${{ github.event.repository.private == false }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - name: Decide whether this version is ready
+        id: release
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" != refs/heads/main ]]; then
+            echo 'Release builds must run from main.' >&2
+            exit 1
+          fi
+          python3 scripts/release.py check
+          if [[ "$RELEASE_REPOSITORY" != "$GITHUB_REPOSITORY" && "$RELEASE_TOKEN_CONFIGURED" != true ]]; then
+            echo 'Set RELEASE_GITHUB_TOKEN for the separate public distribution repository.' >&2
+            exit 1
+          fi
+          version=$(node -p "require('./desktop/package.json').version")
+          channel=$(python3 scripts/release.py channel --channel "${REQUESTED_CHANNEL:-auto}")
+          echo "RELEASE_CHANNEL=$channel" >> "$GITHUB_ENV"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "build=$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
+          if [[ $(python3 scripts/release.py pending) == true ]]; then
+            echo 'ready=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if gh release view "v$version" --repo "$RELEASE_REPOSITORY" >/dev/null 2>&1; then
+            mkdir -p release-output
+            gh release download "v$version" --repo "$RELEASE_REPOSITORY" --pattern release-metadata.json --pattern '*.dmg' --pattern SHA256SUMS --dir release-output
+            if [[ "$REQUIRE_PROVENANCE" == true ]]; then
+              gh release download "v$version" --repo "$RELEASE_REPOSITORY" --pattern provenance.sigstore.json --dir release-output
+            fi
+            build=$(python3 -c 'import json; print(json.load(open("release-output/release-metadata.json"))["build"])')
+            echo "build=$build" >> "$GITHUB_OUTPUT"
+            echo 'repair=true' >> "$GITHUB_OUTPUT"
+            if git ls-remote --exit-code --heads "https://github.com/$RELEASE_REPOSITORY.git" updates >/dev/null; then
+              git fetch "https://github.com/$RELEASE_REPOSITORY.git" updates
+              if git show "FETCH_HEAD:updates/macos/$channel.xml" > /tmp/extend-current-feed.xml; then
+                if python3 scripts/release.py feed-contains --feed-directory /tmp --build "$build"; then
+                  echo 'ready=false' >> "$GITHUB_OUTPUT"
+                  exit 0
+                fi
+              fi
+            fi
+          fi
+          echo 'ready=true' >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        if: steps.release.outputs.ready == 'true'
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable action; compiler pinned below
+        if: steps.release.outputs.ready == 'true'
+        with:
+          toolchain: 1.98.1
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - name: Install dependencies
+        if: steps.release.outputs.ready == 'true'
+        run: npm ci
+      - name: Test core and desktop
+        if: steps.release.outputs.ready == 'true'
+        run: |
+          sh scripts/build-cursor-helper.sh
+          npm run native:permissions --prefix desktop
+          cargo test --locked
+          cargo test --manifest-path desktop/src-tauri/Cargo.toml --locked
+          npm run build --prefix desktop
+      - name: Build, sign, and notarize
+        if: steps.release.outputs.ready == 'true' && steps.release.outputs.repair != 'true'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          SPARKLE_PUBLIC_KEY: ${{ secrets.SPARKLE_PUBLIC_KEY }}
+          UPDATE_FEED_BASE: ${{ vars.UPDATE_FEED_BASE }}
+          RELEASE_BUILD: ${{ steps.release.outputs.build }}
+        run: bash scripts/release-macos.sh
+      - name: Preserve notarization diagnostics
+        if: always() && steps.release.outputs.ready == 'true' && steps.release.outputs.repair != 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: macos-notarization-${{ github.run_id }}
+          path: release-output/*notarization*.json
+          if-no-files-found: ignore
+      - name: Attest final signed and stapled disk image
+        id: provenance
+        if: steps.release.outputs.ready == 'true' && steps.release.outputs.repair != 'true' && github.event.repository.private == false
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: release-output/extend.computer-${{ steps.release.outputs.version }}-universal.dmg
+      - name: Retain provenance bundle for release download
+        if: steps.provenance.outcome == 'success'
+        env:
+          BUNDLE_PATH: ${{ steps.provenance.outputs.bundle-path }}
+        run: cp "$BUNDLE_PATH" release-output/provenance.sigstore.json
+      - name: Verify original build provenance before publication
+        if: steps.release.outputs.ready == 'true' && github.event.repository.private == false
+        run: bash scripts/verify-release-provenance.sh "release-output/extend.computer-${{ steps.release.outputs.version }}-universal.dmg"
+      - name: Explain private-repository provenance availability
+        if: steps.release.outputs.ready == 'true' && github.event.repository.private == true
+        run: echo '::notice::Build attestations are skipped while this repository is private. They become mandatory automatically when public; private attestations require GitHub Enterprise Cloud.'
+      - name: Restore previously published feeds
+        if: steps.release.outputs.ready == 'true'
+        run: |
+          mkdir -p release-output/updates/macos
+          if git ls-remote --exit-code --heads "https://github.com/$RELEASE_REPOSITORY.git" updates >/dev/null; then
+            git fetch "https://github.com/$RELEASE_REPOSITORY.git" updates
+            git archive FETCH_HEAD | tar -x -C release-output
+          fi
+      - name: Prepare Sparkle tools
+        if: steps.release.outputs.ready == 'true'
+        run: |
+          bash scripts/build-updater.sh
+          python3 scripts/test-release.py
+      - name: Sign appcast
+        if: steps.release.outputs.ready == 'true'
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+          SPARKLE_PUBLIC_KEY: ${{ secrets.SPARKLE_PUBLIC_KEY }}
+        run: |
+          python3 scripts/release.py appcast --channel "$RELEASE_CHANNEL" --build "${{ steps.release.outputs.build }}" --archive "release-output/extend.computer-${{ steps.release.outputs.version }}-universal.dmg"
+          python3 scripts/release.py notes > release-output/release-notes.md
+      - name: Publish binaries, then update feeds
+        if: steps.release.outputs.ready == 'true'
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: bash scripts/publish-release.sh

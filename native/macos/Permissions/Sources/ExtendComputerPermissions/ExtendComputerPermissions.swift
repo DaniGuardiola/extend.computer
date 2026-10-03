@@ -32,8 +32,9 @@ public func extendComputerPermissionsOpen(_ permission: Int32) {
             permissionTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
                 MainActor.assumeIsolated {
                     settingsReturn.observe()
-                    let panelVisible = NSApp.windows.contains { $0 is NSPanel && $0.isVisible }
-                    guard panelVisible, Date() < deadline else {
+                    let guideActive = controller?.isActive == true
+                    guard guideActive, Date() < deadline else {
+                        controller?.closePanel()
                         permissionTimer?.invalidate()
                         permissionTimer = nil
                         requestID = UUID()

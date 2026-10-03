@@ -1,0 +1,103 @@
+#!/usr/bin/python3
+"""Explicit administrator installation of the signed development broker only."""
+import hashlib
+import os
+from pathlib import Path
+import plistlib
+import stat
+import subprocess
+import sys
+
+SERVICE = 'computer.extend.lowjitter.development'
+LABEL = SERVICE + '.manual'
+DEST = Path('/Library/PrivilegedHelperTools') / LABEL
+BINARY = DEST / 'ExtendComputerLowJitter'
+PLIST = Path('/Library/LaunchDaemons') / (LABEL + '.plist')
+EXPECTED = 'BUILD_SHA256'
+REQUIREMENT = BUILD_REQUIREMENT
+
+
+def run(*args):
+    return subprocess.run(args, check=True, capture_output=True, text=True)
+
+
+def secure(path, directory=False):
+    info = path.lstat()
+    kind = stat.S_ISDIR if directory else stat.S_ISREG
+    if not kind(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+        raise RuntimeError('Unsafe root-owned path: ' + str(path))
+
+
+def parents():
+    for path in (DEST.parent, PLIST.parent):
+        for component in [path, *path.parents]:
+            secure(component, directory=True)
+
+
+def verify():
+    secure(DEST, directory=True)
+    secure(BINARY)
+    # An explicit leaf pin preserves trust without installing system certificates.
+    run('/usr/bin/codesign', '--verify', '--strict', '-R', '=' + REQUIREMENT, str(BINARY))
+
+
+def stop(label):
+    result = subprocess.run(['/bin/launchctl', 'bootout', 'system/' + label], capture_output=True)
+    if result.returncode and subprocess.run(['/bin/launchctl', 'print', 'system/' + label], capture_output=True).returncode == 0:
+        raise RuntimeError('Could not stop ' + label)
+
+
+def install():
+    payload = Path(__file__).with_name('ExtendComputerLowJitter').read_bytes()
+    if hashlib.sha256(payload).hexdigest() != EXPECTED:
+        raise RuntimeError('Build changed; prepare installer again')
+    if any(os.path.lexists(path) for path in (DEST, PLIST)):
+        raise RuntimeError('Already installed; uninstall before replacing')
+    job = subprocess.run(['/bin/launchctl', 'print', 'system/' + SERVICE], capture_output=True, text=True)
+    if job.returncode == 0 and 'state = running' in job.stdout:
+        raise RuntimeError('Development broker is running; preserve its leases and registration')
+    DEST.mkdir(mode=0o755)
+    with BINARY.open('xb') as handle:
+        handle.write(payload)
+    BINARY.chmod(0o755)
+    verify()
+    # Disconnect input sharing before installing. Stop only this app's failed
+    # development registration; never reset other background registrations.
+    stop(SERVICE)
+    plist = dict(Label=LABEL, ProgramArguments=[str(BINARY), 'serve'],
+                 MachServices={SERVICE: True}, RunAtLoad=True, KeepAlive=True,
+                 ProcessType='Background', ThrottleInterval=2, UserName='root', Umask=0o077)
+    with PLIST.open('xb') as handle:
+        handle.write(plistlib.dumps(plist))
+    PLIST.chmod(0o644)
+    run('/bin/launchctl', 'bootstrap', 'system', str(PLIST))
+    print('Development broker installed. No Wi-Fi lease requested.')
+
+
+def uninstall():
+    verify()
+    secure(PLIST)
+    contents = plistlib.loads(PLIST.read_bytes())
+    if contents.get('Label') != LABEL or contents.get('ProgramArguments') != [str(BINARY), 'serve']:
+        raise RuntimeError('Unexpected installed configuration; preserved')
+    stop(LABEL)
+    # Restore any interrupted AWDL obligation before removing executable.
+    run(str(BINARY), 'recover')
+    PLIST.unlink()
+    BINARY.unlink()
+    DEST.rmdir()
+    print('Development broker removed; recovery journal preserved.')
+
+
+if os.geteuid() != 0:
+    sys.exit('Run using sudo, with input sharing disconnected.')
+try:
+    parents()
+    if sys.argv[1:] == ['uninstall']:
+        uninstall()
+    elif not sys.argv[1:]:
+        install()
+    else:
+        raise RuntimeError('Usage: install.py [uninstall]')
+except Exception as error:
+    sys.exit(str(error) + '. Installation files preserved for inspection.')

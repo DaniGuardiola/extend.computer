@@ -11,7 +11,9 @@ use std::net::TcpListener;
 pub(super) struct ReceivingPermissionRequired;
 impl std::fmt::Display for ReceivingPermissionRequired {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("Allow Accessibility and Wi-Fi optimization in Settings before allowing connections.")
+        f.write_str(
+            "Allow Accessibility and Wi-Fi optimization in Settings before allowing connections.",
+        )
     }
 }
 impl std::error::Error for ReceivingPermissionRequired {}
@@ -80,8 +82,6 @@ impl Desktop {
         refresh_pairing(&mut inner, &name, &self.discovery_id)?;
         inner.listener = Some(stop.clone());
         inner.receiving_enabled = !pairing;
-        if !pairing {
-        }
         inner.error = None;
         drop(inner);
         let app = self.clone();
@@ -89,7 +89,9 @@ impl Desktop {
             while !stop.load(Ordering::SeqCst) {
                 {
                     let mut inner = app.inner.lock().unwrap();
-                    if let Err(error) = refresh_pairing(&mut inner, &app.local_name(), &app.discovery_id) {
+                    if let Err(error) =
+                        refresh_pairing(&mut inner, &app.local_name(), &app.discovery_id)
+                    {
                         inner.error = Some(format!("Could not make this device visible: {error}"));
                         inner.pairing_open = false;
                         inner.code = None;
@@ -273,15 +275,12 @@ impl CursorSink for GuiSink {
     }
     fn approve_control(&mut self, peer: &str, remembered: bool) -> Result<ControlApproval> {
         let permissions = self.app.refresh_permissions()?;
-        if !self.app.inner.lock().unwrap().receiving_enabled
-            || !permissions.can_receive()
-        {
+        if !self.app.inner.lock().unwrap().receiving_enabled || !permissions.can_receive() {
             return Ok(ControlApproval::Deny);
         }
         // Pairing authorizes control. Still require an authenticated, paired peer,
         // receiving enabled, OS permissions, and a live session.
-        if self.app.store()?.peer(peer)?.is_none()
-            || self.app.cancelled(self.job, &self.cancelled)
+        if self.app.store()?.peer(peer)?.is_none() || self.app.cancelled(self.job, &self.cancelled)
         {
             return Ok(ControlApproval::Deny);
         }

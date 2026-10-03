@@ -83,13 +83,6 @@ public struct PermissionFlowButton: View {
         }
     }
 
-    /// Uses the exact click location as the launch point so the panel appears
-    /// to fly out from where the user pressed the button.
-    private func clickSourceFrameInScreen() -> CGRect {
-        let mouse = NSEvent.mouseLocation
-        return CGRect(x: mouse.x - 16, y: mouse.y - 16, width: 32, height: 32)
-    }
-
     private func authorize() {
         controller.setLocaleIdentifier(locale.identifier)
 
@@ -105,8 +98,7 @@ public struct PermissionFlowButton: View {
         default:
             controller.authorize(
                 pane: pane,
-                suggestedAppURLs: suggestedAppURLs,
-                sourceFrameInScreen: clickSourceFrameInScreen()
+                suggestedAppURLs: suggestedAppURLs
             )
         }
     }

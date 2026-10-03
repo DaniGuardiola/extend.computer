@@ -16,12 +16,14 @@ function PermissionRow({
   description,
   checked,
   allowed,
+  issue = "Permission needed",
   children,
 }: {
   title: string;
   description: string;
   checked: boolean;
   allowed: boolean;
+  issue?: string;
   children: ReactNode;
 }) {
   return (
@@ -35,7 +37,7 @@ function PermissionRow({
               className="size-1.5 shrink-0 rounded-full bg-current"
               aria-hidden="true"
             />
-            Permission needed
+            {issue}
           </p>
         )}
       </div>
@@ -92,6 +94,13 @@ export function PermissionDetails({
         description="Keep your keyboard and mouse responsive over Wi-Fi. AirDrop pauses while connected."
         checked={checked}
         allowed={snapshot.permissions.wifi}
+        issue={
+          snapshot.permissions.wifi_installing
+            ? "Setting up…"
+            : snapshot.permissions.wifi_setup_failed
+              ? "Wi-Fi optimization could not start"
+              : "Permission needed"
+        }
       >
         <button
           className={`button quiet shrink-0 whitespace-nowrap ${snapshot.permissions.wifi ? "text-success" : ""}`}
@@ -99,7 +108,9 @@ export function PermissionDetails({
           aria-label={
             snapshot.permissions.wifi
               ? "Allowed — Open Wi-Fi optimization settings"
-              : "Open Wi-Fi optimization settings"
+              : snapshot.permissions.wifi_setup_failed
+                ? "Retry Wi-Fi optimization setup"
+                : "Open Wi-Fi optimization settings"
           }
           disabled={snapshot.permissions.wifi_installing}
           onClick={() => void openPermission("wifi")}
@@ -109,7 +120,9 @@ export function PermissionDetails({
             ? "Allowed"
             : snapshot.permissions.wifi_installing
               ? "Setting up…"
-              : "Open settings"}
+              : snapshot.permissions.wifi_setup_failed
+                ? "Try again"
+                : "Open settings"}
           {!snapshot.permissions.wifi_installing && (
             <ExternalLink size={14} aria-hidden="true" />
           )}
@@ -117,7 +130,7 @@ export function PermissionDetails({
       </PermissionRow>
       {snapshot.permissions.wifi_setup_failed && (
         <p className="error text-xs" role="alert">
-          Wi-Fi optimization setup did not finish. Open settings to try again.
+          Wi-Fi optimization is unavailable. Try again to repair its setup.
         </p>
       )}
     </>

@@ -1,161 +1,106 @@
 #if os(macOS)
 import SwiftUI
 
+// A continuous outline keeps the material, border, and pointer seamless.
+struct PermissionGuideBubble: Shape {
+    var side: PermissionGuidePointerSide
+    var pointerY: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        let left: CGFloat = side == .left ? 12 : 0
+        let right = rect.width - (side == .right ? 12 : 0)
+        let bottom = rect.height
+        let radius: CGFloat = 18
+        let y = min(bottom - 25, max(25, bottom - pointerY))
+        var p = Path()
+        p.move(to: CGPoint(x: left + radius, y: 0))
+        p.addLine(to: CGPoint(x: right - radius, y: 0))
+        p.addQuadCurve(to: CGPoint(x: right, y: radius), control: CGPoint(x: right, y: 0))
+        if side == .right {
+            p.addLine(to: CGPoint(x: right, y: y - 9))
+            p.addLine(to: CGPoint(x: rect.width, y: y))
+            p.addLine(to: CGPoint(x: right, y: y + 9))
+        }
+        p.addLine(to: CGPoint(x: right, y: bottom - radius))
+        p.addQuadCurve(to: CGPoint(x: right - radius, y: bottom), control: CGPoint(x: right, y: bottom))
+        p.addLine(to: CGPoint(x: left + radius, y: bottom))
+        p.addQuadCurve(to: CGPoint(x: left, y: bottom - radius), control: CGPoint(x: left, y: bottom))
+        if side == .left {
+            p.addLine(to: CGPoint(x: left, y: y + 9))
+            p.addLine(to: CGPoint(x: 0, y: y))
+            p.addLine(to: CGPoint(x: left, y: y - 9))
+        }
+        p.addLine(to: CGPoint(x: left, y: radius))
+        p.addQuadCurve(to: CGPoint(x: left + radius, y: 0), control: CGPoint(x: left, y: 0))
+        p.closeSubpath()
+        return p
+    }
+}
+
 @available(macOS 13.0, *)
 struct PermissionFlowPanelView: View {
     @ObservedObject var controller: PermissionFlowController
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            header
-            if let body = controller.guidanceBody {
-                Text(body)
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
-                    .padding(.top, 6)
-            } else if let primaryApp = controller.preferredAppURL {
-                AppDragItemView(
-                    url: primaryApp,
-                    localeIdentifier: controller.localeIdentifier
-                ) { isDragging in
-                    controller.setPanelDragging(isDragging)
+        let shape = PermissionGuideBubble(side: controller.pointerSide, pointerY: controller.pointerY)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: controller.currentPane == nil ? "wifi" : "hand.raised.fill")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 32, height: 32)
+                    .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(controller.currentPane?.localizedTitle(localeIdentifier: controller.localeIdentifier) ?? "Wi-Fi optimization")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text(appDisplayName).font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 4)
+                Button { controller.closePanel(returnToPreviousApp: true) } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 18))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Close permission guide")
+            }
+            Text(instruction)
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
+                .lineSpacing(2)
+                .fixedSize(horizontal: false, vertical: true)
+            if controller.guidanceBody == nil, controller.targetFrame == nil,
+               let app = controller.preferredAppURL {
+                AppDragItemView(url: app, localeIdentifier: controller.localeIdentifier) {
+                    controller.setPanelDragging($0)
                 }
                 .frame(maxWidth: .infinity)
             }
         }
-        .padding(.top, 8)
-        .padding(.bottom, 12)
-        .padding(.horizontal, 12)
+        .padding(16)
+        .padding(.leading, controller.pointerSide == .left ? 12 : 0)
+        .padding(.trailing, controller.pointerSide == .left ? 0 : 12)
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .fixedSize(horizontal: false, vertical: true)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .stroke(.primary.opacity(0.14), lineWidth: 1)
-                )
-        )
+        .background(.ultraThinMaterial, in: shape)
+        .overlay(shape.stroke(.primary.opacity(0.14), lineWidth: 1))
     }
 
-    /// Keeps the header logic isolated from the drag card layout.
-    private var header: some View {
-        HStack(alignment: .top, spacing: 3) {
-            HeaderDirectionIcon(isDragging: controller.isDraggingApp)
-            Text(headerTitle).font(.system(size: 14))
-            Spacer()
-            HStack(alignment: .top, spacing: 3) {
-                if controller.isSettingsFrontmost == false {
-                    Button {
-                        controller.reopenCurrentSettingsPane()
-                    } label: {
-                        Image(systemName: "gear")
-                            .font(.system(size: 15, weight: .semibold))
-                            .symbolRenderingMode(.palette)
-                            .foregroundStyle(.primary, .secondary.opacity(0.35))
-                    }
-                    .buttonStyle(.borderless)
-                }
-                Button {
-                    controller.closePanel(returnToPreviousApp: true)
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 18, weight: .semibold))
-                        .symbolRenderingMode(.palette)
-                        .foregroundStyle(.primary, .secondary.opacity(0.35))
-                }
-                .buttonStyle(.borderless)
-            }
+    private var instruction: String {
+        if let body = controller.guidanceBody {
+            return [controller.guidanceTitle, body].compactMap { $0 }.joined(separator: ". ")
         }
-    }
-
-    /// Builds a markdown-backed localized title such as:
-    /// "Drag **Example** to the list above."
-    private var headerTitle: AttributedString {
-        if let title = controller.guidanceTitle { return AttributedString(title) }
-        let localizedTemplate = PermissionFlowLocalizer.string(
-            "permission_flow.panel.title",
-            defaultValue: "Drag **%@** to the list above.",
+        if controller.targetFrame != nil { return "Turn on \(appDisplayName) to allow access." }
+        let template = PermissionFlowLocalizer.string(
+            "permission_flow.panel.add_app", defaultValue: "Drag %@ into the list in System Settings, then turn it on.",
             localeIdentifier: controller.localeIdentifier
         )
-
-        let markdown = String(
-            format: localizedTemplate,
-            locale: localizationLocale,
-            appDisplayName,
-            paneDisplayTitle
-        )
-
-        return (try? AttributedString(
-            markdown: markdown,
-            options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        )) ?? AttributedString(markdown)
+        return String(format: template, appDisplayName)
     }
 
-    /// Prefers the Finder-style display name so the title reads naturally even
-    /// when the URL contains a plain bundle filename.
     private var appDisplayName: String {
-        guard let appURL = controller.preferredAppURL else {
-            return PermissionFlowLocalizer.string(
-                "permission_flow.app.this_app",
-                defaultValue: "This App",
-                localeIdentifier: controller.localeIdentifier
-            )
-        }
-
-        return FileManager.default.displayName(atPath: appURL.path)
-    }
-
-    /// Uses the current pane's localized title so each permission can render a
-    /// specific instruction in the shared panel title template.
-    private var paneDisplayTitle: String {
-        controller.currentPane?.localizedTitle(localeIdentifier: controller.localeIdentifier)
-            ?? PermissionFlowLocalizer.string(
-                "permission_flow.pane.permission",
-                defaultValue: "Permission",
-                localeIdentifier: controller.localeIdentifier
-            )
-    }
-
-    /// Uses the explicitly injected panel locale when available.
-    private var localizationLocale: Locale {
-        controller.localeIdentifier.map(Locale.init(identifier:)) ?? .current
-    }
-}
-
-@available(macOS 13.0, *)
-private struct HeaderDirectionIcon: View {
-    let isDragging: Bool
-
-    @State private var wigglePhase = false
-    @State private var scalePhase = false
-
-    var body: some View {
-        Image(systemName: "arrowshape.up.fill")
-            .font(.system(size: 14, weight: .bold))
-            .symbolRenderingMode(.hierarchical)
-            .foregroundStyle(.tint)
-            .rotationEffect(.degrees(isDragging ? 0 : (wigglePhase ? 12 : -12)))
-            .offset(y: isDragging ? 0 : (wigglePhase ? -2 : 1))
-            .scaleEffect(isDragging ? (scalePhase ? 1.18 : 0.88) : 1)
-            .animation(
-                isDragging
-                    ? .easeInOut(duration: 0.68).repeatForever(autoreverses: true)
-                    : .easeInOut(duration: 0.22).repeatForever(autoreverses: true),
-                value: isDragging ? scalePhase : wigglePhase
-            )
-            .onAppear {
-                wigglePhase = true
-            }
-            .onChange(of: isDragging) { dragging in
-                if dragging {
-                    scalePhase = true
-                    wigglePhase = false
-                } else {
-                    scalePhase = false
-                    wigglePhase = true
-                }
-            }
+        guard let app = controller.preferredAppURL else { return "This App" }
+        return FileManager.default.displayName(atPath: app.path)
     }
 }
 #endif

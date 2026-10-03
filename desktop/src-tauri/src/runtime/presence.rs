@@ -2,6 +2,7 @@
 use super::*;
 use extend_computer_agent::{
     discovery::Advertisement,
+    error::EngineError,
     session::{query_presence, serve_presence, Presence},
 };
 use std::{collections::BTreeSet, net::TcpListener, sync::atomic::AtomicUsize};
@@ -13,16 +14,24 @@ pub enum Availability {
     Online,
     ReceivingOff,
     Offline,
+    UpdateRequired,
 }
 #[derive(Default)]
 pub(super) struct Health {
     last: Option<(Instant, bool)>,
     failures: u8,
+    incompatible: bool,
 }
 impl Health {
     fn success(&mut self, receiving: bool) {
         self.last = Some((Instant::now(), receiving));
         self.failures = 0;
+        self.incompatible = false;
+    }
+    fn incompatible(&mut self) {
+        self.last = Some((Instant::now(), false));
+        self.failures = 0;
+        self.incompatible = true;
     }
     fn failure(&mut self) {
         self.failures = self.failures.saturating_add(1);
@@ -30,6 +39,9 @@ impl Health {
     pub fn state(&self) -> Availability {
         if let Some((at, receiving)) = self.last {
             if at.elapsed() < Duration::from_secs(25) && self.failures < 3 {
+                if self.incompatible {
+                    return Availability::UpdateRequired;
+                }
                 return if receiving {
                     Availability::Online
                 } else {
@@ -132,7 +144,11 @@ impl Desktop {
         }
         endpoints.extend_from_slice(candidates);
         let mut seen = BTreeSet::new();
-        for address in endpoints.into_iter().filter(|a| !a.ip().is_unspecified() && seen.insert(*a)).take(32) {
+        for address in endpoints
+            .into_iter()
+            .filter(|a| !a.ip().is_unspecified() && seen.insert(*a))
+            .take(32)
+        {
             if self.closing.load(Ordering::SeqCst) {
                 break;
             }
@@ -172,14 +188,42 @@ impl Desktop {
                     self.apply_peer_unpaired(peer, epoch)?;
                     return Ok(false);
                 }
+                Err(error)
+                    if error.downcast_ref::<EngineError>()
+                        == Some(&EngineError::ProtocolIncompatible) =>
+                {
+                    // query_presence validates the pinned identity before
+                    // protocol negotiation. Discovery cannot set this state.
+                    self.health
+                        .lock()
+                        .unwrap()
+                        .entry(peer.into())
+                        .or_default()
+                        .incompatible();
+                    return Ok(false);
+                }
                 Err(_) => {}
             }
         }
         if self.account_relay.online() && self.account_devices.lock().unwrap().contains_key(peer) {
-            if let Ok(Some(status)) = self
+            let result = self
                 .account_tunnel(peer, "presence")
-                .and_then(|socket| query_presence(socket, identity, peer))
+                .and_then(|socket| query_presence(socket, identity, peer));
+            if result
+                .as_ref()
+                .err()
+                .and_then(|e| e.downcast_ref::<EngineError>())
+                == Some(&EngineError::ProtocolIncompatible)
             {
+                self.health
+                    .lock()
+                    .unwrap()
+                    .entry(peer.into())
+                    .or_default()
+                    .incompatible();
+                return Ok(false);
+            }
+            if let Ok(Some(status)) = result {
                 if self.store()?.peer(peer)?.is_some() {
                     self.health
                         .lock()
@@ -204,6 +248,19 @@ impl Desktop {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn incompatible_peer_requires_update_until_recovery_or_expiry() {
+        let mut h = Health::default();
+        h.incompatible();
+        assert_eq!(h.state(), Availability::UpdateRequired);
+        h.failure();
+        assert_eq!(h.state(), Availability::UpdateRequired);
+        h.success(true);
+        assert_eq!(h.state(), Availability::Online);
+        h.incompatible();
+        h.last = Some((Instant::now() - Duration::from_secs(26), false));
+        assert_eq!(h.state(), Availability::Offline);
+    }
     #[test]
     fn status_requires_verification_and_tolerates_transient_failures() {
         let mut h = Health::default();

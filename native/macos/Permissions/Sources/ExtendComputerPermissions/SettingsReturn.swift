@@ -30,9 +30,12 @@ final class SettingsReturn {
     }
 
     func finish() {
-        // Approval returns to our app even when Settings was already open or
-        // its window cannot safely be closed. Activate after checking ownership.
-        defer { NSApp.activate(ignoringOtherApps: true) }
+        // Return only while the user is still in this flow. A grant detected
+        // after switching apps must not pull focus away from their work.
+        let foreground = NSWorkspace.shared.frontmostApplication
+        let shouldReturn = foreground?.bundleIdentifier == "com.apple.systempreferences"
+            || foreground?.processIdentifier == ProcessInfo.processInfo.processIdentifier
+        defer { if shouldReturn { NSApp.activate(ignoringOtherApps: true) } }
         observe()
         guard ownership.eligible, let owned = ownership.owned,
               AXIsProcessTrusted(), let windows = Self.windows(),

@@ -74,7 +74,7 @@ final class AppDragSourceView: NSView, NSDraggingSource {
 
     override var intrinsicContentSize: NSSize {
         let fitting = hostingView.fittingSize
-        return NSSize(width: NSView.noIntrinsicMetric, height: max(88, fitting.height))
+        return NSSize(width: NSView.noIntrinsicMetric, height: max(56, fitting.height))
     }
 
     override func mouseDown(with event: NSEvent) {

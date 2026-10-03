@@ -15,6 +15,7 @@ import { Select } from "./Select";
 import { Dialog } from "./Dialog";
 import { ExplainedButton } from "./ExplainedButton";
 const availabilityStyle = {
+  update_required: { label: "Update required", dot: "bg-amber-500" },
   online: { label: "Online", dot: "bg-emerald-500" },
   receiving_off: { label: "Not accepting connections", dot: "bg-amber-500" },
   offline: { label: "Offline", dot: "bg-muted/60" },
@@ -156,6 +157,12 @@ export function DeviceRow({
           <Settings2 size={16} />
         </button>
       </div>
+      {!session && peer.availability === "update_required" && (
+        <p className="px-5 pb-4 text-xs text-muted">
+          Update extend.computer on both devices to reconnect. Your pairing is
+          saved.
+        </p>
+      )}
       {(session || peer.availability === "online") && (
         <div className="grid grid-cols-2 gap-1 px-3 pb-3 min-[720px]:grid-cols-4">
           <ExplainedButton
