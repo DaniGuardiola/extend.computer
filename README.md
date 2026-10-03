@@ -16,6 +16,7 @@ Native full-input sharing has been tested across two Macs through the CLI harnes
 
 ## Development and use
 
+- [Contributing](CONTRIBUTING.md): development checks, Changesets, and CI release instructions.
 - [Public launch checklist](docs/public-launch-checklist.md): history reset, migration cleanup, distribution, and public CI verification.
 - [Desktop guide](docs/desktop-preview.md): GUI setup, building, permissions, and current limits.
 - [Persistent control](docs/persistent-control.md): CLI commands, reconnect, and remembered consent.
