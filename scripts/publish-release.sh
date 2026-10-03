@@ -27,6 +27,10 @@ git -C "$temporary" init -b updates
 git -C "$temporary" config user.name github-actions\[bot\]
 git -C "$temporary" config user.email '41898282+github-actions[bot]@users.noreply.github.com'
 git -C "$temporary" remote add origin "https://github.com/$RELEASE_REPOSITORY.git"
+# The temporary checkout does not inherit actions/checkout authentication.
+# Authenticate reads and writes so a private existing feed branch is preserved.
+git -C "$temporary" config credential.helper ''
+git -C "$temporary" config --add credential.helper '!gh auth git-credential'
 if git -C "$temporary" ls-remote --exit-code --heads origin updates >/dev/null; then
   git -C "$temporary" fetch origin updates
   git -C "$temporary" reset --mixed FETCH_HEAD
@@ -36,7 +40,7 @@ git -C "$temporary" add updates .nojekyll
 git -C "$temporary" commit -m "Publish $RELEASE_CHANNEL updates for $RELEASE_VERSION"
 # gh's credential helper reads the scoped distribution token from GH_TOKEN.
 # Do not write credentials into the repository or remote URL.
-git -C "$temporary" -c credential.helper= -c 'credential.helper=!gh auth git-credential' push origin HEAD:updates
+git -C "$temporary" push origin HEAD:updates
 # GITHUB_TOKEN pushes do not trigger the automatic Pages build. Request one
 # explicitly once Pages is enabled; private repositories may enable it later.
 if gh api "repos/$RELEASE_REPOSITORY/pages" --silent >/dev/null 2>&1; then
