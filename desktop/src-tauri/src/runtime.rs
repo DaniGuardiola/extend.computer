@@ -112,6 +112,10 @@ pub struct Desktop {
     pub discovery_id: String,
     pub helper: PathBuf,
     identity: Mutex<Option<Arc<Identity>>>,
+    pub account_relay: Arc<crate::relay::Relay>,
+    account_devices: Mutex<BTreeMap<String, String>>,
+    presence_port: Mutex<u16>,
+    account_trust: extend_computer_agent::account_trust::AccountTrust,
     receiving_preference: Mutex<bool>,
     local_name_override: Mutex<Option<String>>,
     devices: Mutex<BTreeMap<String, Device>>,
@@ -150,6 +154,10 @@ impl Desktop {
             }
         }
         Ok(Arc::new(Self {
+            account_relay: Arc::new(Default::default()),
+            account_devices: Default::default(),
+            presence_port: Mutex::new(48178),
+            account_trust: Default::default(),
             receiving_preference: Mutex::new(preferences::load(&root)?),
             local_name_override: Mutex::new(device_names::load_local_name(&root)?),
             root,
@@ -193,10 +201,95 @@ impl Desktop {
         Ok(value)
     }
     fn store(&self) -> Result<TrustStore> {
-        TrustStore::open(&self.root)
+        Ok(TrustStore::open(&self.root)?.with_account_trust(self.account_trust.clone()))
+    }
+    pub fn clear_account_peers(&self) {
+        self.account_relay.configure(None);
+        self.account_trust.clear();
+        self.account_devices.lock().unwrap().clear();
+    }
+    pub fn is_closing(&self) -> bool {
+        self.closing.load(Ordering::SeqCst)
+    }
+    pub fn account_peer_allowed(&self, peer: &str) -> Result<bool> {
+        Ok(self.store()?.peer(peer)?.is_some()
+            && self.account_devices.lock().unwrap().contains_key(peer))
+    }
+    pub fn relay_listener_port(&self, kind: &str) -> Result<u16> {
+        match kind {
+            "presence" => Ok(*self.presence_port.lock().unwrap()),
+            "control" => {
+                let inner = self.inner.lock().unwrap();
+                ensure!(
+                    inner.receiving_enabled
+                        && inner
+                            .listener
+                            .as_ref()
+                            .is_some_and(|stop| !stop.load(Ordering::SeqCst)),
+                    "Receiving is off"
+                );
+                Ok(inner.listener_port)
+            }
+            _ => anyhow::bail!("Invalid relay connection kind"),
+        }
+    }
+    fn account_tunnel(&self, peer: &str, kind: &str) -> Result<TcpStream> {
+        ensure!(
+            self.store()?.peer(peer)?.is_some(),
+            "Account device access expired"
+        );
+        let id = self
+            .account_devices
+            .lock()
+            .unwrap()
+            .get(peer)
+            .cloned()
+            .context("Device is not signed in to this account")?;
+        self.account_relay.tunnel(&id, kind)
+    }
+    pub fn sync_account_peers(&self, scope: &str, directory: &[serde_json::Value]) -> Result<()> {
+        let own = self.identity()?.fingerprint();
+        let fingerprints: Vec<String> = directory
+            .iter()
+            .filter(|d| d["key_verified"] == true || d["key_verified"] == 1)
+            .filter_map(|d| d["fingerprint"].as_str())
+            .filter(|id| *id != own)
+            .map(str::to_owned)
+            .collect();
+        self.account_trust
+            .replace(scope, &fingerprints, Duration::from_secs(90));
+        let mut devices = self.devices.lock().unwrap();
+        let mut account_devices = self.account_devices.lock().unwrap();
+        account_devices.clear();
+        for item in directory {
+            let Some(id) = item["fingerprint"].as_str() else {
+                continue;
+            };
+            if !fingerprints.iter().any(|fp| fp == id) {
+                continue;
+            }
+            if let Some(device_id) = item["id"].as_str() {
+                account_devices.insert(id.into(), device_id.into());
+            }
+            devices.entry(id.into()).or_insert_with(|| Device {
+                name: item["name"].as_str().unwrap_or("Account device").into(),
+                address: "0.0.0.0:48177".into(),
+                edge: "left".into(),
+            });
+        }
+        Ok(())
+    }
+    #[cfg(test)]
+    pub fn receive_test_port(self: &Arc<Self>, port: u16) -> Result<()> { self.receive_at(false, port) }
+    #[cfg(test)]
+    pub fn set_test_identity(&self, identity: Identity) {
+        *self.identity.lock().unwrap() = Some(Arc::new(identity));
     }
     pub fn account_public_key(&self) -> Result<String> {
         Ok(hex::encode(self.identity()?.public()))
+    }
+    pub fn account_key_proof(&self, server_key: &str, challenge: &str) -> Result<String> {
+        self.identity()?.account_proof(server_key, challenge)
     }
     pub fn local_device_info(&self) -> Result<LocalDeviceInfo> {
         Ok(LocalDeviceInfo {

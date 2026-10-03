@@ -145,16 +145,17 @@ impl Desktop {
         let app = self.clone();
         std::thread::spawn(move || {
             let result = (|| -> Result<()> {
-                extend_computer_agent::low_jitter::require_ready_for_peer(
-                    device.address.parse::<SocketAddr>()?.ip(),
-                )?;
                 let identity = app.identity()?;
                 ensure!(!cancelled.load(Ordering::SeqCst), "Connection cancelled");
-                let socket =
-                    TcpStream::connect_timeout(&device.address.parse()?, Duration::from_secs(5))
-                        .context(
-                        "Could not reach this device. Turn on Allow connections in extend.computer there.",
-                    )?;
+                let address = device.address.parse::<SocketAddr>()?;
+                let socket = if address.ip().is_unspecified() {
+                    app.account_tunnel(&peer, "control")?
+                } else {
+                    extend_computer_agent::low_jitter::require_ready_for_peer(address.ip())?;
+                    TcpStream::connect_timeout(&address, Duration::from_millis(700))
+                        .map_err(anyhow::Error::from)
+                        .or_else(|_| app.account_tunnel(&peer, "control"))?
+                };
                 app.set_socket(id, &socket)?;
                 let client = match Client::connect(
                     socket,

@@ -18,9 +18,9 @@
     },
   ],
   "durable_objects": {
-    "bindings": [{ "name": "ACCOUNTS", "class_name": "AccountService" }],
+    "bindings": [{ "name": "ACCOUNTS", "class_name": "AccountService" }, { "name": "RELAY", "class_name": "AccountRelay" }],
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["AccountService"] }],
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["AccountService"] }, { "tag": "v2", "new_sqlite_classes": ["AccountRelay"] }],
   "vars": {
     "SIGNUP_ENABLED": "true",
     "PUBLIC_ORIGIN": "https://extend.computer",

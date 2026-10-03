@@ -23,7 +23,7 @@ pub async fn discover(state: tauri::State<'_, Arc<Desktop>>) -> Result<Vec<Candi
             .into_iter()
             .map(|i| i.ip())
             .collect();
-        let daemon = mdns_sd::ServiceDaemon::new().map_err(err)?;
+        let daemon = extend_computer_agent::discovery::ipv4_daemon().map_err(err)?;
         let result = (|| {
             let receiver = daemon.browse(PAIRING_SERVICE).map_err(err)?;
             let deadline = Instant::now() + Duration::from_secs(4);

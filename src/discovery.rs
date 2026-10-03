@@ -52,9 +52,7 @@ impl Advertisement {
         )?
         .enable_addr_auto();
         let fullname = info.get_fullname().to_owned();
-        let daemon = ServiceDaemon::new()?;
-        // This prototype listener is IPv4-only; do not advertise unreachable IPv6 endpoints.
-        daemon.disable_interface(IfKind::IPv6)?;
+        let daemon = ipv4_daemon()?;
         daemon.register(info)?;
         Ok(Self { daemon, fullname })
     }
@@ -66,8 +64,16 @@ impl Drop for Advertisement {
     }
 }
 
-pub fn discover(duration: Duration) -> Result<()> {
+/// Match discovery sockets to the IPv4 listeners. On macOS, browsing on IPv6
+/// as well can prevent local IPv4 advertisements from resolving.
+pub fn ipv4_daemon() -> Result<ServiceDaemon> {
     let daemon = ServiceDaemon::new()?;
+    daemon.disable_interface(IfKind::IPv6)?;
+    Ok(daemon)
+}
+
+pub fn discover(duration: Duration) -> Result<()> {
+    let daemon = ipv4_daemon()?;
     let receiver = daemon.browse(SERVICE)?;
     let deadline = Instant::now() + duration;
     while Instant::now() < deadline {

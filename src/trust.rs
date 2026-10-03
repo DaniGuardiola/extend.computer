@@ -25,11 +25,15 @@ pub struct Records {
     pub revoked: BTreeSet<String>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub pending_unpairs: BTreeSet<String>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub account_blocked: BTreeSet<String>,
 }
 
 #[derive(Clone)]
 pub struct TrustStore {
     root: PathBuf,
+    account: crate::account_trust::AccountTrust,
+    account_enabled: bool,
 }
 
 impl TrustStore {
@@ -41,11 +45,35 @@ impl TrustStore {
             use std::os::unix::fs::PermissionsExt;
             fs::set_permissions(&root, fs::Permissions::from_mode(0o700))?;
         }
-        let store = Self { root };
+        let store = Self {
+            root,
+            account: Default::default(),
+            account_enabled: false,
+        };
         store.load()?; // Corrupt state must fail closed.
         Ok(store)
     }
+    pub fn with_account_trust(mut self, account: crate::account_trust::AccountTrust) -> Self {
+        self.account = account;
+        self.account_enabled = true;
+        self
+    }
+    pub fn is_account_peer(&self, id: &str) -> Result<bool> {
+        Ok(!self.load_records()?.peers.contains_key(id) && self.account.peers().contains_key(id))
+    }
     pub fn load(&self) -> Result<Records> {
+        let mut records = self.load_records()?;
+        for (id, peer) in self.account.peers() {
+            if !records.revoked.contains(&id)
+                && !records.pending_unpairs.contains(&id)
+                && !records.account_blocked.contains(&id)
+            {
+                records.peers.entry(id).or_insert(peer);
+            }
+        }
+        Ok(records)
+    }
+    fn load_records(&self) -> Result<Records> {
         match fs::read(self.root.join("trust.json")) {
             Ok(data) => {
                 ensure!(data.len() < 1024 * 1024, "trust store too large");
@@ -70,6 +98,7 @@ impl TrustStore {
                 "device revoked; clear revocation locally before re-pairing"
             );
             r.pending_unpairs.remove(id);
+            r.account_blocked.remove(id);
             let automatic_input = r.peers.get(id).is_some_and(|p| p.automatic_input);
             r.peers.insert(
                 id.to_owned(),
@@ -82,12 +111,21 @@ impl TrustStore {
         })
     }
     pub fn allow_control(&self, id: &str) -> Result<()> {
+        if self.account_enabled && !self.load_records()?.peers.contains_key(id) {
+            ensure!(!self.is_revoked(id)?, "device revoked");
+            ensure!(self.account.allow_control(id), "account membership expired");
+            return Ok(());
+        }
         ensure!(
             id.len() == 64 && hex::decode(id)?.len() == 32,
             "expected full device fingerprint"
         );
         self.modify(|r| {
             ensure!(!r.revoked.contains(id), "device revoked");
+            ensure!(
+                !self.account_enabled || r.peers.contains_key(id),
+                "pairing was removed"
+            );
             let peer = r.peers.entry(id.to_owned()).or_insert(Peer {
                 automatic_probe: false,
                 automatic_input: false,
@@ -117,22 +155,32 @@ impl TrustStore {
     }
     /// Atomically remove local access and retain only a notification target.
     pub fn begin_unpair(&self, id: &str) -> Result<()> {
+        let account_peer = self.is_account_peer(id)?;
+        self.account.forget(id);
         ensure!(
             id.len() == 64 && hex::decode(id)?.len() == 32,
             "expected full device fingerprint"
         );
         self.modify(|r| {
             ensure!(
-                r.peers.contains_key(id) || r.pending_unpairs.contains(id),
+                account_peer || r.peers.contains_key(id) || r.pending_unpairs.contains(id),
                 "unknown device"
             );
             r.peers.remove(id);
             r.pending_unpairs.insert(id.to_owned());
+            if account_peer {
+                r.account_blocked.insert(id.to_owned());
+            }
             Ok(())
         })
     }
     pub fn complete_unpair(&self, id: &str) -> Result<()> {
+        let account_peer = self.account.peers().contains_key(id);
+        self.account.forget(id);
         self.modify(|r| {
+            if account_peer {
+                r.account_blocked.insert(id.to_owned());
+            }
             r.peers.remove(id);
             r.pending_unpairs.remove(id);
             Ok(())
@@ -157,7 +205,7 @@ impl TrustStore {
             .write(true)
             .open(self.root.join("trust.lock"))?;
         lock.lock_exclusive()?;
-        let mut records = self.load()?;
+        let mut records = self.load_records()?;
         edit(&mut records)?;
         let mut temporary = tempfile::NamedTempFile::new_in(&self.root)?;
         temporary.write_all(&serde_json::to_vec_pretty(&records)?)?;

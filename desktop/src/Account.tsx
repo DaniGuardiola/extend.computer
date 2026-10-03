@@ -7,7 +7,13 @@ import {
   Trash2,
   ExternalLink,
 } from "lucide-react";
-import { accounts, native, type AccountState, type AccountDevice, type Peer } from "./bridge";
+import {
+  accounts,
+  native,
+  type AccountState,
+  type AccountDevice,
+  type Peer,
+} from "./bridge";
 import { Dialog } from "./Dialog";
 export function useAccount() {
   const [state, setState] = useState<AccountState | null>(null);
@@ -106,7 +112,9 @@ export function AccountPanel({ account }: { account: AccountFlow }) {
           <p className="break-words">{state.email}</p>
           <p className="text-xs text-muted break-words">{state.server}</p>
           <p className="text-muted">
-            {state.device_id ? "This computer is registered to your account. Account presence updates while the app is open." : "Signed in. Device registration will retry when the server is reachable."}
+            {state.device_id
+              ? "This computer is registered to your account. Account presence updates while the app is open."
+              : "Signed in. Device registration will retry when the server is reachable."}
           </p>
           <div className="flex flex-wrap gap-2">
             <button
@@ -288,8 +296,11 @@ export function AccountDevices({
   const [removal, setRemoval] = useState<AccountDevice | null>(null);
   if (!state?.email) return null;
   const devices = state.devices.filter(
-    (device) => device.id !== state.device_id,
+    (device) =>
+      device.id !== state.device_id &&
+      !peers.some((peer) => peer.id === device.fingerprint),
   );
+  if (!devices.length) return null;
   return (
     <section
       aria-labelledby="account-devices-heading"
@@ -370,10 +381,47 @@ export function AccountDevices({
           );
         })}
       </div>
-      {removal && <Dialog title="Remove account device?" onClose={()=>!busy && setRemoval(null)}><p className="text-sm">Remove {removal.name} from this account? Its account presence will stop. Local pairing stays available.</p>{error && <p role="alert" className="error mt-3">{error}</p>}<div className="mt-5 flex justify-end gap-2"><button className="button quiet" disabled={busy} onClick={()=>setRemoval(null)}>Cancel</button><button className="button destructive" disabled={busy} onClick={()=>void act(async()=>{const next=await accounts.remove(removal.id);setRemoval(null);return next})}>Remove device</button></div></Dialog>}
+      {removal && (
+        <Dialog
+          title="Remove account device?"
+          onClose={() => !busy && setRemoval(null)}
+        >
+          <p className="text-sm">
+            Remove {removal.name} from this account? Its account presence will
+            stop. Local pairing stays available.
+          </p>
+          {error && (
+            <p role="alert" className="error mt-3">
+              {error}
+            </p>
+          )}
+          <div className="mt-5 flex justify-end gap-2">
+            <button
+              className="button quiet"
+              disabled={busy}
+              onClick={() => setRemoval(null)}
+            >
+              Cancel
+            </button>
+            <button
+              className="button destructive"
+              disabled={busy}
+              onClick={() =>
+                void act(async () => {
+                  const next = await accounts.remove(removal.id);
+                  setRemoval(null);
+                  return next;
+                })
+              }
+            >
+              Remove device
+            </button>
+          </div>
+        </Dialog>
+      )}
       {!!devices.length && (
         <p className="mt-3 text-xs text-muted">
-          Pair devices on your local network before connecting.
+          These devices need local pairing. Updated apps connect through your account.
         </p>
       )}
     </section>

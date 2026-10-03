@@ -66,17 +66,23 @@ EXTEND_TEST_URL=http://localhost:8081 EXTEND_TEST_CDP=<isolated-browser-websocke
 
 ## Trust and hosting
 
-Passwords use Argon2id. Random 256-bit account and device tokens are stored as SHA-256 hashes. Login sessions expire after 30 days. Device tokens can only heartbeat their own device; they cannot read the directory or manage accounts. Every directory operation is scoped to an authenticated account. Database queries run outside the async executor. Password hashing has a two-worker bound; login/signup requests have a 20-per-minute socket-IP limit and a 16 KiB body limit. Accounts have limits of 100 active sessions and 100 registered devices.
+Passwords use Argon2id. Random 256-bit account and device tokens are stored as SHA-256 hashes. Login sessions expire after 30 days. Device tokens can heartbeat their own device, prove possession of its key, and join the account-private relay; they cannot read the directory or manage accounts. Every directory operation is scoped to an authenticated account. Database queries run outside the async executor. Password hashing has a two-worker bound; login/signup requests have a 20-per-minute socket-IP limit and a 16 KiB body limit. Accounts have limits of 100 active sessions and 100 registered devices.
 
 Forwarded IP headers are ignored. Behind a reverse proxy, the application rate limit is shared by requests from that proxy. Configure per-client limits at the proxy before public hosting. SQLite supports one server instance with a local persistent disk; multiple replicas and distributed rate limits need a later storage change. Email verification, account recovery, richer session management, and distributed abuse controls remain separate work for the standalone server.
 
-The registry records a public-key claim; it does not prove possession of that device's private key. Account membership and presence must not silently become permission to control a computer. No private device keys, trust grants, input events, or screen contents are uploaded. Directory removal currently revokes server access only; it does not terminate an existing local control session or remove local pairing.
+Device registration records the existing engine public key. A session-bound, one-use X25519 challenge proves possession before the device becomes eligible for automatic account pairing or relay access. Challenges expire after two minutes; failed proofs are consumed. Previously registered devices remain unverified until an updated desktop app proves its key.
 
-## Desktop integration next
+The desktop app treats verified same-account identities as temporary peers. Membership is refreshed every 30 seconds and expires after 90 seconds without a successful refresh. Account trust and its control consent never become permanent local pairing. Signing out removes temporary access immediately. The receiver must enable incoming connections, grant OS permissions, and approve the first control request locally. Existing manual pairings remain independent.
 
-Add server selection with the official URL as default and a custom HTTPS URL for self-hosting. Account credentials and device records belong to that server; switching servers must not reuse credentials. Keep account-free local operation available.
+## Internet connections
 
-After login, register the local engine identity, heartbeat while signed in, and display the account's other devices. Before enabling connection from those entries, implement device-key possession verification and bind account discovery to the engine's pinned encrypted peer handshake and local control permissions. Internet connections also need rendezvous, NAT traversal, and encrypted relay fallback. This server does not publish connection addresses or implement those routes yet.
+The app first tries a local connection, then uses an authenticated WebSocket relay when the local endpoint is unreachable. The relay forwards opaque bytes from the existing pinned Noise connection; it cannot decrypt mouse, keyboard, or screen data. It accepts only verified devices in the same account. Revoked or expired credentials close active tunnels; the server rechecks them every five seconds. Configure the HTTPS reverse proxy to forward WebSocket upgrades for `/v1/relay/*`.
+
+The relay allows four simultaneous tunnels per account and bounds frames to 64 KiB, traffic to 2 MiB per second and 2,000 frames per second. Pending tunnels expire after 30 seconds. Connections currently expire after one hour. Direct internet NAT traversal is not implemented; internet connections use the relay. Official hosting uses a SQLite Durable Object with WebSocket hibernation on Cloudflare's free plan, subject to its usage quotas.
+
+## Desktop integration
+
+Choose the official origin or a custom HTTPS origin in the desktop account dialog. Credentials stay in the OS credential store, scoped to that server. The local device registers its existing identity, proves possession, and heartbeats while signed in. Verified account devices appear in the normal device list. Local discovery and control remain available without an account.
 
 ## Verify
 

@@ -1,6 +1,7 @@
 #[cfg(all(feature = "dev-identity", not(debug_assertions)))]
 compile_error!("dev-identity is forbidden in release builds");
 
+pub mod account_trust;
 pub mod cursor;
 pub mod discovery;
 pub mod identity;

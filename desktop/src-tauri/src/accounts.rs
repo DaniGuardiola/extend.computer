@@ -37,6 +37,8 @@ struct Credential {
     device_id: Option<String>,
     device_token: Option<String>,
     registered_name: Option<String>,
+    #[serde(default)]
+    key_verified: bool,
 }
 struct Inner {
     view: View,
@@ -258,6 +260,7 @@ impl Accounts {
             device_id: None,
             device_token: None,
             registered_name: None,
+            key_verified: false,
         };
         // Save before exposing a successful login. A failed save must not leave a memory-only login.
         let raw = Zeroizing::new(serde_json::to_string(&c)?);
@@ -331,12 +334,14 @@ impl Accounts {
         Self::load(&mut inner)?;
         let server = inner.view.server.clone();
         let Some(c) = inner.credential.as_mut() else {
+            self.desktop.clear_account_peers();
             return Ok(inner.view.clone());
         };
         let user = match self.request(&server, "/account", "GET", None, Some(&c.token)) {
             Ok(user) => user,
             Err(e) => {
                 if e.to_string().starts_with("Your login") {
+                    self.desktop.clear_account_peers();
                     Self::clear(&mut inner)?;
                 }
                 inner.view.error = Some(e.to_string());
@@ -363,6 +368,35 @@ impl Accounts {
                     .into(),
             );
             c.registered_name = Some(local.name);
+            c.key_verified = false;
+            Self::save(&inner)?;
+        }
+        let c = inner.credential.as_ref().unwrap();
+        if !c.key_verified {
+            let path = format!("/devices/{}/proof", c.device_id.as_ref().unwrap());
+            let challenge = self.request(
+                &server,
+                &(path.clone() + "/options"),
+                "POST",
+                Some(json!({})),
+                c.device_token.as_deref(),
+            )?;
+            let proof = self.desktop.account_key_proof(
+                challenge["server_key"]
+                    .as_str()
+                    .context("Invalid server key")?,
+                challenge["challenge"]
+                    .as_str()
+                    .context("Invalid challenge")?,
+            )?;
+            self.request(
+                &server,
+                &(path + "/verify"),
+                "POST",
+                Some(json!({"challenge":challenge["challenge"],"proof":proof})),
+                c.device_token.as_deref(),
+            )?;
+            inner.credential.as_mut().unwrap().key_verified = true;
             Self::save(&inner)?;
         }
         let c = inner.credential.as_ref().unwrap();
@@ -375,6 +409,7 @@ impl Accounts {
         );
         if let Err(e) = heartbeat {
             if e.to_string().starts_with("Your login") {
+                self.desktop.clear_account_peers();
                 Self::clear(&mut inner)?;
             }
             inner.view.error = Some(e.to_string());
@@ -390,10 +425,34 @@ impl Accounts {
             .as_array()
             .context("Invalid device list.")?
             .clone();
+        self.desktop
+            .account_relay
+            .configure(Some(crate::relay::RelayCredentials {
+                server: server.clone(),
+                device: inner
+                    .credential
+                    .as_ref()
+                    .unwrap()
+                    .device_id
+                    .clone()
+                    .unwrap(),
+                token: inner
+                    .credential
+                    .as_ref()
+                    .unwrap()
+                    .device_token
+                    .clone()
+                    .unwrap(),
+            }));
+        self.desktop.sync_account_peers(
+            &format!("{}/{}", server, inner.view.email.as_deref().unwrap()),
+            &inner.view.devices,
+        )?;
         inner.view.error = None;
         Ok(inner.view.clone())
     }
     pub fn logout(&self) -> Result<View> {
+        self.desktop.clear_account_peers();
         self.generation.fetch_add(1, Ordering::SeqCst);
         let mut inner = self.inner.lock().unwrap();
         inner.view.browser_pending = false;
@@ -411,6 +470,7 @@ impl Accounts {
             Ok(())
         };
         Self::clear(&mut inner)?;
+        self.desktop.clear_account_peers();
         inner.view.error=result.err().map(|_|"Signed out locally. Server was unreachable; revoke this session in account settings.".into());
         Ok(inner.view.clone())
     }
@@ -570,6 +630,7 @@ impl Accounts {
         Ok(view)
     }
     pub fn start(self: &Arc<Self>) {
+        self.desktop.account_relay.start(&self.desktop);
         let weak = Arc::downgrade(self);
         std::thread::spawn(move || loop {
             let Some(this) = weak.upgrade() else { break };

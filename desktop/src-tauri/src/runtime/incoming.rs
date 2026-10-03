@@ -271,7 +271,7 @@ impl CursorSink for GuiSink {
     fn approve(&mut self, _: &str) -> Result<bool> {
         Ok(false)
     }
-    fn approve_control(&mut self, peer: &str, _remembered: bool) -> Result<ControlApproval> {
+    fn approve_control(&mut self, peer: &str, remembered: bool) -> Result<ControlApproval> {
         let permissions = self.app.refresh_permissions()?;
         if !self.app.inner.lock().unwrap().receiving_enabled
             || !permissions.can_receive()
@@ -284,6 +284,15 @@ impl CursorSink for GuiSink {
             || self.app.cancelled(self.job, &self.cancelled)
         {
             return Ok(ControlApproval::Deny);
+        }
+        if self.app.store()?.is_account_peer(peer)? && !remembered {
+            self.app.stage(self.job, Phase::Approval, Some(peer));
+            if self.app.approvals.ask("control", peer, || {
+                self.app.cancelled(self.job, &self.cancelled)
+            }) == Answer::Deny
+            {
+                return Ok(ControlApproval::Deny);
+            }
         }
         self.app.stage(self.job, Phase::Connecting, Some(peer));
         self.inner.start_approved_control()?;

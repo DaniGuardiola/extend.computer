@@ -478,14 +478,14 @@ fn legacy_local_placeholders_are_hidden_but_remote_notices_survive() {
 
 #[test]
 fn pairing_advertisement_is_withdrawn_when_dialog_closes() {
-    use mdns_sd::{ServiceDaemon, ServiceEvent};
+    use mdns_sd::ServiceEvent;
     let dir = tempfile::tempdir().unwrap();
     let app = Desktop::new(dir.path().into(), dir.path().join("unused-helper")).unwrap();
     *app.identity.lock().unwrap() = Some(Arc::new(Identity::generate()));
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
     drop(listener);
-    let daemon = ServiceDaemon::new().unwrap();
+    let daemon = extend_computer_agent::discovery::ipv4_daemon().unwrap();
     let events = daemon
         .browse(extend_computer_agent::discovery::PAIRING_SERVICE)
         .unwrap();
@@ -712,4 +712,91 @@ fn custom_local_name_persists_and_resets_without_changing_identity() {
     assert_eq!(restarted.local_name(), "Desk Mac");
     restarted.set_local_device_name(" ".into()).unwrap();
     assert_eq!(Desktop::new(root, helper).unwrap().local_name(), peers::local_name());
+}
+
+#[test]
+#[cfg(unix)]
+fn account_pairing_requires_local_control_consent_and_ends_on_signout() {
+    use std::os::unix::fs::PermissionsExt;
+    let temp = tempfile::tempdir().unwrap();
+    let helper = temp.path().join("helper");
+    std::fs::write(
+        &helper,
+        r#"#!/bin/sh
+case "$1" in
+status) echo 'listen=true post=true wifi=true';;
+inject-control) echo 'READY 1728 1117'; while IFS= read -r line; do echo OK; done;;
+capture-control-*) echo 'READY 1512 982'; while IFS= read -r line; do :; done;;
+*) exit 1;;
+esac
+"#,
+    )
+    .unwrap();
+    std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let receiver = Desktop::new(temp.path().join("receiver"), helper.clone()).unwrap();
+    let sender = Desktop::new(temp.path().join("sender"), helper).unwrap();
+    receiver.set_test_identity(Identity::generate());
+    sender.set_test_identity(Identity::generate());
+    let receiver_id = receiver.identity().unwrap().fingerprint();
+    let sender_id = sender.identity().unwrap().fingerprint();
+    receiver.sync_account_peers("server/account",&[serde_json::json!({"id":"a".repeat(64),"fingerprint":sender_id,"name":"Sender","key_verified":true})]).unwrap();
+    sender.sync_account_peers("server/account",&[serde_json::json!({"id":"b".repeat(64),"fingerprint":receiver_id,"name":"Receiver","key_verified":true})]).unwrap();
+    let socket = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = socket.local_addr().unwrap().port();
+    drop(socket);
+    receiver.receive_at(false, port).unwrap();
+    let device = Device {
+        name: "Receiver".into(),
+        address: format!("127.0.0.1:{port}"),
+        edge: "left".into(),
+    };
+    sender.save_device(&receiver_id, device.clone()).unwrap();
+    sender.connect(receiver_id.clone(), device.clone()).unwrap();
+    wait(|| receiver.approvals.current().is_some());
+    let approval = receiver.approvals.current().unwrap();
+    assert_eq!(approval.kind, "control");
+    receiver
+        .approvals
+        .answer(approval.id, Answer::Deny)
+        .unwrap();
+    wait(|| {
+        sender.snapshot().unwrap().session.is_none()
+            && receiver.snapshot().unwrap().session.is_none()
+    });
+    assert!(
+        !receiver
+            .store()
+            .unwrap()
+            .peer(&sender_id)
+            .unwrap()
+            .unwrap()
+            .automatic_input
+    );
+    sender.connect(receiver_id, device).unwrap();
+    wait(|| receiver.approvals.current().is_some());
+    let approval = receiver.approvals.current().unwrap();
+    assert_eq!(approval.kind, "control");
+    receiver
+        .approvals
+        .answer(approval.id, Answer::Remember)
+        .unwrap();
+    wait(|| {
+        sender
+            .snapshot()
+            .unwrap()
+            .session
+            .is_some_and(|session| session.phase == Phase::Connected)
+    });
+    assert!(
+        TrustStore::open(&receiver.root)
+            .unwrap()
+            .peer(&sender_id)
+            .unwrap()
+            .is_none(),
+        "Account consent must never become permanent local pairing"
+    );
+    receiver.clear_account_peers();
+    wait(|| receiver.snapshot().unwrap().session.is_none());
+    sender.shutdown();
+    receiver.shutdown();
 }

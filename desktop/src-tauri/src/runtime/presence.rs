@@ -50,6 +50,7 @@ impl Desktop {
             TcpListener::bind(("0.0.0.0", 48178)).or_else(|_| TcpListener::bind(("0.0.0.0", 0)))?;
         listener.set_nonblocking(true)?;
         let port = listener.local_addr()?.port();
+        *self.presence_port.lock().unwrap() = port;
         let weak = Arc::downgrade(self);
         std::thread::spawn(move || {
             let mut advertisement = None;
@@ -131,7 +132,7 @@ impl Desktop {
         }
         endpoints.extend_from_slice(candidates);
         let mut seen = BTreeSet::new();
-        for address in endpoints.into_iter().filter(|a| seen.insert(*a)).take(32) {
+        for address in endpoints.into_iter().filter(|a| !a.ip().is_unspecified() && seen.insert(*a)).take(32) {
             if self.closing.load(Ordering::SeqCst) {
                 break;
             }
@@ -172,6 +173,22 @@ impl Desktop {
                     return Ok(false);
                 }
                 Err(_) => {}
+            }
+        }
+        if self.account_relay.online() && self.account_devices.lock().unwrap().contains_key(peer) {
+            if let Ok(Some(status)) = self
+                .account_tunnel(peer, "presence")
+                .and_then(|socket| query_presence(socket, identity, peer))
+            {
+                if self.store()?.peer(peer)?.is_some() {
+                    self.health
+                        .lock()
+                        .unwrap()
+                        .entry(peer.into())
+                        .or_default()
+                        .success(status.receiving);
+                    return Ok(true);
+                }
             }
         }
         self.health

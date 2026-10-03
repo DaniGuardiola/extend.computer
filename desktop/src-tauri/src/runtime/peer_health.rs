@@ -4,7 +4,7 @@ impl Desktop {
     pub fn start_peer_checks(self: &Arc<Self>) {
         let weak = Arc::downgrade(self);
         std::thread::spawn(move || {
-            let daemon = mdns_sd::ServiceDaemon::new().ok();
+            let daemon = extend_computer_agent::discovery::ipv4_daemon().ok();
             let receiver = daemon.as_ref().and_then(|d| {
                 d.browse(extend_computer_agent::discovery::PRESENCE_SERVICE)
                     .ok()
@@ -121,6 +121,9 @@ impl Desktop {
             return Ok(());
         }
         if self.store()?.peer(peer)?.is_none() {
+            return Ok(());
+        }
+        if self.store()?.is_account_peer(peer)? {
             return Ok(());
         }
         self.store()?.complete_unpair(peer)?;

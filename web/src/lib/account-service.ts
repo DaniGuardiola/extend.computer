@@ -1030,7 +1030,8 @@ export class AccountService extends DurableObject<Env> {
           )
           .bind(digest(raw), challenge, now() + 120, session.token_hash, now()),
       ])
-      if (!granted[1]!.meta.changes) fail(401, 'Browser session ended. Sign in again.')
+      if (!granted[1]!.meta.changes)
+        fail(401, 'Browser session ended. Sign in again.')
       return json({ code: raw })
     }
 
@@ -1255,12 +1256,13 @@ export class AccountService extends DurableObject<Env> {
       const { results } = await db
         .prepare(
           `SELECT d.id, d.fingerprint, d.name, d.platform, d.created_at,
-        MAX(CASE WHEN s.expires_at > ? THEN ds.last_seen END) AS last_seen
+        MAX(CASE WHEN s.expires_at > ? AND s.mfa_version=a.mfa_version THEN ds.key_verified ELSE 0 END) AS key_verified,
+        MAX(CASE WHEN s.expires_at > ? AND s.mfa_version=a.mfa_version THEN ds.last_seen END) AS last_seen
         FROM devices d LEFT JOIN device_sessions ds ON ds.device_id = d.id
-        LEFT JOIN sessions s ON s.token_hash = ds.session_hash
+        LEFT JOIN sessions s ON s.token_hash = ds.session_hash LEFT JOIN accounts a ON a.id=s.account_id
         WHERE d.account_id = ? GROUP BY d.id ORDER BY d.created_at, d.id`,
         )
-        .bind(now(), account)
+        .bind(now(), now(), account)
         .all<{ last_seen: number | null }>()
       return json({
         devices: results.map((d) => ({
@@ -1294,8 +1296,13 @@ export class AccountService extends DurableObject<Env> {
       const inserted = await db.batch([
         db
           .prepare(
-            `INSERT INTO devices SELECT ?, ?, ?, ?, ?, ? WHERE (SELECT COUNT(*) FROM devices WHERE account_id = ?) < 100 OR EXISTS (SELECT 1 FROM devices WHERE account_id = ? AND fingerprint = ?)
-          ON CONFLICT(account_id, fingerprint) DO UPDATE SET name = excluded.name, platform = excluded.platform`,
+            'DELETE FROM device_proofs WHERE token_hash IN (SELECT token_hash FROM device_sessions WHERE session_hash=? AND device_id IN (SELECT id FROM devices WHERE account_id=? AND fingerprint=?))',
+          )
+          .bind(session.token_hash, account, fingerprint),
+        db
+          .prepare(
+            `INSERT INTO devices (id,account_id,fingerprint,name,platform,created_at,public_key) SELECT ?, ?, ?, ?, ?, ?, ? WHERE (SELECT COUNT(*) FROM devices WHERE account_id = ?) < 100 OR EXISTS (SELECT 1 FROM devices WHERE account_id = ? AND fingerprint = ?)
+          ON CONFLICT(account_id, fingerprint) DO UPDATE SET name = excluded.name, platform = excluded.platform, public_key=excluded.public_key`,
           )
           .bind(
             id,
@@ -1304,18 +1311,19 @@ export class AccountService extends DurableObject<Env> {
             name,
             input.platform,
             now(),
+            publicKey.toLowerCase(),
             account,
             account,
             fingerprint,
           ),
         db
           .prepare(
-            `INSERT INTO device_sessions SELECT ?, ?, id, NULL FROM devices WHERE fingerprint = ? AND account_id = ?
-          ON CONFLICT(session_hash, device_id) DO UPDATE SET token_hash = excluded.token_hash, last_seen = NULL`,
+            `INSERT INTO device_sessions (token_hash,session_hash,device_id,last_seen) SELECT ?, ?, id, NULL FROM devices WHERE fingerprint = ? AND account_id = ?
+          ON CONFLICT(session_hash, device_id) DO UPDATE SET token_hash = excluded.token_hash, last_seen = NULL, key_verified=0`,
           )
           .bind(digest(deviceToken), session.token_hash, fingerprint, account),
       ])
-      if (!inserted[1]!.meta.changes) fail(429, 'Device limit reached')
+      if (!inserted[2]!.meta.changes) fail(429, 'Device limit reached')
       const registered = await db
         .prepare(
           'SELECT id FROM devices WHERE account_id = ? AND fingerprint = ?',

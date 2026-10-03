@@ -25,8 +25,10 @@ use std::{
 };
 use tokio::sync::Semaphore;
 
+mod device_keys;
 mod mfa;
 mod passkeys;
+mod relay;
 
 const SESSION_SECONDS: i64 = 30 * 24 * 60 * 60;
 const ONLINE_SECONDS: i64 = 90;
@@ -42,6 +44,7 @@ pub struct Config {
 
 pub struct Server {
     db: Mutex<Connection>,
+    relay: Mutex<relay::Registry>,
     config: Config,
     passkeys: Option<passkeys::Passkeys>,
     password_workers: Arc<Semaphore>,
@@ -67,7 +70,7 @@ impl Server {
         let db = Connection::open(path)?;
         db.busy_timeout(Duration::from_secs(5))?;
         let version: i64 = db.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        anyhow::ensure!(version <= 3, "database schema is newer than this server");
+        anyhow::ensure!(version <= 4, "database schema is newer than this server");
         if let Some(key) = config.mfa_encryption_key.as_deref() {
             anyhow::ensure!(
                 hex::decode(key).is_ok_and(|k| k.len() == 32),
@@ -81,9 +84,16 @@ impl Server {
                 include_str!("schema_mfa.sql")
             ))?;
         }
-        db.pragma_update(None, "user_version", 3)?;
+        if version < 4 {
+            db.execute_batch(&format!(
+                "BEGIN IMMEDIATE; {} PRAGMA user_version=4; COMMIT;",
+                include_str!("schema_device_keys.sql")
+            ))?;
+        }
+        db.pragma_update(None, "user_version", 4)?;
         Ok(Arc::new(Self {
             db: Mutex::new(db),
+            relay: Default::default(),
             passkeys: config
                 .origin
                 .as_deref()
@@ -143,6 +153,9 @@ pub fn router(server: Arc<Server>) -> Router {
         .merge(auth)
         .route("/healthz", get(|| async { Json(json!({"status": "ok"})) }))
         .route("/v1/server", get(server_info))
+        .route("/v1/relay/connect", get(relay::connect))
+        .route("/v1/relay/tunnel", get(relay::tunnel))
+        .route("/v1/relay/accept", get(relay::accept))
         .route("/v1/account", get(account))
         .route("/v1/mfa", get(mfa::info))
         .route("/v1/passkeys", get(passkeys::list))
@@ -151,6 +164,8 @@ pub fn router(server: Arc<Server>) -> Router {
         .route("/v1/devices", get(devices).post(register_device))
         .route("/v1/devices/{id}", delete(revoke_device))
         .route("/v1/devices/{id}/heartbeat", post(heartbeat))
+        .route("/v1/devices/{id}/proof/options", post(device_keys::options))
+        .route("/v1/devices/{id}/proof/verify", post(device_keys::verify))
         .layer(DefaultBodyLimit::max(16 * 1024))
         .layer(middleware::from_fn(private_response))
         .with_state(server)
@@ -444,6 +459,7 @@ struct Device {
     created_at: i64,
     last_seen: Option<i64>,
     online: bool,
+    key_verified: bool,
 }
 
 async fn register_device(
@@ -474,21 +490,22 @@ async fn register_device(
             params![account, fingerprint], |r| r.get(0)).optional()?;
         let id = match existing {
             Some(id) => {
-                tx.execute("UPDATE devices SET name = ?, platform = ? WHERE id = ?", params![name, input.platform, id])?;
+                tx.execute("UPDATE devices SET name = ?, platform = ?, public_key = ? WHERE id = ?", params![name, input.platform, input.public_key, id])?;
                 id
             }
             None => {
                 let count: i64 = tx.query_row("SELECT COUNT(*) FROM devices WHERE account_id = ?", [&account], |r| r.get(0))?;
                 if count >= MAX_DEVICES { return Err(ApiError::limited()); }
                 let id = random_token();
-                tx.execute("INSERT INTO devices VALUES (?, ?, ?, ?, ?, ?)",
-                    params![id, account, fingerprint, name, input.platform, now()])?;
+                tx.execute("INSERT INTO devices (id, account_id, fingerprint, name, platform, created_at, public_key) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    params![id, account, fingerprint, name, input.platform, now(), input.public_key])?;
                 id
             }
         };
         let token = random_token();
-        tx.execute("INSERT INTO device_sessions VALUES (?, ?, ?, NULL)
-            ON CONFLICT(session_hash, device_id) DO UPDATE SET token_hash = excluded.token_hash, last_seen = NULL",
+        tx.execute("DELETE FROM device_proofs WHERE token_hash IN (SELECT token_hash FROM device_sessions WHERE session_hash=? AND device_id=?)", params![session,id])?;
+        tx.execute("INSERT INTO device_sessions (token_hash, session_hash, device_id, last_seen) VALUES (?, ?, ?, NULL)
+            ON CONFLICT(session_hash, device_id) DO UPDATE SET token_hash = excluded.token_hash, last_seen = NULL, key_verified = 0",
             params![token_hash(&token), session, id])?;
         tx.commit()?;
         // Heartbeat credentials can only update this device, never list or revoke others.
@@ -506,13 +523,14 @@ async fn devices(
             let account = owner(db, &session)?;
             let mut query = db.prepare(
                 "SELECT d.id, d.fingerprint, d.name, d.platform, d.created_at,
-            MAX(ds.last_seen) FROM devices d
+            MAX(CASE WHEN s.expires_at > ? AND s.mfa_version = a.mfa_version THEN ds.last_seen END), MAX(CASE WHEN s.expires_at > ? AND s.mfa_version = a.mfa_version THEN ds.key_verified ELSE 0 END) FROM devices d
             LEFT JOIN device_sessions ds ON ds.device_id = d.id
+            LEFT JOIN sessions s ON s.token_hash = ds.session_hash LEFT JOIN accounts a ON a.id=s.account_id
             WHERE d.account_id = ? GROUP BY d.id ORDER BY d.created_at, d.id",
             )?;
             let timestamp = now();
             let devices = query
-                .query_map([account], |r| {
+                .query_map(params![timestamp, timestamp, account], |r| {
                     let last_seen: Option<i64> = r.get(5)?;
                     Ok(Device {
                         id: r.get(0)?,
@@ -522,6 +540,7 @@ async fn devices(
                         created_at: r.get(4)?,
                         last_seen,
                         online: last_seen.is_some_and(|at| at > timestamp - ONLINE_SECONDS),
+                        key_verified: r.get::<_, i64>(6)? != 0,
                     })
                 })?
                 .collect::<Result<Vec<_>, _>>()?;

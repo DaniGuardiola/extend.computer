@@ -34,6 +34,23 @@ impl Identity {
         fingerprint(&self.public)
     }
 
+    /// Prove possession to an account server without exporting the private key.
+    /// The server contributes a fresh X25519 key and a one-use random challenge.
+    pub fn account_proof(&self, server_key: &str, challenge: &str) -> Result<String> {
+        let key: [u8; 32] = hex::decode(server_key)?
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("invalid account server key"))?;
+        let challenge = hex::decode(challenge)?;
+        ensure!(challenge.len() == 32, "invalid device challenge");
+        let shared = StaticSecret::from(*self.secret).diffie_hellman(&PublicKey::from(key));
+        ensure!(shared.was_contributory(), "invalid account server key");
+        let mut hash = Sha256::new();
+        hash.update(b"extend.computer/device-proof/v1\0");
+        hash.update(shared.as_bytes());
+        hash.update(challenge);
+        Ok(hex::encode(hash.finalize()))
+    }
+
     /// Explicit debug-only storage. Never reads or exports a Keychain identity.
     #[cfg(all(feature = "dev-identity", debug_assertions, unix))]
     pub fn load_development(root: &std::path::Path) -> Result<Self> {
