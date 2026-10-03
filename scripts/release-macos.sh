@@ -63,6 +63,7 @@ app="$root/desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos/
 python3 - "$app" "$APPLE_SIGNING_IDENTITY" "$APPLE_TEAM_ID" "$RELEASE_BUILD" <<'PY'
 from pathlib import Path
 import plistlib
+import re
 import subprocess
 import sys
 app = Path(sys.argv[1])
@@ -72,7 +73,13 @@ assert info['CFBundleIdentifier'] == 'computer.extend.desktop'
 assert info['CFBundleVersion'] == build, 'Build number was not merged into Info.plist'
 assert info['SUEnableSystemProfiling'] is False
 def sign(path):
-    subprocess.run(['codesign', '--force', '--sign', identity, '--timestamp', '--options', 'runtime', str(path)], check=True)
+    details = subprocess.run(['codesign', '-dv', str(path)], text=True, capture_output=True, check=True).stderr
+    identifier = re.search(r'^Identifier=(.+)$', details, re.MULTILINE)
+    assert identifier, f'Missing existing signing identifier: {path}'
+    code_identifier = identifier.group(1)
+    if path == app / 'Contents/Library/LaunchServices/ExtendComputerLowJitter':
+        code_identifier = 'computer.extend.lowjitter.broker'
+    subprocess.run(['codesign', '--force', '--sign', identity, '--identifier', code_identifier, '--timestamp', '--options', 'runtime', str(path)], check=True)
 # Sign executable images first, then nested bundles from the inside out.
 for path in app.rglob('*'):
     if path.is_file() and not path.is_symlink():
@@ -82,6 +89,8 @@ bundles = [p for p in app.rglob('*') if p.is_dir() and not p.is_symlink() and p.
 for path in sorted(bundles, key=lambda p: len(p.parts), reverse=True): sign(path)
 sign(app)
 subprocess.run(['codesign', '--verify', '--deep', '--strict', str(app)], check=True)
+broker_requirement = f'=identifier "computer.extend.lowjitter.broker" and anchor apple generic and certificate leaf[subject.OU] = "{team}"'
+subprocess.run(['codesign', '--verify', '--strict', '-R', broker_requirement, str(app / 'Contents/Library/LaunchServices/ExtendComputerLowJitter')], check=True)
 details = subprocess.run(['codesign', '-dvv', str(app)], text=True, capture_output=True, check=True).stderr
 assert f'TeamIdentifier={team}' in details, 'Apple signing team mismatch'
 PY

@@ -12,8 +12,11 @@ final class SettingsNavigator {
     func openSettings(at url: URL) -> Bool {
         NSWorkspace.shared.openApplication(
             at: applicationURL,
-            configuration: NSWorkspace.OpenConfiguration()
-        ) { _, _ in }
+            configuration: NSWorkspace.OpenConfiguration(),
+            // AppKit may invoke completion on a background queue. Even an empty
+            // closure inherits this method's MainActor isolation in Swift 6.
+            completionHandler: nil
+        )
 
         let didOpen = NSWorkspace.shared.open(url)
         activateSettings()

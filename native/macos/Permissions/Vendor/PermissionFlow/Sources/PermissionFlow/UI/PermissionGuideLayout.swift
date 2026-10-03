@@ -9,12 +9,23 @@ struct PermissionGuidePlacement {
 
     private static let gap: CGFloat = 14
 
-    static func besideWindow(_ window: CGRect, pointingAt target: CGRect, size: CGSize, visible: CGRect) -> PermissionGuidePlacement? {
-        // Let 8pt of the 12pt arrow overlap the edge; the body stays 4pt outside.
+    static func besideWindow(_ window: CGRect, pointingAt target: CGRect?, size: CGSize, visible: CGRect) -> PermissionGuidePlacement? {
+        // Overlap the body by 4pt and the 12pt arrow by 16pt.
         // Every step uses the same horizontal anchor, leaving nearby controls clear.
-        let inset = gap + 8
-        let row = CGRect(x: window.minX + inset, y: target.minY, width: window.width - 2 * inset, height: target.height)
-        return nextTo(row, size: size, visible: visible)
+        guard window.intersects(visible), size.width <= visible.width, size.height <= visible.height else { return nil }
+        let x: CGFloat
+        let side: PermissionGuidePointerSide
+        if window.maxX - 16 + size.width <= visible.maxX {
+            x = window.maxX - 16; side = .left
+        } else if window.minX + 16 - size.width >= visible.minX {
+            x = window.minX + 16 - size.width; side = .right
+        } else { return nil }
+        let anchorY = target?.midY ?? window.intersection(visible).midY
+        let y = max(visible.minY, min(anchorY - size.height / 2, visible.maxY - size.height))
+        // Keep the arrow even before Accessibility allows a precise row lookup.
+        // At screen edges, keep its tip clear of the bubble's rounded corners.
+        let pointerY = max(25, min(anchorY - y, size.height - 25))
+        return .init(frame: CGRect(x: x, y: y, width: size.width, height: size.height), side: side, pointerY: pointerY)
     }
 
     static func nextTo(_ target: CGRect, size: CGSize, visible: CGRect) -> PermissionGuidePlacement? {

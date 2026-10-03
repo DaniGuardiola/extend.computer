@@ -75,14 +75,13 @@ final class FloatingDropPanel: NSPanel {
                   $1.frame.intersection(settingsFrame).width * $1.frame.intersection(settingsFrame).height
               }) else { return }
         let visible = screen.visibleFrame.insetBy(dx: 12, dy: 12)
-        let width = min(330, visible.width)
+        let sideRoom = max(visible.maxX - settingsFrame.maxX, settingsFrame.minX - visible.minX) + 4
+        let width = min(330, visible.width, sideRoom >= 260 ? sideRoom : 330)
         // Reserve pointer padding while measuring so changing sides cannot clip text.
         let height = measuredPanelHeight(for: width)
         let size = CGSize(width: width, height: height)
         let target = controller.targetFrame.flatMap { settingsFrame.insetBy(dx: -5, dy: -5).contains($0) ? $0 : nil }
-        let placement = target.flatMap {
-            PermissionGuidePlacement.besideWindow(settingsFrame, pointingAt: $0, size: size, visible: visible)
-        } ?? PermissionGuidePlacement.nextTo(settingsFrame, size: size, visible: visible)
+        let placement = PermissionGuidePlacement.besideWindow(settingsFrame, pointingAt: target, size: size, visible: visible)
         let destination: CGRect
         if let placement {
             if controller.pointerSide != placement.side { controller.pointerSide = placement.side }

@@ -12,7 +12,7 @@ import SwiftUI
                 let toggle = CGRect(x: window.maxX - 80, y: y, width: 44, height: 20)
                 let placement = PermissionGuidePlacement.besideWindow(window, pointingAt: toggle, size: size, visible: screen)!
                 let body = placement.frame.insetBy(dx: 12, dy: 0)
-                assert(!body.intersects(window))
+                assert(abs(body.intersection(window).width - 4) < 1)
                 assert(!placement.frame.intersects(toggle))
                 assert(screen.contains(placement.frame))
                 assert(abs(placement.frame.minY + placement.pointerY - toggle.midY) < 1)
@@ -21,6 +21,21 @@ import SwiftUI
             }
         }
         let tight = CGRect(x: 0, y: 0, width: 740, height: 700)
+        for window in [CGRect(x: 100, y: -250, width: 740, height: 625),
+                       CGRect(x: 100, y: 700, width: 740, height: 625)] {
+            for target in [nil, CGRect(x: window.maxX - 80, y: window.minY + 30, width: 44, height: 20),
+                           CGRect(x: window.maxX - 80, y: window.maxY - 30, width: 44, height: 20)] {
+                let placement = PermissionGuidePlacement.besideWindow(window, pointingAt: target, size: size, visible: screen)!
+                assert(screen.contains(placement.frame))
+                assert(placement.frame.minX >= window.maxX - 16)
+                assert(placement.frame.intersection(window).width <= 16)
+                assert(placement.side == .left)
+                assert(placement.pointerY >= 25 && placement.pointerY <= size.height - 25)
+            }
+        }
+        let untargeted = PermissionGuidePlacement.besideWindow(CGRect(x: 100, y: 100, width: 740, height: 625), pointingAt: nil, size: size, visible: screen)!
+        assert(untargeted.side == .left)
+        assert(untargeted.pointerY == size.height / 2)
         assert(PermissionGuidePlacement.nextTo(tight, size: size, visible: tight) == nil)
         let secondary = CGRect(x: -1600, y: -200, width: 1600, height: 900)
         let secondaryWindow = CGRect(x: -1500, y: -100, width: 740, height: 625)
