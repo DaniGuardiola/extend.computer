@@ -286,7 +286,7 @@ pub async fn register_verify(
             if inserted != 1 {
                 return Err(ApiError::bad("Passkey already registered"));
             }
-            if enabled {crate::mfa::change(&tx,&session,true,false)?;}
+            if enabled {crate::mfa::change(&tx,&session,true,false,false)?;}
             tx.commit()?;
             Ok((StatusCode::CREATED, Json(json!({"success":true}))))
         })
@@ -331,12 +331,13 @@ pub async fn login_verify(
         if user_id(&account)? != user { return Err(ApiError::unauthorized()); }
         let mut key: Passkey = serde_json::from_str(&stored).map_err(|_| ApiError::internal())?;
         let result = webauthn.finish_discoverable_authentication(&input, state, &[DiscoverableKey::from(&key)]).map_err(|_| ApiError::unauthorized())?;
+        if !result.user_verified() { return Err(ApiError::unauthorized()); }
         if (counter > 0 || result.counter() > 0) && result.counter() <= counter { return Err(ApiError::unauthorized()); }
         key.update_credential(&result);
         let tx = db.transaction()?;
         tx.execute("UPDATE passkeys SET credential = ?, counter = ? WHERE id = ?", params![serde_json::to_string(&key).map_err(|_| ApiError::internal())?, result.counter(), id])?;
         let email: String = tx.query_row("SELECT email FROM accounts WHERE id = ?", [&account], |r| r.get(0))?;
-        let response = new_session(&tx, &account, &email)?;
+        let response = issue_session(&tx, &account, &email)?;
         tx.commit()?;
         Ok(Json(response))
     }).await
@@ -371,7 +372,7 @@ pub async fn remove(
                 if keys<=1&&!totp{return Err(ApiError::bad("Add another factor or disable two-factor authentication first"))}
                 let tx=db.transaction()?;
                 if tx.execute("DELETE FROM passkeys WHERE id=? AND account_id=?",params![id,account])?==0{return Err(ApiError(StatusCode::NOT_FOUND,"Passkey not found"))}
-                crate::mfa::change(&tx,&session,true,false)?;tx.commit()?;
+                crate::mfa::change(&tx,&session,true,false,true)?;tx.commit()?;
                 return Ok(StatusCode::NO_CONTENT)
             }
             if db.execute(
@@ -472,7 +473,7 @@ async fn finish_factor(
  let(current,enabled):(i64,bool)=db.query_row("SELECT mfa_version,mfa_enabled FROM accounts WHERE id=?",[&account],|r|Ok((r.get(0)?,r.get(1)?)))?;if current!=version{return Err(ApiError::unauthorized())}
  let count:i64=db.query_row("SELECT COUNT(*) FROM passkeys WHERE account_id=?",[&account],|r|r.get(0))?;if count>=10{return Err(ApiError::bad("Passkey limit reached"))}
  let tx=db.transaction()?;tx.execute("INSERT INTO passkeys(id,account_id,credential,counter,name,rp_id,created_at,purpose) VALUES (?,?,?,?,?,?,?,'factor')",params![input.id,account,serialized,counter as i64,"Security key",rp,now()])?;
- if enabled{crate::mfa::change(&tx,&session,true,false)?;}tx.commit()?;Ok((StatusCode::CREATED,Json(json!({"success":true}))))}).await
+ if enabled{crate::mfa::change(&tx,&session,true,false,false)?;}tx.commit()?;Ok((StatusCode::CREATED,Json(json!({"success":true}))))}).await
 }
 
 pub async fn mfa_options(

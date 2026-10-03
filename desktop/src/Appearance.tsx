@@ -52,7 +52,7 @@ export function Appearance({
             checked={theme === option.value}
             onChange={() => onChange(option.value)}
           />
-          <span className="block min-w-16 rounded-md px-3 py-2 text-center text-xs font-medium text-muted hover:text-ink peer-checked:bg-selected peer-checked:text-ink peer-checked:shadow-sm peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-ink">
+          <span className="block min-w-16 rounded-md px-3 py-2 text-center text-xs font-medium text-muted hover:text-ink peer-focus-visible:text-ink peer-checked:bg-selected peer-checked:text-ink peer-checked:shadow-sm peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-focus">
             {option.label}
           </span>
         </label>

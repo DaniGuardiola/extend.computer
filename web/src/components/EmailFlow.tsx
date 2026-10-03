@@ -1,6 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link } from '@tanstack/react-router'
+import { MoveUpRight } from 'lucide-react'
 import { Brand } from './Brand'
+import { ValidatedForm, ValidatedInput } from './ValidatedForm'
 import { api, message } from '../lib/api'
 
 export function EmailFlow({ recovery = false }: { recovery?: boolean }) {
@@ -56,32 +58,27 @@ export function EmailFlow({ recovery = false }: { recovery?: boolean }) {
   return (
     <div className="auth-layout">
       <aside className="auth-aside">
-        <Brand />
+        <Brand appearance="app" />
         <div>
-          <span className="eyebrow">YOUR COMPUTERS, TOGETHER</span>
-          <h2>
-            Your desk.
-            <br />
-            Your control.
-          </h2>
+          <h2>Account recovery</h2>
+          <p>Verify your email or reset your password.</p>
         </div>
-        <small>A little peace of mind.</small>
       </aside>
       <main id="main" className="auth-main">
         <div className="auth-box">
           <Link to="/login" className="back-link">
-            Back to sign in ↗
+            Back to sign in <MoveUpRight size={12} />
           </Link>
           <h1>
             {done
               ? recovery
-                ? 'Check your inbox.'
-                : 'You’re all set.'
+                ? 'Check your inbox'
+                : 'Account updated'
               : recovery
-                ? 'Find your way back.'
+                ? 'Reset your password'
                 : reset
-                  ? 'A fresh start.'
-                  : 'Confirm your email.'}
+                  ? 'Choose a new password'
+                  : 'Verify your email'}
           </h1>
           {error ? (
             <p className="message error-message" role="alert">
@@ -107,18 +104,19 @@ export function EmailFlow({ recovery = false }: { recovery?: boolean }) {
               use password recovery.
             </p>
           ) : (
-            <form onSubmit={submit}>
+            <ValidatedForm onSubmit={submit}>
               <p className="auth-description">
                 {recovery
                   ? 'Enter your email to request a password reset.'
                   : reset
-                    ? 'Choose a new password. This signs out every device and removes existing passkeys; you can add them again after signing in.'
+                    ? 'This signs out all sessions. Two-factor authentication stays enabled. Passkeys are removed only if two-factor authentication is off.'
                     : 'Confirm this address belongs to you. This link works once.'}
               </p>
               {recovery ? (
                 <label className="field">
                   Email
-                  <input
+                  <ValidatedInput
+                    aria-label="Email"
                     name="email"
                     type="email"
                     autoComplete="email"
@@ -129,7 +127,8 @@ export function EmailFlow({ recovery = false }: { recovery?: boolean }) {
               ) : reset ? (
                 <label className="field">
                   New password
-                  <input
+                  <ValidatedInput
+                    aria-label="New password"
                     name="password"
                     type="password"
                     autoComplete="new-password"
@@ -149,7 +148,7 @@ export function EmailFlow({ recovery = false }: { recovery?: boolean }) {
                       ? 'Reset password'
                       : 'Verify email'}
               </button>
-            </form>
+            </ValidatedForm>
           )}
         </div>
       </main>

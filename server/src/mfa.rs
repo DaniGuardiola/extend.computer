@@ -5,6 +5,7 @@ use aes_gcm::{
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use hmac::{Hmac, Mac};
+use rand::Rng;
 use sha1::Sha1;
 use subtle::ConstantTimeEq;
 const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
@@ -205,8 +206,14 @@ pub(crate) fn change(
     session: &str,
     enabled: bool,
     codes: bool,
+    revoke_others: bool,
 ) -> Result<Value, ApiError> {
     let account = elevated(db, session)?;
+    let old_version: i64 = db.query_row(
+        "SELECT mfa_version FROM accounts WHERE id=?",
+        [&account],
+        |r| r.get(0),
+    )?;
     let version = i64::from_be_bytes({
         let mut v = [0u8; 8];
         OsRng.fill_bytes(&mut v[2..]);
@@ -216,13 +223,15 @@ pub(crate) fn change(
         "UPDATE accounts SET mfa_enabled=?,mfa_version=? WHERE id=?",
         params![enabled, version, account],
     )?;
+    if revoke_others {
+        db.execute(
+            "DELETE FROM sessions WHERE account_id=? AND token_hash<>?",
+            params![account, session],
+        )?;
+    }
     db.execute(
-        "DELETE FROM sessions WHERE account_id=? AND token_hash<>?",
-        params![account, session],
-    )?;
-    db.execute(
-        "UPDATE sessions SET mfa_version=?,elevated_until=0 WHERE token_hash=?",
-        params![version, session],
+        "UPDATE sessions SET mfa_version=?,elevated_until=0 WHERE account_id=? AND mfa_version=?",
+        params![version, account, old_version],
     )?;
     db.execute("DELETE FROM mfa_tickets WHERE account_id=?", [&account])?;
     if codes || !enabled {
@@ -230,21 +239,22 @@ pub(crate) fn change(
     }
     let mut recovery = Vec::new();
     if enabled && codes {
-        for _ in 0..10 {
-            let mut bytes = [0u8; 16];
-            OsRng.fill_bytes(&mut bytes);
-            let raw = hex::encode(bytes);
+        let salt = SaltString::generate(&mut OsRng);
+        let mut unique = std::collections::HashSet::new();
+        while recovery.len() < 10 {
+            let raw = format!("{:08}", OsRng.gen_range(0..100_000_000u32));
+            if !unique.insert(raw.clone()) {
+                continue;
+            }
+            let hash = Argon2::default()
+                .hash_password(raw.as_bytes(), &salt)
+                .map_err(|_| ApiError::internal())?
+                .to_string();
             db.execute(
                 "INSERT INTO recovery_codes VALUES (?,?)",
-                params![account, token_hash(&raw)],
+                params![account, hash],
             )?;
-            recovery.push(
-                raw.as_bytes()
-                    .chunks(8)
-                    .map(|b| std::str::from_utf8(b).unwrap())
-                    .collect::<Vec<_>>()
-                    .join("-"),
-            );
+            recovery.push(format!("{} {}", &raw[..4], &raw[4..]));
         }
     }
     Ok(json!({"success":true,"recovery_codes":recovery}))
@@ -286,13 +296,28 @@ pub async fn verify(
                     params![step, t.account],
                 )?;
             } else {
-                let raw = input.code.replace(['-', ' '], "").to_lowercase();
-                if raw.len() != 32 || !raw.bytes().all(|c| c.is_ascii_hexdigit()) {
+                let raw = input.code.replace(['-', ' '], "");
+                let code_hash = if raw.len() == 8 && raw.bytes().all(|c| c.is_ascii_digit()) {
+                    let encoded: String = tx
+                        .query_row(
+                            "SELECT code_hash FROM recovery_codes WHERE account_id=? LIMIT 1",
+                            [&t.account],
+                            |r| r.get(0),
+                        )
+                        .optional()?
+                        .ok_or_else(ApiError::unauthorized)?;
+                    let parsed = PasswordHash::new(&encoded).map_err(|_| ApiError::internal())?;
+                    let salt = parsed.salt.ok_or_else(ApiError::internal)?;
+                    Argon2::default()
+                        .hash_password(raw.as_bytes(), salt)
+                        .map_err(|_| ApiError::internal())?
+                        .to_string()
+                } else {
                     return Err(ApiError::unauthorized());
-                }
+                };
                 if tx.execute(
                     "DELETE FROM recovery_codes WHERE account_id=? AND code_hash=?",
-                    params![t.account, token_hash(&raw)],
+                    params![t.account, code_hash],
                 )? == 0
                 {
                     return Err(ApiError::unauthorized());
@@ -408,7 +433,7 @@ pub async fn confirm(
         .mfa_encryption_key
         .clone()
         .ok_or_else(ApiError::internal)?;
-    server.work(move|db|{let account=elevated(db,&session)?;let encrypted:String=db.query_row("SELECT t.secret FROM totp_setup t JOIN accounts a ON a.id=t.account_id WHERE t.session_hash=? AND t.version=a.mfa_version AND t.expires_at>?",params![session,now()],|r|r.get(0)).optional()?.ok_or(ApiError::bad("Setup expired"))?;let step=matching(&open(&encrypted,&key,&account)?,&input.code,-1)?;let tx=db.transaction()?;tx.execute("INSERT OR REPLACE INTO totp_factors VALUES (?,?,?)",params![account,encrypted,step])?;tx.execute("DELETE FROM totp_setup WHERE session_hash=?",[&session])?;let response=change(&tx,&session,true,true)?;tx.commit()?;Ok(response)}).await.map(Json)
+    server.work(move|db|{let account=elevated(db,&session)?;let encrypted:String=db.query_row("SELECT t.secret FROM totp_setup t JOIN accounts a ON a.id=t.account_id WHERE t.session_hash=? AND t.version=a.mfa_version AND t.expires_at>?",params![session,now()],|r|r.get(0)).optional()?.ok_or(ApiError::bad("Setup expired"))?;let step=matching(&open(&encrypted,&key,&account)?,&input.code,-1)?;let replacing:bool=db.query_row("SELECT EXISTS(SELECT 1 FROM totp_factors WHERE account_id=?)",[&account],|r|r.get(0))?;let tx=db.transaction()?;tx.execute("INSERT OR REPLACE INTO totp_factors VALUES (?,?,?)",params![account,encrypted,step])?;tx.execute("DELETE FROM totp_setup WHERE session_hash=?",[&session])?;let response=change(&tx,&session,true,true,replacing)?;tx.commit()?;Ok(response)}).await.map(Json)
 }
 pub async fn enable(
     State(server): State<Arc<Server>>,
@@ -442,7 +467,7 @@ async fn settings(
     let session = bearer(&headers)?;
     server.work(move|db|{let account=elevated(db,&session)?;let(enabled,keys):(bool,i64)=db.query_row("SELECT mfa_enabled,(SELECT COUNT(*) FROM passkeys WHERE account_id=accounts.id) FROM accounts WHERE id=?",[&account],|r|Ok((r.get(0)?,r.get(1)?)))?;let(totp,_,_)=factors(db,&account)?;if kind=="enable"&&!totp&&keys==0{return Err(ApiError::bad("Add a factor first"))}
 if kind=="recovery"&&!enabled{return Err(ApiError::bad("Enable two-factor authentication first"))}
-if kind=="remove"&&enabled&&keys==0{return Err(ApiError::bad("Add another factor or turn off two-factor authentication first"))}let tx=db.transaction()?;if kind=="disable"||kind=="remove"{tx.execute("DELETE FROM totp_factors WHERE account_id=?",[&account])?;tx.execute("DELETE FROM totp_setup WHERE account_id=?",[&account])?;}let response=change(&tx,&session,kind!="disable"&&(enabled||kind=="enable"),kind!="remove")?;tx.commit()?;Ok(response)}).await.map(Json)
+if kind=="remove"&&enabled&&keys==0{return Err(ApiError::bad("Add another factor or turn off two-factor authentication first"))}let tx=db.transaction()?;if kind=="disable"||kind=="remove"{tx.execute("DELETE FROM totp_factors WHERE account_id=?",[&account])?;tx.execute("DELETE FROM totp_setup WHERE account_id=?",[&account])?;}let response=change(&tx,&session,kind!="disable"&&(enabled||kind=="enable"),kind!="remove",kind=="disable"||kind=="remove")?;tx.commit()?;Ok(response)}).await.map(Json)
 }
 
 #[cfg(test)]

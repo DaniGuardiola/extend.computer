@@ -31,9 +31,7 @@ async function signup(prefix) {
   await page
     .getByRole('button', { name: 'Create account', exact: true })
     .click()
-  await page
-    .getByRole('heading', { name: 'Your devices.', exact: true })
-    .waitFor()
+  await page.getByRole('heading', { name: 'Devices', exact: true }).waitFor()
   await page.getByText(testEmail, { exact: true }).waitFor()
 }
 async function confirmPassword() {
@@ -58,8 +56,9 @@ async function saveCodes() {
     })
     throw e
   })
-  const codes = (await d.locator('pre').innerText()).split('\n')
+  const codes = await d.locator('.recovery-codes code').allTextContents()
   assert.equal(codes.length, 10)
+  for (const code of codes) assert.match(code, /^\d{4} \d{4}$/)
   await d.getByRole('button', { name: 'Saved', exact: true }).click()
   return codes
 }
@@ -77,7 +76,7 @@ async function passwordLogin() {
   await page.waitForLoadState('networkidle')
   await page.getByRole('button', { name: 'Sign in', exact: true }).click()
   await page
-    .getByRole('button', { name: 'Verify code', exact: true })
+    .locator('.second-factor')
     .waitFor()
     .catch(async (e) => {
       console.error({
@@ -88,9 +87,7 @@ async function passwordLogin() {
       throw e
     })
   assert.equal(
-    await page
-      .getByRole('heading', { name: 'Your devices.', exact: true })
-      .count(),
+    await page.getByRole('heading', { name: 'Devices', exact: true }).count(),
     0,
   )
 }
@@ -115,17 +112,20 @@ await passwordLogin()
 await page
   .getByRole('button', { name: 'Use passkey or security key', exact: true })
   .click()
-await page
-  .getByRole('heading', { name: 'Your devices.', exact: true })
-  .waitFor()
+await page.getByRole('heading', { name: 'Devices', exact: true }).waitFor()
 const purpose = await page.evaluate(async () => {
   const r = await fetch('/api/v1/passkeys')
   return (await r.json()).passkeys[0].purpose
 })
 assert.equal(purpose, 'factor')
-await page.getByRole('button', { name: 'Generate new codes', exact: true }).click()
+await page
+  .getByRole('button', { name: 'Generate new codes', exact: true })
+  .click()
 await confirmPassword()
-await page.getByRole('dialog', { name: 'Confirm security change', exact: true }).getByRole('button', { name: 'Use passkey or security key', exact: true }).click()
+await page
+  .getByRole('dialog', { name: 'Confirm security change', exact: true })
+  .getByRole('button', { name: 'Use passkey or security key', exact: true })
+  .click()
 await saveCodes()
 await cdp.send('WebAuthn.removeVirtualAuthenticator', {
   authenticatorId: key.authenticatorId,
@@ -138,15 +138,27 @@ await signup('totp')
 await page.getByRole('button', { name: 'Set up', exact: true }).click()
 await confirmPassword()
 const setup = page.getByRole('dialog', {
-  name: 'Set up authenticator',
+  name: 'Set up one-time codes',
   exact: true,
 })
 await setup
   .getByRole('img', { name: 'Authenticator setup QR code', exact: true })
   .waitFor()
-const secret = await setup
-  .getByRole('textbox', { name: 'Setup key', exact: true })
-  .inputValue()
+assert.equal(await setup.locator('.totp-key-row code').count(), 0)
+assert.equal(
+  await setup
+    .getByRole('textbox', { name: 'One-time code', exact: true })
+    .count(),
+  0,
+)
+await setup
+  .getByRole('button', { name: 'Can’t scan? Show setup key', exact: true })
+  .click()
+const secret = await setup.locator('.totp-key-row code').innerText()
+await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+await setup.getByRole('button', { name: 'Copy setup key', exact: true }).click()
+await setup.getByText('Copied', { exact: true }).waitFor()
+assert.equal(await page.evaluate(() => navigator.clipboard.readText()), secret)
 function code() {
   let bits = 0,
     value = 0,
@@ -166,34 +178,46 @@ function code() {
     .toString()
     .padStart(6, '0')
 }
+await setup.getByRole('button', { name: 'Next', exact: true }).click()
+assert.equal(
+  await setup
+    .getByRole('img', { name: 'Authenticator setup QR code', exact: true })
+    .count(),
+  0,
+)
+assert.equal(await setup.locator('.totp-key-row code').count(), 0)
+await setup.getByRole('button', { name: 'Back', exact: true }).click()
+assert.equal(await setup.locator('.totp-key-row code').innerText(), secret)
+await setup.getByRole('button', { name: 'Hide setup key', exact: true }).click()
+assert.equal(await setup.locator('.totp-key-row code').count(), 0)
+await setup.getByRole('button', { name: 'Next', exact: true }).click()
 const setupStep = Math.floor(Date.now() / 30000)
 await setup
-  .getByRole('textbox', { name: 'Authenticator code', exact: true })
+  .getByRole('textbox', { name: 'One-time code', exact: true })
   .fill(code())
 await setup
-  .getByRole('button', { name: 'Enable authenticator', exact: true })
+  .getByRole('button', { name: 'Enable one-time codes', exact: true })
   .click()
 const recovery = await saveCodes()
 await passwordLogin()
 await page
-  .getByRole('textbox', { name: 'Authenticator or recovery code', exact: true })
-  .fill(recovery[0])
-await page.getByRole('button', { name: 'Verify code', exact: true }).click()
+  .getByRole('button', { name: 'Use a recovery code', exact: true })
+  .click()
 await page
-  .getByRole('heading', { name: 'Your devices.', exact: true })
-  .waitFor()
+  .getByRole('textbox', { name: 'Recovery code', exact: true })
+  .fill(recovery[0].replace(/\s/g, ''))
+await page.getByRole('heading', { name: 'Devices', exact: true }).waitFor()
 while (Math.floor(Date.now() / 30000) === setupStep)
   await new Promise((resolve) => setTimeout(resolve, 500))
 await passwordLogin()
 await page
-  .getByRole('textbox', { name: 'Authenticator or recovery code', exact: true })
+  .getByRole('textbox', { name: 'One-time code', exact: true })
   .fill(code())
-await page.getByRole('button', { name: 'Verify code', exact: true }).click()
-await page
-  .getByRole('heading', { name: 'Your devices.', exact: true })
-  .waitFor()
+await page.getByRole('heading', { name: 'Devices', exact: true }).waitFor()
 await page.getByText(testEmail, { exact: true }).waitFor()
-await page.getByText('On. Password sign-ins require a second factor.', { exact: true }).waitFor()
+await page
+  .getByText('On. Password sign-ins require a second factor.', { exact: true })
+  .waitFor()
 assert.deepEqual(errors, [])
 await page.screenshot({ path: '/tmp/extend-mfa-tested.png', fullPage: true })
 console.log(

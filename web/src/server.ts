@@ -4,6 +4,7 @@ export { AccountRelay } from './lib/relay'
 import start from '@tanstack/react-start/server-entry'
 import { createHash } from 'node:crypto'
 import { heartbeat } from './lib/account-service'
+import { sessionLocation } from './lib/session-details'
 export { AccountService } from './lib/account-service'
 
 export default {
@@ -65,7 +66,19 @@ export default {
       } else {
         const ip = request.headers.get('CF-Connecting-IP') ?? 'local'
         const shard = createHash('sha256').update(ip).digest('hex')[0]!
-        response = await env.ACCOUNTS.getByName('auth-' + shard).fetch(request)
+        const forwarded = new Request(request)
+        forwarded.headers.delete('X-Extend-Session-Location')
+        // Cloudflare's local runtime supplies simulated geolocation metadata.
+        const local = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
+        const location = local ? null : sessionLocation(request.cf)
+        if (location)
+          forwarded.headers.set(
+            'X-Extend-Session-Location',
+            encodeURIComponent(location),
+          )
+        response = await env.ACCOUNTS.getByName('auth-' + shard).fetch(
+          forwarded,
+        )
       }
     } else response = await start.fetch(request)
     const headers = new Headers(response.headers)

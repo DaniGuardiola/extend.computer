@@ -87,7 +87,7 @@ export function DeviceNameSettings() {
               event.currentTarget.blur();
             }
           }}
-          className="min-w-0 w-64 max-w-[65%] rounded border border-transparent bg-transparent px-2 py-1.5 text-right text-sm text-ink hover:border-line focus:border-line focus:outline-none"
+          className="min-w-0 w-64 max-w-[65%] rounded border border-transparent bg-transparent px-2 py-1.5 text-right text-sm text-ink hover:border-line focus-visible:border-line focus:border-line focus:outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-focus focus-visible:outline-offset-0"
         />
       </div>
       {error && (

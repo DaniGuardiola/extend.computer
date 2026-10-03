@@ -1,26 +1,29 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
-import { ArrowRight, Fingerprint, MoveUpRight } from 'lucide-react'
+import { Fingerprint, MoveUpRight } from 'lucide-react'
 import type { PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/browser'
 import { SecondFactor, type MfaPending } from './SecondFactor'
 import { Brand } from './Brand'
+import { ValidatedForm, ValidatedInput } from './ValidatedForm'
 import { api, message } from '../lib/api'
 export function Auth({
   signup = false,
+  previewLoading = false,
   onSignedIn,
 }: {
   signup?: boolean
+  previewLoading?: boolean
   onSignedIn?: () => void | Promise<void>
 }) {
   const navigate = useNavigate()
   const [pending, setPending] = useState<MfaPending | null>(null)
-  const [busy, setBusy] = useState(false)
+  const [busy, setBusy] = useState(import.meta.env.DEV && previewLoading)
   const [error, setError] = useState('')
+  const [errorAttempt, setErrorAttempt] = useState(0)
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const data = new FormData(event.currentTarget)
     setBusy(true)
-    setError('')
     try {
       const result = await api<MfaPending | { account: unknown }>(
         '/auth/' + (signup ? 'signup' : 'login'),
@@ -31,6 +34,7 @@ export function Auth({
         },
       )
       if ('mfa_required' in result) {
+        setError('')
         setPending(result)
         return
       }
@@ -42,13 +46,13 @@ export function Auth({
       await (onSignedIn ? onSignedIn() : navigate({ to: '/account' }))
     } catch (error) {
       setError(message(error))
+      setErrorAttempt((attempt) => attempt + 1)
     } finally {
       setBusy(false)
     }
   }
   async function passkey() {
     setBusy(true)
-    setError('')
     try {
       const { startAuthentication } = await import('@simplewebauthn/browser')
       const optionsJSON = await api<PublicKeyCredentialRequestOptionsJSON>(
@@ -63,6 +67,7 @@ export function Auth({
       await (onSignedIn ? onSignedIn() : navigate({ to: '/account' }))
     } catch (error) {
       setError(message(error))
+      setErrorAttempt((attempt) => attempt + 1)
     } finally {
       setBusy(false)
     }
@@ -70,31 +75,26 @@ export function Auth({
   return (
     <div className="auth-layout">
       <aside className="auth-aside">
-        <Brand />
+        <Brand appearance="app" />
         <div>
-          <span className="eyebrow">YOUR COMPUTERS, TOGETHER</span>
-          <h2>
-            Less switching.
-            <br />
-            More doing.
-          </h2>
-          <p>A home for every device on your desk.</p>
+          <h2>Account</h2>
+          <p>Manage your devices and sign-in settings.</p>
         </div>
-        <small>Your desk. Your control.</small>
       </aside>
-      <main id="main" className="auth-main">
+      <main id="main" className="auth-main auth-account-main">
         <div className="auth-box">
           <Link to="/" className="back-link">
-            Back to the desk <MoveUpRight size={12} />
+            Back to home <MoveUpRight size={12} />
           </Link>
-          <h1>{signup ? 'Make yourself at home.' : 'Welcome back.'}</h1>
-          <p className="auth-description">
-            {signup
-              ? 'Create your account. Bring your devices together.'
-              : 'Your devices are right where you left them.'}
-          </p>
+          <h1 className="auth-title-only">
+            {signup ? 'Create an account' : 'Sign in'}
+          </h1>
           {error && (
-            <p className="message error-message" role="alert">
+            <p
+              key={errorAttempt}
+              className="message error-message auth-error-enter"
+              role="alert"
+            >
               {error}
             </p>
           )}
@@ -108,10 +108,11 @@ export function Auth({
             />
           ) : (
             <>
-              <form onSubmit={submit}>
+              <ValidatedForm onSubmit={submit}>
                 <label className="field">
                   Email
-                  <input
+                  <ValidatedInput
+                    aria-label="Email"
                     name="email"
                     type="email"
                     autoComplete="email"
@@ -122,7 +123,8 @@ export function Auth({
                 </label>
                 <label className="field">
                   Password
-                  <input
+                  <ValidatedInput
+                    aria-label="Password"
                     name="password"
                     type="password"
                     autoComplete={signup ? 'new-password' : 'current-password'}
@@ -132,6 +134,11 @@ export function Auth({
                     aria-describedby={signup ? 'password-hint' : undefined}
                   />
                 </label>
+                {!signup && (
+                  <p className="auth-recovery-link">
+                    <Link to="/recover">Forgot your password?</Link>
+                  </p>
+                )}
                 {signup && (
                   <p id="password-hint" className="field-hint">
                     At least 12 characters. You can add a passkey next.
@@ -140,17 +147,30 @@ export function Auth({
                 <button
                   className="button auth-submit"
                   disabled={busy}
+                  aria-busy={busy}
                   type="submit"
                 >
-                  {busy ? 'One moment…' : signup ? 'Create account' : 'Sign in'}
-                  <ArrowRight size={16} />
+                  {busy ? (
+                    <span className="loading-text" role="status">
+                      <span className="sr-only">One moment…</span>
+                      <span aria-hidden="true">
+                        One moment
+                        <span className="loading-dots">
+                          <span>.</span>
+                          <span>.</span>
+                          <span>.</span>
+                        </span>
+                      </span>
+                    </span>
+                  ) : signup ? (
+                    'Create account'
+                  ) : (
+                    'Sign in'
+                  )}
                 </button>
-              </form>
+              </ValidatedForm>
               {!signup && (
                 <>
-                  <p className="auth-switch">
-                    <Link to="/recover">Forgot your password?</Link>
-                  </p>
                   <div className="auth-divider">
                     <span>or</span>
                   </div>
@@ -166,13 +186,15 @@ export function Auth({
               )}
             </>
           )}
+        </div>
+        {!pending && (
           <p className="auth-switch">
-            {signup ? 'Already have an account?' : 'New here?'}
+            {signup ? 'Already have an account?' : 'Need an account?'}
             <Link to={signup ? '/login' : '/signup'}>
               {signup ? 'Sign in' : 'Create an account'}
             </Link>
           </p>
-        </div>
+        )}
       </main>
     </div>
   )

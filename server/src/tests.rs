@@ -498,6 +498,14 @@ async fn second_factor_gates_sessions_and_security_changes() {
     assert_eq!(status, StatusCode::OK);
     let codes = enabled["recovery_codes"].as_array().unwrap();
     assert_eq!(codes.len(), 10);
+    let mut unique = std::collections::HashSet::new();
+    for code in codes {
+        let code = code.as_str().unwrap();
+        assert_eq!(code.len(), 9);
+        assert_eq!(code.as_bytes()[4], b' ');
+        assert!(code.replace(' ', "").bytes().all(|b| b.is_ascii_digit()));
+        assert!(unique.insert(code));
+    }
     assert_eq!(
         request(
             &app,
@@ -508,7 +516,7 @@ async fn second_factor_gates_sessions_and_security_changes() {
         )
         .await
         .0,
-        StatusCode::UNAUTHORIZED
+        StatusCode::OK
     );
     let (_, pending) = request(
         &app,
@@ -606,6 +614,71 @@ async fn second_factor_gates_sessions_and_security_changes() {
             "/v1/auth/mfa/verify",
             None,
             json!({"ticket":stepup["ticket"],"code":codes[1]})
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    let (status, regenerated) = request(
+        &app,
+        "POST",
+        "/v1/mfa/recovery-codes",
+        Some(authenticated),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    for token in [
+        Some(session.as_str()),
+        other["token"].as_str(),
+        Some(authenticated),
+    ] {
+        assert_eq!(
+            request(&app, "GET", "/v1/account", token, Value::Null)
+                .await
+                .0,
+            StatusCode::OK
+        );
+    }
+    assert_eq!(
+        request(
+            &app,
+            "POST",
+            "/v1/mfa/disable",
+            Some(authenticated),
+            Value::Null
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    let (_, fresh) = request(
+        &app,
+        "POST",
+        "/v1/mfa/reauth",
+        Some(authenticated),
+        json!({"password":password}),
+    )
+    .await;
+    assert_eq!(
+        request(
+            &app,
+            "POST",
+            "/v1/auth/mfa/verify",
+            None,
+            json!({"ticket":fresh["ticket"],"code":codes[2]})
+        )
+        .await
+        .0,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        request(
+            &app,
+            "POST",
+            "/v1/auth/mfa/verify",
+            None,
+            json!({"ticket":fresh["ticket"],"code":regenerated["recovery_codes"][0]})
         )
         .await
         .0,

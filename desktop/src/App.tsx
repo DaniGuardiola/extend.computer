@@ -294,7 +294,7 @@ export function App() {
                   {error || data?.error}
                 </span>
                 <button
-                  className="flex size-8 shrink-0 items-center justify-center rounded-full hover:bg-danger/10 focus-visible:outline-danger"
+                  className="flex size-8 shrink-0 items-center justify-center rounded-full hover:bg-danger/10 focus-visible:bg-danger/10 focus-visible:outline-danger"
                   aria-label="Dismiss error"
                   onClick={() => {
                     setError("");

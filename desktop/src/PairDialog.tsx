@@ -84,7 +84,7 @@ export function PairDialog({
         {nearby.map((c) => (
           <button
             key={c.addresses.join(",")}
-            className="flex w-full items-center gap-3 rounded-xl border border-line p-4 text-left hover:bg-line/40 disabled:opacity-50"
+            className="flex w-full items-center gap-3 rounded-xl border border-line p-4 text-left hover:bg-line/40 focus-visible:bg-line/40 disabled:opacity-50"
             disabled={busy || !!snapshot.session}
             onClick={async () => {
               setBusy(true);

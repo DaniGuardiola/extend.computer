@@ -10,6 +10,12 @@ import {
 } from '@simplewebauthn/server'
 import { matchTotp, newTotpSecret, sealSecret, openSecret } from './totp'
 import { hashPassword, verifyPassword } from './password'
+import { sessionClient } from './session-details'
+import {
+  hashRecoveryCode,
+  newRecoveryCodes,
+  recoverySalt,
+} from './recovery-codes'
 import { emailEnabled, sendAccountEmail, type EmailKind } from './email'
 
 const SESSION_SECONDS = 30 * 24 * 60 * 60
@@ -71,6 +77,26 @@ function text(value: unknown, max: number, label: string): string {
   )
     fail(400, `Invalid ${label}`)
   return value as string
+}
+function signOutOthers(
+  input: Record<string, unknown>,
+  fallback = true,
+): boolean {
+  if (input.sign_out_others === undefined) return fallback
+  if (typeof input.sign_out_others !== 'boolean')
+    fail(400, 'Invalid session sign-out choice')
+  return input.sign_out_others as boolean
+}
+async function sessionChoice(
+  request: Request,
+  fallback = true,
+): Promise<boolean> {
+  return signOutOthers(
+    request.headers.get('Content-Type')?.startsWith('application/json')
+      ? await body(request)
+      : {},
+    fallback,
+  )
 }
 function email(value: unknown): string {
   const normalized = text(value, 254, 'email address').trim().toLowerCase()
@@ -344,6 +370,24 @@ export class AccountService extends DurableObject<Env> {
       .bind(digest(raw!), now())
       .first<Session>()
     if (!found) fail(401, 'Please sign in')
+    const details = sessionClient(
+      request.headers.get('User-Agent') ?? '',
+      request.headers.get('X-Extend-Client') === 'desktop',
+    )
+    const location = request.headers.get('X-Extend-Session-Location')
+    await this.env.DB.prepare(
+      'UPDATE sessions SET last_access_at=?,platform=COALESCE(platform,?),client=COALESCE(client,?),location=? WHERE token_hash=? AND (last_access_at IS NULL OR last_access_at<? OR client IS NULL OR location IS NOT ?)',
+    )
+      .bind(
+        now(),
+        details.platform,
+        details.client,
+        location ? decodeURIComponent(location) : null,
+        found!.token_hash,
+        now() - 60,
+        location ? decodeURIComponent(location) : null,
+      )
+      .run()
     return found!
   }
 
@@ -463,13 +507,24 @@ export class AccountService extends DurableObject<Env> {
       if (!used.meta.changes)
         fail(401, 'Invalid or already used verification code')
     } else {
-      const normalized = (code as string).replace(/[- ]/g, '').toLowerCase()
-      if (!/^[a-f0-9]{32}$/.test(normalized))
+      const normalized = (code as string).replace(/[- ]/g, '')
+      let codeHash: string
+      if (/^\d{8}$/.test(normalized)) {
+        const stored = await this.env.DB.prepare(
+          'SELECT code_hash FROM recovery_codes WHERE account_id=? LIMIT 1',
+        )
+          .bind(account)
+          .first<{ code_hash: string }>()
+        const salt = stored && recoverySalt(stored.code_hash)
+        if (!salt) fail(401, 'Invalid or already used recovery code')
+        codeHash = hashRecoveryCode(normalized, salt!)
+      } else {
         fail(401, 'Invalid verification code')
+      }
       const used = await this.env.DB.prepare(
         'DELETE FROM recovery_codes WHERE account_id=? AND code_hash=? RETURNING code_hash',
       )
-        .bind(account, digest(normalized))
+        .bind(account, codeHash!)
         .first()
       if (!used) fail(401, 'Invalid or already used recovery code')
     }
@@ -541,13 +596,11 @@ export class AccountService extends DurableObject<Env> {
     enabled: boolean,
     extra: (version: number) => D1PreparedStatement[] = () => [],
     codes = true,
+    revokeOthers = !enabled,
   ) {
     const user = await this.elevated(session)
     const version = Number.parseInt(randomBytes(6).toString('hex'), 16)
-    const recovery =
-      enabled && codes
-        ? Array.from({ length: 10 }, () => randomBytes(16).toString('hex'))
-        : []
+    const recovery = enabled && codes ? newRecoveryCodes() : []
     const guard = 'EXISTS(SELECT 1 FROM accounts WHERE id=? AND mfa_version=?)'
     const operations = [
       this.env.DB.prepare(
@@ -565,12 +618,16 @@ export class AccountService extends DurableObject<Env> {
         user.mfa_version,
       ),
       ...extra(version),
+      ...(revokeOthers
+        ? [
+            this.env.DB.prepare(
+              `DELETE FROM sessions WHERE account_id=? AND token_hash<>? AND ${guard}`,
+            ).bind(user.id, session.token_hash, user.id, version),
+          ]
+        : []),
       this.env.DB.prepare(
-        `DELETE FROM sessions WHERE account_id=? AND token_hash<>? AND ${guard}`,
-      ).bind(user.id, session.token_hash, user.id, version),
-      this.env.DB.prepare(
-        `UPDATE sessions SET mfa_version=?,elevated_until=0 WHERE token_hash=? AND ${guard}`,
-      ).bind(version, session.token_hash, user.id, version),
+        `UPDATE sessions SET mfa_version=?,elevated_until=0 WHERE account_id=? AND mfa_version=? AND ${guard}`,
+      ).bind(version, user.id, user.mfa_version, user.id, version),
       this.env.DB.prepare(
         `DELETE FROM mfa_tickets WHERE account_id=? AND ${guard}`,
       ).bind(user.id, user.id, version),
@@ -588,14 +645,14 @@ export class AccountService extends DurableObject<Env> {
       operations.push(
         this.env.DB.prepare(
           `INSERT INTO recovery_codes SELECT ?,? WHERE ${guard}`,
-        ).bind(user.id, digest(code), user.id, version),
+        ).bind(user.id, code.hash, user.id, version),
       )
     const result = await this.env.DB.batch(operations)
     if (!result[0]!.meta.changes)
       fail(403, 'Security settings changed. Verify again.')
     return json({
       success: true,
-      recovery_codes: recovery.map((c) => c.match(/.{8}/g)!.join('-')),
+      recovery_codes: recovery.map((c) => c.display),
     })
   }
 
@@ -617,8 +674,13 @@ export class AccountService extends DurableObject<Env> {
       fail(429, 'Too many sessions. Sign out of an existing session first.')
     const raw = token()
     const expires_at = current + SESSION_SECONDS
+    const details = sessionClient(
+      request.headers.get('User-Agent') ?? '',
+      request.headers.get('X-Extend-Client') === 'desktop',
+    )
+    const location = request.headers.get('X-Extend-Session-Location')
     const inserted = await this.env.DB.prepare(
-      `INSERT INTO sessions (token_hash, account_id, expires_at, created_at, mfa_version) SELECT ?, id, ?, ?, mfa_version FROM accounts
+      `INSERT INTO sessions (token_hash, account_id, expires_at, created_at, mfa_version, id, last_access_at, platform, client, location) SELECT ?, id, ?, ?, mfa_version, ?, ?, ?, ?, ? FROM accounts
       WHERE id = ? AND (? IS NULL OR password_hash = ?)
       AND ((mfa_enabled=0 AND ? IS NULL) OR mfa_version=?)
       AND (? IS NULL OR EXISTS (SELECT 1 FROM passkeys WHERE id = ? AND account_id = accounts.id))
@@ -629,6 +691,11 @@ export class AccountService extends DurableObject<Env> {
         digest(raw),
         expires_at,
         current,
+        randomBytes(16).toString('hex'),
+        current,
+        details.platform,
+        details.client,
+        location ? decodeURIComponent(location) : null,
         account.id,
         account.password_hash ?? null,
         account.password_hash ?? null,
@@ -784,6 +851,12 @@ export class AccountService extends DurableObject<Env> {
         .bind(text(input.id, 2048, 'passkey'), url.hostname)
         .first<Passkey>()
       if (!key) fail(401, 'Could not sign in with that passkey')
+      const account = await this.env.DB.prepare(
+        'SELECT * FROM accounts WHERE id = ?',
+      )
+        .bind(key!.account_id)
+        .first<Account>()
+      if (!account) fail(401, 'Could not sign in with that passkey')
       let verification
       try {
         verification = await verifyAuthenticationResponse({
@@ -814,17 +887,13 @@ export class AccountService extends DurableObject<Env> {
         )
         .run()
       if (!updated.meta.changes) fail(401, 'Passkey changed. Try again.')
-      const account = await this.env.DB.prepare(
-        'SELECT * FROM accounts WHERE id = ?',
+      return this.loginResponse(
+        request,
+        account!,
+        200,
+        key!.id,
+        account!.mfa_version,
       )
-        .bind(key!.account_id)
-        .first<Account>()
-      if (account!.mfa_enabled)
-        fail(
-          403,
-          'Two-factor authentication is enabled. Sign in with your password, then use this passkey.',
-        )
-      return this.loginResponse(request, account!, 200, key!.id)
     }
 
     if (path === '/v1/auth/desktop/exchange' && method === 'POST') {
@@ -1118,16 +1187,26 @@ export class AccountService extends DurableObject<Env> {
           400,
           'Code is incorrect. Try the current code from your authenticator.',
         )
-      return this.mfaChange(session, true, (version) => [
-        db
-          .prepare(
-            `INSERT OR REPLACE INTO totp_factors SELECT ?,?,? WHERE EXISTS(SELECT 1 FROM accounts WHERE id=? AND mfa_version=?)`,
-          )
-          .bind(account, setup!.secret, step, account, version),
-        db
-          .prepare('DELETE FROM totp_setup WHERE session_hash=?')
-          .bind(session.token_hash),
-      ])
+      const replacing = !!(await db
+        .prepare('SELECT account_id FROM totp_factors WHERE account_id=?')
+        .bind(account)
+        .first())
+      return this.mfaChange(
+        session,
+        true,
+        (version) => [
+          db
+            .prepare(
+              `INSERT OR REPLACE INTO totp_factors SELECT ?,?,? WHERE EXISTS(SELECT 1 FROM accounts WHERE id=? AND mfa_version=?)`,
+            )
+            .bind(account, setup!.secret, step, account, version),
+          db
+            .prepare('DELETE FROM totp_setup WHERE session_hash=?')
+            .bind(session.token_hash),
+        ],
+        true,
+        replacing && signOutOthers(input),
+      )
     }
     if (path === '/v1/mfa/enable' && method === 'POST') {
       await this.elevated(session)
@@ -1143,16 +1222,24 @@ export class AccountService extends DurableObject<Env> {
     }
     if (path === '/v1/mfa/disable' && method === 'POST') {
       const user = await this.elevated(session)
-      return this.mfaChange(session, false, (version) => [
-        db
-          .prepare(
-            'DELETE FROM totp_factors WHERE account_id=? AND EXISTS(SELECT 1 FROM accounts WHERE id=? AND mfa_version=?)',
-          )
-          .bind(account, account, version),
-        db.prepare('DELETE FROM totp_setup WHERE account_id=?').bind(account),
-      ])
+      const revokeOthers = await sessionChoice(request)
+      return this.mfaChange(
+        session,
+        false,
+        (version) => [
+          db
+            .prepare(
+              'DELETE FROM totp_factors WHERE account_id=? AND EXISTS(SELECT 1 FROM accounts WHERE id=? AND mfa_version=?)',
+            )
+            .bind(account, account, version),
+          db.prepare('DELETE FROM totp_setup WHERE account_id=?').bind(account),
+        ],
+        true,
+        revokeOthers,
+      )
     }
     if (path === '/v1/mfa/totp' && method === 'DELETE') {
+      const revokeOthers = await sessionChoice(request)
       const user = await this.elevated(session)
       const info = await this.mfaInfo(account)
       if (user.mfa_enabled && !info.keys)
@@ -1171,6 +1258,7 @@ export class AccountService extends DurableObject<Env> {
             .bind(account, account, version),
         ],
         false,
+        revokeOthers,
       )
     }
 
@@ -1209,6 +1297,48 @@ export class AccountService extends DurableObject<Env> {
         .run()
       return empty()
     }
+    if (path === '/v1/sessions' && method === 'GET') {
+      const { results } = await db
+        .prepare(
+          `SELECT s.id,s.created_at,
+        COALESCE(s.platform,CASE WHEN MIN(d.platform)=MAX(d.platform) THEN
+          CASE MAX(d.platform) WHEN 'macos' THEN 'macOS' WHEN 'windows' THEN 'Windows' WHEN 'linux' THEN 'Linux' ELSE MAX(d.platform) END
+        END) AS platform,s.client,s.location,
+        MAX(COALESCE(s.last_access_at,s.created_at),COALESCE(MAX(ds.last_seen),0)) AS last_access_at,
+        s.token_hash=? AS current
+        FROM sessions s JOIN accounts a ON a.id=s.account_id
+        LEFT JOIN device_sessions ds ON ds.session_hash=s.token_hash
+        LEFT JOIN devices d ON d.id=ds.device_id
+        WHERE s.account_id=? AND s.expires_at>? AND s.mfa_version=a.mfa_version
+        GROUP BY s.token_hash ORDER BY current DESC,last_access_at DESC`,
+        )
+        .bind(session.token_hash, account, now())
+        .all()
+      return json({ sessions: results })
+    }
+    if (path === '/v1/sessions' && method === 'DELETE') {
+      await db
+        .prepare('DELETE FROM sessions WHERE account_id=?')
+        .bind(account)
+        .run()
+      const response = empty()
+      setCookie(response, request, COOKIE, '', 0)
+      return response
+    }
+    const sessionPath = path.match(/^\/v1\/sessions\/([a-f0-9]{32})$/)
+    if (sessionPath && method === 'DELETE') {
+      const removed = await db
+        .prepare(
+          'DELETE FROM sessions WHERE account_id=? AND id=? RETURNING token_hash',
+        )
+        .bind(account, sessionPath[1])
+        .first<{ token_hash: string }>()
+      if (!removed) fail(404, 'Session not found')
+      const response = empty()
+      if (removed!.token_hash === session.token_hash)
+        setCookie(response, request, COOKIE, '', 0)
+      return response
+    }
     if (path === '/v1/account/password' && method === 'POST') {
       const owner = await db
         .prepare('SELECT mfa_enabled FROM accounts WHERE id=?')
@@ -1243,9 +1373,20 @@ export class AccountService extends DurableObject<Env> {
           ),
         db
           .prepare(
-            'DELETE FROM sessions WHERE account_id = ? AND token_hash != ? AND EXISTS (SELECT 1 FROM accounts WHERE id = ? AND password_hash = ?)',
+            'DELETE FROM sessions WHERE account_id = ? AND token_hash != ? AND EXISTS (SELECT 1 FROM accounts WHERE id = ? AND password_hash = ?) AND ?',
           )
-          .bind(account, session.token_hash, account, hash),
+          .bind(
+            account,
+            session.token_hash,
+            account,
+            hash,
+            signOutOthers(input) ? 1 : 0,
+          ),
+        db
+          .prepare(
+            'UPDATE sessions SET elevated_until=0 WHERE account_id=? AND EXISTS (SELECT 1 FROM accounts WHERE id=? AND password_hash=?)',
+          )
+          .bind(account, account, hash),
       ])
       if (!changed[0]!.meta.changes)
         fail(401, 'Credentials changed. Please sign in again.')
@@ -1482,6 +1623,7 @@ export class AccountService extends DurableObject<Env> {
         .prepare('SELECT * FROM accounts WHERE id=?')
         .bind(account)
         .first<Account>()
+      const revokeOthers = await sessionChoice(request, !!owner!.mfa_enabled)
       if (owner!.mfa_enabled) {
         await this.elevated(session)
         const info = await this.mfaInfo(account)
@@ -1506,6 +1648,7 @@ export class AccountService extends DurableObject<Env> {
               .bind(passkeyPath[1], account, account, version),
           ],
           false,
+          revokeOthers,
         )
       }
       const removed = await db
@@ -1513,6 +1656,11 @@ export class AccountService extends DurableObject<Env> {
         .bind(passkeyPath[1], account)
         .run()
       if (!removed.meta.changes) fail(404, 'Passkey not found')
+      if (revokeOthers)
+        await db
+          .prepare('DELETE FROM sessions WHERE account_id=? AND token_hash<>?')
+          .bind(account, session.token_hash)
+          .run()
       return empty()
     }
     return json({ error: 'Not found' }, 404)

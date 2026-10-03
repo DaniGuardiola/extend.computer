@@ -1,6 +1,7 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Fingerprint } from 'lucide-react'
 import type { PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/browser'
+import { CodeInput } from './CodeInput'
 import { api, message } from '../lib/api'
 export type MfaPending = {
   mfa_required: true
@@ -19,28 +20,47 @@ export function SecondFactor({
   onCancel: () => void
 }) {
   const [busy, setBusy] = useState(false)
+  const [showVerifying, setShowVerifying] = useState(false)
+  const verifying = useRef(false)
   const [error, setError] = useState('')
-  async function attempt(work: () => Promise<unknown>) {
-    setBusy(true)
+  const [errorAttempt, setErrorAttempt] = useState(0)
+  useEffect(() => {
+    setShowVerifying(false)
+    if (!busy) return
+    const timer = setTimeout(() => setShowVerifying(true), 1000)
+    return () => clearTimeout(timer)
+  }, [busy])
+  const [method, setMethod] = useState<'totp' | 'recovery' | 'key'>(
+    pending.totp ? 'totp' : pending.keys ? 'key' : 'recovery',
+  )
+  function switchMethod(next: 'totp' | 'recovery') {
     setError('')
+    setMethod(next)
+  }
+  async function attempt(work: () => Promise<unknown>) {
+    if (verifying.current) return
+    verifying.current = true
+    setBusy(true)
     try {
       await work()
       await onVerified()
     } catch (e) {
       setError(message(e))
+      setErrorAttempt((attempt) => attempt + 1)
     } finally {
+      verifying.current = false
       setBusy(false)
     }
+  }
+  function verifyCode(value: FormDataEntryValue | null) {
+    return attempt(() =>
+      api('/auth/mfa/verify', 'POST', { ticket: pending.ticket, code: value }),
+    )
   }
   async function code(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const data = new FormData(event.currentTarget)
-    await attempt(() =>
-      api('/auth/mfa/verify', 'POST', {
-        ticket: pending.ticket,
-        code: data.get('code'),
-      }),
-    )
+    await verifyCode(data.get('code'))
   }
   async function key() {
     await attempt(async () => {
@@ -59,29 +79,39 @@ export function SecondFactor({
   }
   return (
     <div className="second-factor">
-      <p>Confirm it’s you with a second factor.</p>
+      <p className="second-factor-description">
+        {method === 'totp'
+          ? 'Enter your six-digit one-time code.'
+          : method === 'recovery'
+            ? 'Enter one of your saved recovery codes. Each works once.'
+            : 'Confirm with your passkey or security key.'}
+      </p>
       {error && (
-        <p role="alert" className="message error-message">
+        <p
+          key={errorAttempt}
+          role="alert"
+          className="message error-message auth-error-enter"
+        >
           {error}
         </p>
       )}
-      <form onSubmit={code}>
-        <label className="field">
-          {pending.totp ? 'Authenticator or recovery code' : 'Recovery code'}
-          <input
-            name="code"
-            autoComplete="one-time-code"
-            required
-            maxLength={39}
-            autoFocus
-            spellCheck={false}
-            autoCapitalize="none"
-          />
-        </label>
-        <button className="button auth-submit" disabled={busy}>
-          Verify code
-        </button>
-      </form>
+      {method !== 'key' && (
+        <form key={method} onSubmit={code}>
+          <label className="field">
+            {method === 'totp' ? 'One-time code' : 'Recovery code'}
+            <CodeInput
+              length={method === 'recovery' ? 8 : 6}
+              disabled={busy}
+              onComplete={(value) => {
+                void verifyCode(value)
+              }}
+            />
+          </label>
+          <p role="status" className="code-verifying">
+            {busy && showVerifying ? 'Verifying…' : ''}
+          </p>
+        </form>
+      )}
       {pending.keys && (
         <button
           className="button button-outline auth-submit"
@@ -92,9 +122,33 @@ export function SecondFactor({
           Use passkey or security key
         </button>
       )}
-      <button className="text-button" disabled={busy} onClick={onCancel}>
-        Start over
-      </button>
+      <div className="second-factor-alternatives">
+        {method !== 'recovery' && pending.recovery && (
+          <button
+            className="text-button link-button"
+            disabled={busy}
+            onClick={() => switchMethod('recovery')}
+          >
+            Use a recovery code
+          </button>
+        )}
+        {method === 'recovery' && pending.totp && (
+          <button
+            className="text-button link-button"
+            disabled={busy}
+            onClick={() => switchMethod('totp')}
+          >
+            Use a one-time code
+          </button>
+        )}
+        <button
+          className="text-button link-button"
+          disabled={busy}
+          onClick={onCancel}
+        >
+          Start over
+        </button>
+      </div>
     </div>
   )
 }

@@ -152,7 +152,7 @@ export function AccountPanel({ account }: { account: AccountFlow }) {
           <p>
             Confirm with your{" "}
             {state.pending.totp
-              ? "authenticator app or a recovery code"
+              ? "one-time code or a recovery code"
               : "recovery code"}
             .
           </p>
@@ -168,12 +168,13 @@ export function AccountPanel({ account }: { account: AccountFlow }) {
           >
             <label className="field grid gap-2">
               {state.pending.totp
-                ? "Authenticator or recovery code"
+                ? "One-time or recovery code"
                 : "Recovery code"}
               <input
                 name="code"
                 autoComplete="one-time-code"
-                maxLength={39}
+                inputMode="numeric"
+                maxLength={9}
                 required
                 autoFocus
                 spellCheck={false}

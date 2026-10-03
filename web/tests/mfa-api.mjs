@@ -73,6 +73,16 @@ function otp(secret) {
 try {
   const other = await request('/auth/login', { email, password })
   assert.equal(other.status, 200)
+  const device = await request(
+    '/devices',
+    {
+      name: 'Preserved session device',
+      platform: 'macos',
+      public_key: randomBytes(32).toString('hex'),
+    },
+    other.body.token,
+  )
+  assert.equal(device.status, 200)
   assert.equal((await request('/mfa/totp/setup', {}, session)).status, 403)
   assert.equal(
     (await request('/mfa/reauth', { password }, session)).status,
@@ -80,16 +90,30 @@ try {
   )
   const setup = await request('/mfa/totp/setup', {}, session)
   assert.equal(setup.status, 200)
+  const setupCode = otp(setup.body.secret)
   const confirmed = await request(
     '/mfa/totp/confirm',
-    { code: otp(setup.body.secret) },
+    { code: setupCode },
     session,
   )
   assert.equal(confirmed.status, 200)
   assert.equal(confirmed.body.recovery_codes.length, 10)
+  assert.equal(new Set(confirmed.body.recovery_codes).size, 10)
+  for (const code of confirmed.body.recovery_codes)
+    assert.match(code, /^\d{4} \d{4}$/)
   assert.equal(
     (await request('/account', undefined, other.body.token)).status,
-    401,
+    200,
+  )
+  assert.equal(
+    (
+      await request(
+        '/devices/' + device.body.id + '/heartbeat',
+        {},
+        device.body.device_token,
+      )
+    ).status,
+    204,
   )
   assert.equal((await request('/mfa/disable', {}, session)).status, 403)
   const login = await request('/auth/login', { email, password })
@@ -105,7 +129,7 @@ try {
     (
       await request('/auth/mfa/verify', {
         ticket: login.body.ticket,
-        code: otp(setup.body.secret),
+        code: setupCode,
       })
     ).status,
     401,
@@ -113,7 +137,7 @@ try {
   const recovery = confirmed.body.recovery_codes[0]
   const verified = await request('/auth/mfa/verify', {
     ticket: login.body.ticket,
-    code: recovery,
+    code: recovery.replace(' ', ''),
   })
   assert.equal(verified.status, 200)
   assert.ok(verified.body.token)
@@ -152,11 +176,62 @@ try {
     ).status,
     200,
   )
+  const regenerated = await request(
+    '/mfa/recovery-codes',
+    {},
+    verified.body.token,
+  )
+  assert.equal(regenerated.status, 200)
+  for (const token of [session, other.body.token, verified.body.token])
+    assert.equal((await request('/account', undefined, token)).status, 200)
+  assert.equal(
+    (await request('/mfa/disable', {}, verified.body.token)).status,
+    403,
+  )
+  assert.equal(
+    (
+      await request(
+        '/devices/' + device.body.id + '/heartbeat',
+        {},
+        device.body.device_token,
+      )
+    ).status,
+    204,
+  )
+  const fresh = await request('/mfa/reauth', { password }, verified.body.token)
+  assert.equal(
+    (
+      await request('/auth/mfa/verify', {
+        ticket: fresh.body.ticket,
+        code: confirmed.body.recovery_codes[2],
+      })
+    ).status,
+    401,
+  )
+  assert.equal(
+    (
+      await request('/auth/mfa/verify', {
+        ticket: fresh.body.ticket,
+        code: regenerated.body.recovery_codes[0],
+      })
+    ).status,
+    200,
+  )
   assert.equal(
     (await request('/mfa/disable', {}, verified.body.token)).status,
     200,
   )
   assert.equal((await request('/account', undefined, session)).status, 401)
+  assert.equal(
+    (
+      await request(
+        '/devices/' + device.body.id + '/heartbeat',
+        {},
+        device.body.device_token,
+      )
+    ).status,
+    401,
+  )
   assert.equal(
     (
       await request('/auth/mfa/verify', {
@@ -175,7 +250,7 @@ try {
         'TOTP replay rejected',
         'single-use recovery',
         'ticket replay rejected',
-        'security change revokes sessions and pending logins',
+        'addition and regeneration preserve sessions; disable revokes them',
         'fresh MFA required to disable',
       ],
     }),

@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import * as Ariakit from '@ariakit/react'
 import {
@@ -7,15 +7,17 @@ import {
   Laptop,
   LogOut,
   Monitor,
-  Plus,
   RefreshCw,
-  Shield,
   Trash2,
 } from 'lucide-react'
 import type { PublicKeyCredentialCreationOptionsJSON } from '@simplewebauthn/browser'
-import { MfaControls } from '../components/MfaControls'
+import { AccountSkeleton } from '../components/AccountSkeleton'
+import { MfaControls, type MfaInfo } from '../components/MfaControls'
+import { Sessions, type AccountSession } from '../components/Sessions'
 import { VerifySecurity } from '../components/VerifySecurity'
+import { SessionSignOutChoice } from '../components/SessionSignOutChoice'
 import { Brand } from '../components/Brand'
+import { ValidatedForm, ValidatedInput } from '../components/ValidatedForm'
 import {
   api,
   ApiError,
@@ -38,30 +40,43 @@ function Dashboard() {
   const [devices, setDevices] = useState<Device[]>([])
   const [passkeys, setPasskeys] = useState<Passkey[]>([])
   const [busy, setBusy] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [removal, setRemoval] = useState<Removal | null>(null)
   const [passwordOpen, setPasswordOpen] = useState(false)
-  const [sessionsOpen, setSessionsOpen] = useState(false)
-  async function refresh() {
-    const [user, registered, keys] = await Promise.all([
+  const [signOutOthers, setSignOutOthers] = useState(false)
+  const [sessionsRevision, setSessionsRevision] = useState(0)
+  const [mfa, setMfa] = useState<MfaInfo>()
+  const [sessions, setSessions] = useState<AccountSession[]>()
+  const [loading, setLoading] = useState(true)
+  async function loadAccount() {
+    return Promise.all([
       api<Account>('/account'),
       api<{ devices: Device[] }>('/devices'),
       api<{ passkeys: Passkey[] }>('/passkeys'),
+      api<MfaInfo>('/mfa'),
+      api<{ sessions: AccountSession[] }>('/sessions'),
     ])
+  }
+  const initialLoad = useRef<ReturnType<typeof loadAccount> | null>(null)
+  async function refresh() {
+    const [user, registered, keys, factors, loggedIn] = await loadAccount()
+    setMfa(factors)
+    setSessions(loggedIn.sessions)
     setAccount(user)
     setDevices(registered.devices)
     setPasskeys(keys.passkeys)
+    setSessionsRevision((value) => value + 1)
   }
   useEffect(() => {
     let active = true
-    Promise.all([
-      api<Account>('/account'),
-      api<{ devices: Device[] }>('/devices'),
-      api<{ passkeys: Passkey[] }>('/passkeys'),
-    ])
-      .then(([user, registered, keys]) => {
+    const request = (initialLoad.current ??= loadAccount())
+    request
+      .then(([user, registered, keys, factors, loggedIn]) => {
         if (active) {
+          setMfa(factors)
+          setSessions(loggedIn.sessions)
           setAccount(user)
           setDevices(registered.devices)
           setPasskeys(keys.passkeys)
@@ -73,6 +88,9 @@ function Dashboard() {
             void navigate({ to: '/login' })
           else setError(message(error))
         }
+      })
+      .finally(() => {
+        if (active) setLoading(false)
       })
     return () => {
       active = false
@@ -99,43 +117,54 @@ function Dashboard() {
     else void action(work, notice)
   }
   async function addPasskey() {
-    protectedAction(
-      async () => {
-        const { startRegistration } = await import('@simplewebauthn/browser')
-        const optionsJSON = await api<PublicKeyCredentialCreationOptionsJSON>(
-          '/passkeys/register/options',
-          'POST',
-        )
-        await api(
-          '/passkeys/register/verify',
-          'POST',
-          await startRegistration({ optionsJSON }),
-        )
-        await refresh()
-      },
-      account?.mfa_enabled
-        ? 'Passkey added as a second factor.'
-        : 'Passkey added. Next time, sign in with a touch.',
-    )
+    protectedAction(async () => {
+      const { startRegistration } = await import('@simplewebauthn/browser')
+      const optionsJSON = await api<PublicKeyCredentialCreationOptionsJSON>(
+        '/passkeys/register/options',
+        'POST',
+        {},
+      )
+      await api(
+        '/passkeys/register/verify',
+        'POST',
+        await startRegistration({ optionsJSON }),
+      )
+      await refresh()
+    }, 'Passkey added.')
   }
+  useEffect(() => setSignOutOthers(false), [passwordOpen, removal])
   async function changePassword(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const data = new FormData(event.currentTarget)
-    protectedAction(async () => {
-      await api('/account/password', 'POST', {
-        current_password: data.get('current'),
-        password: data.get('password'),
-      })
-      setPasswordOpen(false)
-      await refresh()
-    }, 'Password changed. Other sessions signed out.')
+    protectedAction(
+      async () => {
+        await api('/account/password', 'POST', {
+          current_password: data.get('current'),
+          password: data.get('password'),
+          sign_out_others: signOutOthers,
+        })
+        setPasswordOpen(false)
+        await refresh()
+      },
+      signOutOthers
+        ? 'Password changed. Other sessions signed out.'
+        : 'Password changed.',
+    )
   }
   return (
     <div className="dashboard">
       <header className="site-header">
-        <Brand />
+        <Brand appearance="app" />
         <div className="account-nav">
-          <span className="account-email">{account?.email}</span>
+          <span className="account-email">
+            {account ? (
+              account.email
+            ) : (
+              <span className="account-loading-inline" aria-hidden="true">
+                <span className="skeleton skeleton-email" />
+              </span>
+            )}
+          </span>
           <button
             className="text-button"
             disabled={busy || !account}
@@ -154,17 +183,25 @@ function Dashboard() {
       <main id="main" className="dashboard-main">
         <div className="dashboard-title">
           <div>
-            <span className="eyebrow">YOUR CORNER OF THE INTERNET</span>
-            <h1>Your devices.</h1>
-            <p>One account. All your computers.</p>
+            <h1>Devices</h1>
+            <p>Manage your registered computers and account settings.</p>
           </div>
           <button
             className="text-button"
-            disabled={busy}
-            onClick={() => action(refresh)}
+            disabled={busy || loading}
+            onClick={() =>
+              action(async () => {
+                setRefreshing(true)
+                try {
+                  await refresh()
+                } finally {
+                  setRefreshing(false)
+                }
+              })
+            }
           >
             <RefreshCw size={14} />
-            Refresh
+            {refreshing ? 'Refreshing…' : 'Refresh'}
           </button>
         </div>
         {error && (
@@ -178,17 +215,13 @@ function Dashboard() {
           </p>
         )}
         {!account ? (
-          <p role="status">
-            {error
-              ? 'Could not load your account. Try refreshing.'
-              : 'Loading your desk…'}
-          </p>
+          <AccountSkeleton loading={loading} />
         ) : (
-          <>
+          <div className="account-content">
             {account.email_enabled && !account.email_verified ? (
               <section className="email-notice" aria-label="Verify email">
                 <div>
-                  <h2>Keep a way back in.</h2>
+                  <h2>Verify your email</h2>
                   <p>Verify {account.email} to enable password recovery.</p>
                 </div>
                 <button
@@ -250,16 +283,16 @@ function Dashboard() {
               ) : (
                 <div className="empty-devices">
                   <Monitor size={31} />
-                  <h2>Your desk starts here.</h2>
+                  <h2>No devices registered</h2>
                   <p>
-                    No devices registered yet. Open the desktop app and log in
-                    to add this computer. Pair devices on your local network
-                    before connecting.
+                    Open the desktop app and sign in to add this computer. Pair
+                    devices on your local network before connecting.
                   </p>
                 </div>
               )}
             </section>
             <MfaControls
+              initialData={mfa}
               verify={verify}
               onChange={refresh}
               revision={`${account.mfa_enabled}:${passkeys.length}`}
@@ -267,80 +300,78 @@ function Dashboard() {
             <section aria-labelledby="security-title">
               <div className="security-heading">
                 <div>
-                  <h2 id="security-title">Make it yours. Keep it yours.</h2>
+                  <h2 id="security-title">Sign-in methods</h2>
                   <p>Manage how you sign in.</p>
                 </div>
-                <button
-                  className="button button-outline"
-                  disabled={busy || passkeys.length >= 10}
-                  onClick={addPasskey}
-                >
-                  <Plus size={14} />
-                  Add passkey
-                </button>
               </div>
               <div className="security-list">
-                {passkeys.map((key) => (
-                  <div key={key.id} className="security-row">
-                    <div>
-                      <Fingerprint size={19} />
+                <div
+                  className="passkey-method"
+                  role="group"
+                  aria-label="Passkeys"
+                >
+                  {passkeys.map((key) => (
+                    <div key={key.id} className="security-row">
                       <div>
-                        <h3>{key.name}</h3>
-                        <p>
-                          {key.purpose === 'factor' ? 'Second factor · ' : ''}
-                          Added{' '}
-                          {new Date(
-                            key.created_at * 1000,
-                          ).toLocaleDateString()}{' '}
-                          · {key.rp_id}
-                        </p>
+                        <Fingerprint size={19} />
+                        <div>
+                          <h3>{key.name}</h3>
+                          <p>
+                            {key.purpose === 'factor' ? 'Second factor · ' : ''}
+                            Added{' '}
+                            {new Date(
+                              key.created_at * 1000,
+                            ).toLocaleDateString()}{' '}
+                            · {key.rp_id}
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        className="icon-button"
+                        aria-label="Remove passkey"
+                        disabled={busy}
+                        onClick={() =>
+                          setRemoval({
+                            kind: 'passkeys',
+                            id: key.id,
+                            name: 'this passkey',
+                          })
+                        }
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  ))}
+                  {!passkeys.length && (
+                    <div className="security-row">
+                      <div>
+                        <Fingerprint size={19} />
+                        <div>
+                          <h3>No passkeys added</h3>
+                          <p>
+                            Add a passkey to sign in with your fingerprint,
+                            face, or security key.
+                          </p>
+                        </div>
                       </div>
                     </div>
+                  )}
+                  <div className="passkey-add-action">
                     <button
-                      className="icon-button"
-                      aria-label="Remove passkey"
-                      disabled={busy}
-                      onClick={() =>
-                        setRemoval({
-                          kind: 'passkeys',
-                          id: key.id,
-                          name: 'this passkey',
-                        })
-                      }
+                      className="text-button"
+                      disabled={busy || passkeys.length >= 10}
+                      onClick={addPasskey}
                     >
-                      <Trash2 size={15} />
+                      Add passkey
                     </button>
                   </div>
-                ))}
-                {!passkeys.length && (
-                  <div className="security-row">
-                    <div>
-                      <Fingerprint size={19} />
-                      <div>
-                        <h3>
-                          {account?.mfa_enabled
-                            ? 'Confirm with a passkey.'
-                            : 'A touch beats a password.'}
-                        </h3>
-                        <p>
-                          {account?.mfa_enabled
-                            ? 'After your password, confirm with your fingerprint, face, or security key.'
-                            : 'Add a passkey to sign in with your fingerprint, face, or security key.'}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
+                </div>
                 <div className="security-row">
                   <div>
                     <KeyRound size={19} />
                     <div>
                       <h3>Password</h3>
-                      <p>
-                        {account?.mfa_enabled
-                          ? 'Required before your second factor.'
-                          : 'Keep a password as another way in.'}
-                      </p>
+                      <p>Use your password to sign in.</p>
                     </div>
                   </div>
                   <button
@@ -351,31 +382,18 @@ function Dashboard() {
                     Change
                   </button>
                 </div>
-                <div className="security-row">
-                  <div>
-                    <Shield size={19} />
-                    <div>
-                      <h3>Other sessions</h3>
-                      <p>
-                        Sign out everywhere else. Those devices will go offline.
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    className="text-button"
-                    disabled={busy}
-                    onClick={() => setSessionsOpen(true)}
-                  >
-                    Sign out
-                  </button>
-                </div>
               </div>
             </section>
-          </>
+            <Sessions
+              initialData={sessions}
+              revision={`${account.mfa_enabled}:${sessionsRevision}`}
+              onSignedOut={() => navigate({ to: '/login' })}
+            />
+          </div>
         )}
       </main>
       <footer className="dashboard-footer">
-        <span>Your devices. Your control.</span>
+        <span>extend.computer</span>
         <a href="/">Back to home ↗</a>
       </footer>
       {verification && (
@@ -396,6 +414,12 @@ function Dashboard() {
             ? 'This device will stop appearing in your account. Its account connection will be revoked.'
             : 'You can still sign in with your password or another passkey.'}
         </Ariakit.DialogDescription>
+        {removal?.kind === 'passkeys' && (
+          <SessionSignOutChoice
+            checked={signOutOthers}
+            onChange={setSignOutOthers}
+          />
+        )}
         <div className="dialog-actions">
           <Ariakit.DialogDismiss
             className="button button-outline"
@@ -414,6 +438,9 @@ function Dashboard() {
                 await api(
                   '/' + target.kind + '/' + encodeURIComponent(target.id),
                   'DELETE',
+                  target.kind === 'passkeys'
+                    ? { sign_out_others: signOutOthers }
+                    : undefined,
                 )
                 await refresh()
               }
@@ -433,17 +460,18 @@ function Dashboard() {
       >
         <Ariakit.DialogHeading>Change password</Ariakit.DialogHeading>
         <Ariakit.DialogDescription>
-          Other sessions will be signed out.
+          Update the password you use to sign in.
         </Ariakit.DialogDescription>
         {error && (
           <p role="alert" className="message error-message">
             {error}
           </p>
         )}
-        <form onSubmit={changePassword}>
+        <ValidatedForm onSubmit={changePassword}>
           <label className="field">
             Current password
-            <input
+            <ValidatedInput
+              aria-label="Current password"
               name="current"
               type="password"
               autoComplete="current-password"
@@ -452,7 +480,8 @@ function Dashboard() {
           </label>
           <label className="field">
             New password
-            <input
+            <ValidatedInput
+              aria-label="New password"
               name="password"
               type="password"
               autoComplete="new-password"
@@ -461,6 +490,10 @@ function Dashboard() {
               required
             />
           </label>
+          <SessionSignOutChoice
+            checked={signOutOthers}
+            onChange={setSignOutOthers}
+          />
           <div className="dialog-actions">
             <Ariakit.DialogDismiss
               className="button button-outline"
@@ -472,40 +505,7 @@ function Dashboard() {
               Save password
             </button>
           </div>
-        </form>
-      </Ariakit.Dialog>
-      <Ariakit.Dialog
-        open={sessionsOpen}
-        onClose={() => !busy && setSessionsOpen(false)}
-        className="dialog"
-        backdrop={<div className="dialog-backdrop" />}
-      >
-        <Ariakit.DialogHeading>Sign out other sessions?</Ariakit.DialogHeading>
-        <Ariakit.DialogDescription>
-          This session stays signed in. Devices using other sessions will go
-          offline until they sign in again.
-        </Ariakit.DialogDescription>
-        <div className="dialog-actions">
-          <Ariakit.DialogDismiss
-            className="button button-outline"
-            disabled={busy}
-          >
-            Cancel
-          </Ariakit.DialogDismiss>
-          <button
-            className="button"
-            disabled={busy}
-            onClick={() =>
-              action(async () => {
-                await api('/sessions/others', 'DELETE')
-                setSessionsOpen(false)
-                await refresh()
-              }, 'Other sessions signed out.')
-            }
-          >
-            Sign out
-          </button>
-        </div>
+        </ValidatedForm>
       </Ariakit.Dialog>
     </div>
   )

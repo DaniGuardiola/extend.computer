@@ -26,7 +26,7 @@ function CopyValue({
         {value}
       </span>
       <button
-        className="inline-flex size-6 shrink-0 items-center justify-center rounded text-muted hover:bg-line hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2"
+        className="inline-flex size-6 shrink-0 items-center justify-center rounded text-muted hover:bg-line focus-visible:bg-line hover:text-ink focus-visible:text-ink focus-visible:outline-2 focus-visible:outline-offset-2"
         title={copied ? "Copied" : `Copy ${label}`}
         aria-label={copied ? `${label} copied` : `Copy ${label}`}
         onClick={async () => {

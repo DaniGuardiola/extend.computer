@@ -76,10 +76,10 @@ function DesktopConnect() {
   if (checked && request && !account && !error)
     return <Auth onSignedIn={refresh} />
   return (
-    <main id="main" className="auth-main">
+    <main id="main" className="auth-main desktop-connect-main">
       <div className="auth-box">
-        <Brand />
-        <h1>Connect the desktop app.</h1>
+        <Brand appearance="app" />
+        <h1>Connect the desktop app</h1>
         <p>
           Only continue if you started this sign-in from extend.computer on this
           computer.
