@@ -33,7 +33,7 @@ jobs:
       - name: Validate versions and Changesets
         run: |
           python3 scripts/release.py check
-          npm run changeset -- status --output "$RUNNER_TEMP/changeset-status.json"
+          npm run changeset -- status --since origin/main --output "$RUNNER_TEMP/changeset-status.json"
       - name: Summarize release plan
         env:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
