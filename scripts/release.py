@@ -8,6 +8,7 @@ from pathlib import Path
 import plistlib
 import re
 import subprocess
+import tomllib
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -41,6 +42,12 @@ def sync(check=False):
             raise ValueError(f'Version mismatch: {path}')
         if not check:
             path.write_text(updated)
+    if check:
+        for lock_path in (ROOT / 'Cargo.lock', DESKTOP / 'src-tauri/Cargo.lock'):
+            packages = tomllib.loads(lock_path.read_text())['package']
+            for package in packages:
+                if package['name'] in ('extend-computer-agent', 'extend-computer-desktop'):
+                    assert package['version'] == expected, f'Rust lockfile version mismatch: {lock_path}'
     path = DESKTOP / 'src-tauri/tauri.conf.json'
     data = json.loads(path.read_text())
     if check:
@@ -52,8 +59,8 @@ def sync(check=False):
         data['version'] = expected
         path.write_text(json.dumps(data, indent=2) + '\n')
         # Refresh only lockfile metadata; no dependency upgrades.
-        subprocess.run(['cargo', 'metadata', '--offline', '--format-version', '1', '--no-deps'], cwd=ROOT, stdout=subprocess.DEVNULL, check=True)
-        subprocess.run(['cargo', 'metadata', '--offline', '--format-version', '1', '--no-deps'], cwd=DESKTOP / 'src-tauri', stdout=subprocess.DEVNULL, check=True)
+        subprocess.run(['cargo', 'metadata', '--offline', '--format-version', '1'], cwd=ROOT, stdout=subprocess.DEVNULL, check=True)
+        subprocess.run(['cargo', 'metadata', '--offline', '--format-version', '1'], cwd=DESKTOP / 'src-tauri', stdout=subprocess.DEVNULL, check=True)
         subprocess.run(['npm', 'install', '--package-lock-only', '--ignore-scripts', '--offline'], cwd=ROOT, check=True)
 
 def notes():
