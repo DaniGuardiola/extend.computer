@@ -22,6 +22,7 @@ jobs:
     runs-on: macos-14
     environment: desktop-release
     env:
+      DEVELOPER_DIR: /Applications/Xcode_16.2.app/Contents/Developer
       GH_TOKEN: ${{ secrets.RELEASE_GITHUB_TOKEN || github.token }}
       RELEASE_REPOSITORY: ${{ vars.RELEASE_REPOSITORY || github.repository }}
       RELEASE_TOKEN_CONFIGURED: ${{ secrets.RELEASE_GITHUB_TOKEN != '' }}

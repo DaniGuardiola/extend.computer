@@ -42,7 +42,7 @@ class ReleaseTests(unittest.TestCase):
                 self.assertFalse(release.pending_changesets())
 
     def test_real_alpha_beta_version_and_graduation(self):
-        cli = REPO / 'desktop/node_modules/@changesets/cli/bin.js'
+        cli = REPO / 'node_modules/@changesets/cli/bin.js'
         if not cli.exists() or not shutil.which('node'):
             self.skipTest('Install workspace dependencies first')
         for channel in ('alpha', 'beta'):

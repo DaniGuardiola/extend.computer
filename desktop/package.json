@@ -13,8 +13,8 @@
     "desktop:signing:setup": "python3 ../scripts/dev-app.py setup",
     "desktop:wifi:prepare": "python3 ../scripts/dev-wifi.py",
     "native:updater": "bash ../scripts/build-updater.sh",
-    "changeset": "changeset",
-    "release:version": "changeset version && python3 ../scripts/release.py sync",
+    "changeset": "npm run changeset --prefix .. --",
+    "release:version": "npm run release:version --prefix ..",
     "release:check": "python3 ../scripts/release.py check"
   },
   "dependencies": {
@@ -26,8 +26,6 @@
     "react-markdown": "^10.1.0"
   },
   "devDependencies": {
-    "@changesets/changelog-github": "^1.0.1",
-    "@changesets/cli": "^3.0.3",
     "@tailwindcss/vite": "^4.0.0",
     "@tauri-apps/cli": "^2.0.0",
     "@types/react": "^19.0.0",

@@ -70,6 +70,7 @@ update continuity and support the published data/protocol formats.
 - [ ] Confirm vendored license notices and credits.
 - [ ] Update README, setup/build instructions, supported features, security
   reporting contact, and self-hosting instructions for the public baseline.
+- [ ] Upgrade the pinned macOS runner/Xcode before its hosted image is retired.
 - [ ] Push the final workflows and run PR checks successfully. Confirm clean
   installation from the root lockfile and the pinned Node/Rust versions.
 - [ ] Install the official Changesets bot for this repository only and verify its

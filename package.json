@@ -5,9 +5,13 @@
     "desktop"
   ],
   "scripts": {
-    "changeset": "npm run changeset --prefix desktop --",
-    "release:version": "npm run release:version --prefix desktop",
+    "changeset": "changeset",
+    "release:version": "changeset version && python3 scripts/release.py sync",
     "release:check": "python3 scripts/release.py check"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "@changesets/cli": "^3.0.3",
+    "@changesets/changelog-github": "^1.0.1"
+  }
 }

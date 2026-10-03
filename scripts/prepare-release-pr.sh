@@ -8,7 +8,7 @@ branch=codex/desktop-release
 git config user.name 'github-actions[bot]'
 git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
 git switch -C "$branch"
-npm run release:version --prefix desktop
+npm run release:version
 version=$(node -p "require('./desktop/package.json').version")
 git add .changeset desktop/CHANGELOG.md desktop/package.json package-lock.json \
   Cargo.toml Cargo.lock desktop/src-tauri/Cargo.toml desktop/src-tauri/Cargo.lock desktop/src-tauri/tauri.conf.json
