@@ -3022,6 +3022,24 @@ h3 {
 .desktop-connect-main {
   min-height: 100svh;
 }
+.desktop-connected-box > .brand {
+  margin-bottom: 40px;
+}
+.desktop-connected-icon {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  margin-bottom: 24px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--acid) 14%, transparent);
+  color: var(--acid);
+}
+.desktop-connected-box > .text-button {
+  display: block;
+  margin-top: 20px;
+  text-align: center;
+}
 
 @media (max-width: 600px) and (max-height: 740px) {
   .auth-layout:has(.auth-account-main) .auth-aside {

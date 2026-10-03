@@ -38,12 +38,23 @@ try {
   const state = randomBytes(32).toString('hex')
   const callback = new Promise((resolve) =>
     server.once('request', (req, res) => {
-      res.end('Return to desktop')
+      res.writeHead(303, {
+        Location: `${origin}/desktop/connected#close`,
+        'Referrer-Policy': 'no-referrer',
+        'Cache-Control': 'no-store',
+      })
+      res.end()
       resolve(new URL(req.url, 'http://127.0.0.1'))
     }),
   )
   await context.clearCookies()
   const page = await context.newPage()
+  // Exercise the useful fallback in browsers that prohibit automatic close.
+  await page.addInitScript(() => {
+    window.close = () => {
+      window.__desktopCloseAttempts = (window.__desktopCloseAttempts ?? 0) + 1
+    }
+  })
   const errors = []
   page.on('pageerror', (e) => errors.push(e.message))
   await page.goto(
@@ -51,14 +62,23 @@ try {
       `/desktop/connect?port=${server.address().port}&state=${state}&challenge=${challenge}`,
   )
   await page.waitForLoadState('networkidle')
-  await page.getByRole('textbox', {name:'Email',exact:true}).fill(email)
-  await page.getByLabel('Password',{exact:true}).fill(password)
-  await page.getByRole('button',{name:'Sign in',exact:true}).click()
+  await page.getByRole('textbox', { name: 'Email', exact: true }).fill(email)
+  await page.getByLabel('Password', { exact: true }).fill(password)
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click()
   await page.getByText(`Signed in as ${email}.`, { exact: true }).waitFor()
   await page
     .getByRole('button', { name: 'Continue to desktop', exact: true })
     .click()
   const returned = await callback
+  await page.getByRole('heading', { name: "You're signed in." }).waitFor()
+  await page.waitForURL(origin + '/desktop/connected')
+  await page.waitForFunction(() => window.__desktopCloseAttempts === 1)
+  assert.equal(page.url(), origin + '/desktop/connected')
+  assert.equal(await page.evaluate(() => window.__desktopCloseAttempts), 1)
+  assert.equal(await page.evaluate(() => document.referrer), '')
+  assert.ok(
+    await page.getByRole('link', { name: 'Manage your account' }).isVisible(),
+  )
   assert.equal(returned.searchParams.get('state'), state)
   const code = returned.searchParams.get('code')
   assert.equal(

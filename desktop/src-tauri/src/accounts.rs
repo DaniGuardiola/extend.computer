@@ -516,7 +516,7 @@ impl Accounts {
         open::that(format!("{server}/{page}"))?;
         Ok(())
     }
-    pub fn browser(self: &Arc<Self>) -> Result<View> {
+    pub fn browser(self: &Arc<Self>, on_signed_in: impl FnOnce() + Send + 'static) -> Result<View> {
         let listener = TcpListener::bind(("127.0.0.1", 0))?;
         listener.set_nonblocking(true)?;
         let port = listener.local_addr()?.port();
@@ -611,9 +611,11 @@ impl Accounts {
                     this.accept_or_revoke(&mut inner, value)?;
                     inner.view.browser_pending = false;
                     drop(inner);
-                    let body="<!doctype html><meta charset=utf-8><meta name=referrer content=no-referrer><title>Signed in</title><script>history.replaceState(null,'','/callback')</script><h1>You’re signed in.</h1><p>Return to extend.computer. You can close this tab.</p>";
-                    let response=format!("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-store\r\nReferrer-Policy: no-referrer\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len());
+                    // Fixed account-server destination; no credentials or callback
+                    // parameters cross into the completion page or its referrer.
+                    let response = browser_completion_response(&server);
                     let _ = socket.write_all(response.as_bytes());
+                    on_signed_in();
                     this.refresh()?;
                     return Ok(());
                 }
@@ -642,9 +644,27 @@ impl Accounts {
         });
     }
 }
+fn browser_completion_response(server: &str) -> String {
+    format!("HTTP/1.1 303 See Other\r\nLocation: {server}/desktop/connected#close\r\nCache-Control: no-store\r\nReferrer-Policy: no-referrer\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+}
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn completion_redirect_uses_account_origin_without_callback_secrets() {
+        for server in [
+            OFFICIAL,
+            "https://accounts.example.com",
+            "http://localhost:3010",
+        ] {
+            let response = browser_completion_response(server);
+            assert!(response.starts_with("HTTP/1.1 303 See Other\r\n"));
+            assert!(response.contains(&format!("Location: {server}/desktop/connected#close\r\n")));
+            assert!(response.contains("Referrer-Policy: no-referrer\r\n"));
+            assert!(response.contains("Cache-Control: no-store\r\n"));
+            assert!(!response.contains("state=") && !response.contains("code="));
+        }
+    }
     #[test]
     fn server_origin_rejects_credentials_and_insecure_remote() {
         assert!(origin("https://extend.computer").is_ok());

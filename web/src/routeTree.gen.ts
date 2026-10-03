@@ -16,6 +16,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as RecoverRouteImport } from './routes/recover'
 import { Route as SignupRouteImport } from './routes/signup'
 import { Route as DesktopConnectRouteImport } from './routes/desktop.connect'
+import { Route as DesktopConnectedRouteImport } from './routes/desktop.connected'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -52,6 +53,11 @@ const DesktopConnectRoute = DesktopConnectRouteImport.update({
   path: '/desktop/connect',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DesktopConnectedRoute = DesktopConnectedRouteImport.update({
+  id: '/desktop/connected',
+  path: '/desktop/connected',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -61,6 +67,7 @@ export interface FileRoutesByFullPath {
   '/recover': typeof RecoverRoute
   '/signup': typeof SignupRoute
   '/desktop/connect': typeof DesktopConnectRoute
+  '/desktop/connected': typeof DesktopConnectedRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -70,6 +77,7 @@ export interface FileRoutesByTo {
   '/recover': typeof RecoverRoute
   '/signup': typeof SignupRoute
   '/desktop/connect': typeof DesktopConnectRoute
+  '/desktop/connected': typeof DesktopConnectedRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -80,6 +88,7 @@ export interface FileRoutesById {
   '/recover': typeof RecoverRoute
   '/signup': typeof SignupRoute
   '/desktop/connect': typeof DesktopConnectRoute
+  '/desktop/connected': typeof DesktopConnectedRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -91,6 +100,7 @@ export interface FileRouteTypes {
     | '/recover'
     | '/signup'
     | '/desktop/connect'
+    | '/desktop/connected'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -100,6 +110,7 @@ export interface FileRouteTypes {
     | '/recover'
     | '/signup'
     | '/desktop/connect'
+    | '/desktop/connected'
   id:
     | '__root__'
     | '/'
@@ -109,6 +120,7 @@ export interface FileRouteTypes {
     | '/recover'
     | '/signup'
     | '/desktop/connect'
+    | '/desktop/connected'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -119,6 +131,7 @@ export interface RootRouteChildren {
   RecoverRoute: typeof RecoverRoute
   SignupRoute: typeof SignupRoute
   DesktopConnectRoute: typeof DesktopConnectRoute
+  DesktopConnectedRoute: typeof DesktopConnectedRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -172,6 +185,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DesktopConnectRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/desktop/connected': {
+      id: '/desktop/connected'
+      path: '/desktop/connected'
+      fullPath: '/desktop/connected'
+      preLoaderRoute: typeof DesktopConnectedRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -183,6 +203,7 @@ const rootRouteChildren: RootRouteChildren = {
   RecoverRoute: RecoverRoute,
   SignupRoute: SignupRoute,
   DesktopConnectRoute: DesktopConnectRoute,
+  DesktopConnectedRoute: DesktopConnectedRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

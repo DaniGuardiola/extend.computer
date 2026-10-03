@@ -187,9 +187,24 @@ async fn account_cancel(state: AccountState<'_>) -> Result<accounts::View, Strin
     background(move || Ok(state.cancel())).await
 }
 #[tauri::command]
-async fn account_browser_login(state: AccountState<'_>) -> Result<accounts::View, String> {
+async fn account_browser_login(
+    app: tauri::AppHandle,
+    state: AccountState<'_>,
+) -> Result<accounts::View, String> {
     let state = state.inner().clone();
-    background(move || state.browser()).await
+    background(move || {
+        state.browser(move || {
+            let handle = app.clone();
+            let _ = app.run_on_main_thread(move || {
+                if let Some(window) = handle.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.unminimize();
+                    let _ = window.set_focus();
+                }
+            });
+        })
+    })
+    .await
 }
 #[tauri::command]
 async fn account_open_page(state: AccountState<'_>, page: String) -> Result<(), String> {
