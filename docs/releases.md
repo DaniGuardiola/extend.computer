@@ -76,7 +76,8 @@ official PR bot. `package-lock.json` at the root is the dependency lockfile.
 For universal local builds, use one current rustup toolchain with both
 `aarch64-apple-darwin` and `x86_64-apple-darwin` installed. Ensure Cargo and rustc
 come from that toolchain rather than a Homebrew installation. CI configures this
-through the Rust toolchain action.
+through the Rust toolchain action. Native build jobs explicitly select Xcode
+16.2 for Swift 6 rather than relying on the runner default.
 
 ## Pull requests and repository settings
 
@@ -120,7 +121,10 @@ Changesets produces a release PR containing the version and changelog. Its custo
 version script synchronizes `package.json`, both Rust app manifests, Tauri config,
 and lockfile metadata. Website and standalone account-server versions remain separate.
 
-Merge the release PR. The macOS workflow:
+Review the generated release PR and approve its Actions run if GitHub marks it
+as requiring approval. Bot-created PR checks use this normal GitHub approval
+step; the version workflow never approves or merges its own PR. Wait for
+`macOS checks` to pass, then squash-merge the release PR. The macOS workflow:
 
 1. Checks version consistency and runs core tests/frontend build.
 2. Builds a universal app, including native permission, cursor, and Wi-Fi helpers.
