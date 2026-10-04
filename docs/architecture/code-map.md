@@ -1,10 +1,10 @@
 # Code map
 
-[← System overview](../overview.md) · [Contents](../README.md) · [Sharing modes →](sharing-modes.md)
+[← System overview](../overview.md) · [Index](../README.md) · [Sharing modes →](sharing-modes.md)
 
 ## Shared engine
 
-`src/` contains the Rust library and CLI. `session.rs` owns the encrypted protocol and authorization; `control.rs` forwards ordered input; `cursor.rs` manages the native subprocess. Identity, trust, reconnect, discovery, wire framing, input events, and AWDL leases each have separate modules. `verification.rs` implements visual-pairing commitments and bilateral confirmation; see [pairing](pairing.md) for its protocol and review limits. `error.rs` defines failures that callers classify; diagnostic text is not used as a machine-readable error code. CLI diagnostic modes and `examples/` remain useful for reproducing timing and recovery failures; they are not abandoned GUI scaffolding.
+[`src/lib.rs`](../../src/lib.rs) is the shared Rust engine; [`src/main.rs`](../../src/main.rs) is the CLI that imports it. Both targets belong to the root Cargo package. The desktop depends on the library directly. `session.rs` owns the encrypted protocol and authorization; `control.rs` forwards ordered input; `cursor.rs` manages the native subprocess. Identity, trust, reconnect, discovery, wire framing, input events, and AWDL leases each have separate modules. `verification.rs` implements visual-pairing commitments and bilateral confirmation; see [pairing](pairing.md) for its protocol and review limits. `error.rs` defines failures that callers classify; diagnostic text is not used as a machine-readable error code. CLI diagnostic modes and `examples/` reproduce timing and recovery failures.
 
 ## Desktop
 
@@ -51,4 +51,4 @@ To preserve existing development permission grants, source-only cleanup need not
 
 ---
 
-[← System overview](../overview.md) · [Contents](../README.md) · [Sharing modes →](sharing-modes.md)
+[← System overview](../overview.md) · [Index](../README.md) · [Sharing modes →](sharing-modes.md)

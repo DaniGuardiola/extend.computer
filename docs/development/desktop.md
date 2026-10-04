@@ -1,6 +1,6 @@
 # Desktop development
 
-[← macOS permissions](../architecture/macos-permissions.md) · [Contents](../README.md) · [Development signing →](signing.md)
+[← macOS permissions](../architecture/macos-permissions.md) · [Index](../README.md) · [Development signing →](signing.md)
 
 > [!NOTE]
 > macOS only. Other platform adapters are **not supported yet**.
@@ -42,4 +42,4 @@ Production distribution uses the CI workflow documented in [Releases and updates
 
 ---
 
-[← macOS permissions](../architecture/macos-permissions.md) · [Contents](../README.md) · [Development signing →](signing.md)
+[← macOS permissions](../architecture/macos-permissions.md) · [Index](../README.md) · [Development signing →](signing.md)

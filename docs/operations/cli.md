@@ -1,6 +1,6 @@
 # Terminal sessions and trusted reconnect
 
-[← Development signing](../development/signing.md) · [Contents](../README.md) · [Releases and updates →](releases.md)
+[← Development signing](../development/signing.md) · [Index](../README.md) · [Releases and updates →](releases.md)
 
 `extend-computer control` provides full mouse and keyboard control until stopped or disconnected. The existing `extend-computer cursor --input` remains a short 30-second development mode. Both interfaces use the same session, permission, and native input engine.
 
@@ -76,4 +76,4 @@ Core and desktop lifecycle tests exercise consent, pinned reconnect, cancellatio
 
 ---
 
-[← Development signing](../development/signing.md) · [Contents](../README.md) · [Releases and updates →](releases.md)
+[← Development signing](../development/signing.md) · [Index](../README.md) · [Releases and updates →](releases.md)

@@ -1,11 +1,11 @@
 # Keyboard and mouse sessions
 
-[← Accounts and routing](accounts-and-routing.md) · [Contents](../README.md) · [macOS permissions →](macos-permissions.md)
+[← Accounts and routing](accounts-and-routing.md) · [Index](../README.md) · [macOS permissions →](macos-permissions.md)
 
-Input sharing has two roles: a device supplies input, and a device receives control. The shared engine carries authorized, ordered events; platform adapters capture and apply them.
+Input sharing has two roles: a device supplies input, and another receives that input. The shared engine carries authorized, ordered events; platform adapters capture and apply them.
 
 > [!NOTE]
-> Native input sharing currently supports macOS. Other platform adapters are **not supported yet**.
+> macOS only. Other platforms **not supported yet**.
 
 The current sender captures input locally and forwards it through the authenticated Rust session. The receiver validates messages and posts events through its native helper. The desktop app and CLI share this engine.
 
@@ -33,9 +33,8 @@ After an established connection suffers a transport failure, the desktop sender 
 
 The adapter forwards mouse movement, supported buttons, pixel scrolling, modifiers, and tagged Mac virtual key codes. Receiver keyboard layout determines characters.
 
-> [!NOTE]
-> Cross-platform native input adapters are **not supported yet**. Display modes have separate [support banners](sharing-modes.md). Clipboard sharing and file transfer are not implemented.
+Clipboard sharing and file transfer are not supported yet.
 
 ---
 
-[← Accounts and routing](accounts-and-routing.md) · [Contents](../README.md) · [macOS permissions →](macos-permissions.md)
+[← Accounts and routing](accounts-and-routing.md) · [Index](../README.md) · [macOS permissions →](macos-permissions.md)

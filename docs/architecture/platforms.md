@@ -1,11 +1,11 @@
 # Platforms and adapters
 
-[← Sharing modes](sharing-modes.md) · [Contents](../README.md) · [Pairing →](pairing.md)
+[← Sharing modes](sharing-modes.md) · [Index](../README.md) · [Pairing →](pairing.md)
 
 The shared engine manages sessions across computers and mobile devices. Platform adapters provide the input, display, permission, and credential-storage capabilities available on each operating system.
 
 > [!NOTE]
-> Current native sharing support is macOS keyboard and mouse control. Windows, Linux, mobile, and browser-based sharing adapters are **not supported yet**. The website supports account management; it is not a browser input or display-sharing client.
+> macOS only. Other platforms **not supported yet**.
 
 ## Shared responsibilities
 
@@ -24,11 +24,10 @@ Identity verification, trust decisions, account membership, encrypted session au
 
 ## Capability differences
 
-Support is per mode and role, not simply per platform name. A device might present an image without being able to create a virtual display, or accept control without being able to capture global input. Hardware, OS restrictions, and permissions determine the available operations.
+Support is per mode and role, not simply per platform name. A device might present an image without being able to create a virtual display, or accept control without being able to capture global input.
 
-The current protocol negotiates its implemented capabilities. There is no implemented display-capability negotiation or completed cross-platform key mapping. Available roles depend on implemented adapters and OS capabilities.
-
+The protocol negotiates implemented capabilities. Hardware, OS restrictions, and permissions determine the available operations.
 
 ---
 
-[← Sharing modes](sharing-modes.md) · [Contents](../README.md) · [Pairing →](pairing.md)
+[← Sharing modes](sharing-modes.md) · [Index](../README.md) · [Pairing →](pairing.md)

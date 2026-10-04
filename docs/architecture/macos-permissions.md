@@ -1,6 +1,6 @@
 # Native Wi-Fi optimization permission
 
-[← Input control](input-control.md) · [Contents](../README.md) · [Desktop development →](../development/desktop.md)
+[← Input control](input-control.md) · [Index](../README.md) · [Desktop development →](../development/desktop.md)
 
 > [!NOTE]
 > macOS only. Other platform adapters are **not supported yet**.
@@ -79,4 +79,4 @@ References: [Apple SMAppService](https://developer.apple.com/documentation/servi
 
 ---
 
-[← Input control](input-control.md) · [Contents](../README.md) · [Desktop development →](../development/desktop.md)
+[← Input control](input-control.md) · [Index](../README.md) · [Desktop development →](../development/desktop.md)

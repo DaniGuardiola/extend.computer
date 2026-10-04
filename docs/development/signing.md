@@ -1,6 +1,6 @@
 # Stable macOS development signing
 
-[← Desktop development](desktop.md) · [Contents](../README.md) · [CLI operation →](../operations/cli.md)
+[← Desktop development](desktop.md) · [Index](../README.md) · [CLI operation →](../operations/cli.md)
 
 > [!NOTE]
 > macOS only. Other platform adapters are **not supported yet**.
@@ -21,4 +21,4 @@ Run `python3 scripts/test-dev-signing.py` to verify stable requirements across d
 
 ---
 
-[← Desktop development](desktop.md) · [Contents](../README.md) · [CLI operation →](../operations/cli.md)
+[← Desktop development](desktop.md) · [Index](../README.md) · [CLI operation →](../operations/cli.md)

@@ -1,6 +1,6 @@
 # Account connections
 
-[← Pairing](pairing.md) · [Contents](../README.md) · [Input control →](input-control.md)
+[← Pairing](pairing.md) · [Index](../README.md) · [Input control →](input-control.md)
 
 Signing in registers the computer's existing X25519 identity. A fresh, one-use server challenge verifies its private key without uploading the key. Other verified devices in the account appear automatically, without exchanging pairing codes.
 
@@ -24,4 +24,4 @@ The test creates disposable accounts. Set `EXTEND_RELAY_TEST_CLEANUP` to a tempo
 
 ---
 
-[← Pairing](pairing.md) · [Contents](../README.md) · [Input control →](input-control.md)
+[← Pairing](pairing.md) · [Index](../README.md) · [Input control →](input-control.md)

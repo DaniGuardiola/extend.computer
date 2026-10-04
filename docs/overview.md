@@ -1,6 +1,6 @@
 # System overview
 
-[← Documentation](README.md) · [Contents](README.md) · [Code map →](architecture/code-map.md)
+[← Index](README.md) · [Code map →](architecture/code-map.md)
 
 extend.computer connects devices to share input and displays across platforms. Devices can send and receive input, share their displays, and present displays from other devices.
 
@@ -18,22 +18,25 @@ extend.computer connects devices to share input and displays across platforms. D
 | Mirror screen | Present a copy of a device's screen on another | Not supported yet |
 | Remote desktop | View and control another device through a remote session | Not supported yet |
 
-See [sharing modes](architecture/sharing-modes.md) for the role of each mode and [platforms and adapters](architecture/platforms.md) for platform boundaries.
-
-> [!NOTE]
-> Display pipelines and non-macOS native adapters are **not supported yet**.
-
 ## Components
+
+### Shared engine and clients
 
 | Component | Responsibility | Source |
 | --- | --- | --- |
 | Desktop UI | Devices, permissions, account sign-in, connection controls, and updates | [`desktop/src/`](../desktop/src/) |
 | Desktop runtime | Incoming/outgoing jobs, approvals, presence, and connection lifecycle | [`desktop/src-tauri/src/runtime.rs`](../desktop/src-tauri/src/runtime.rs) |
-| Shared engine and CLI | Identity, trust, encrypted sessions, input ordering, and reconnect | [`src/`](../src/) |
-| Native input helper | Screen-edge handoff, input capture, event injection, and emergency stop | [`native/macos/`](../native/macos/) |
-| Permission bridge | macOS permission guidance and background-service setup | [`native/macos/Permissions/`](../native/macos/Permissions/) |
-| Wi-Fi broker | Session-scoped AWDL optimization and restoration | [`native/macos/LowJitter/`](../native/macos/LowJitter/) |
+| Shared engine | Identity, trust, encrypted sessions, input ordering, and reconnect | [`src/lib.rs`](../src/lib.rs) |
+| CLI | Terminal commands using the shared engine | [`src/main.rs`](../src/main.rs) |
 | Account services | Sign-in, verified device membership, presence, and encrypted relay transport | [`web/`](../web/) and [`server/`](../server/) |
+
+### macOS adapter
+
+| Component | Responsibility | Source |
+| --- | --- | --- |
+| Native input helper | Screen-edge handoff, input capture, event injection, and emergency stop | [`native/macos/`](../native/macos/) |
+| Permission bridge | Permission guidance and background-service setup | [`native/macos/Permissions/`](../native/macos/Permissions/) |
+| Wi-Fi broker | Session-scoped AWDL optimization and restoration | [`native/macos/LowJitter/`](../native/macos/LowJitter/) |
 | Updater | Sparkle integration and signed release feeds | [`native/macos/Updater/`](../native/macos/Updater/) |
 
 ## Shared session lifecycle
@@ -44,7 +47,7 @@ See [sharing modes](architecture/sharing-modes.md) for the role of each mode and
 4. The sender tries the saved local endpoint. Account-connected devices can fall back to an authenticated internet relay when the local connection fails.
 5. The Rust engine establishes a Noise-encrypted session and pins the peer identity. Relay servers carry encrypted bytes; they do not replace peer authentication.
 6. Platform resources start after authorization and readiness checks. In current macOS control sessions, eligible Wi-Fi routes acquire optimization leases before native input helpers become ready.
-7. The selected mode carries its supported data. Current input sharing uses screen-edge handoff and ordered event forwarding, preserving key and button transitions while coalescing adjacent movement. Display modes do not have an implemented streaming path yet.
+7. The selected mode carries its supported data. Current input sharing uses screen-edge handoff and ordered event forwarding, preserving key and button transitions while coalescing adjacent movement.
 8. Heartbeats check responsiveness. Disconnect, emergency stop, loss of permission, or an unrecovered failure ends the session and releases input and optimization resources.
 
 ## Connection paths
@@ -74,4 +77,4 @@ The same pinned encrypted protocol crosses either route. A loopback relay bridge
 
 ---
 
-[← Documentation](README.md) · [Contents](README.md) · [Code map →](architecture/code-map.md)
+[← Index](README.md) · [Code map →](architecture/code-map.md)
