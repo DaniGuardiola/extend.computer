@@ -47,11 +47,15 @@ Each device has a cryptographic key pair. Its public key identifies it to other 
 
 ### Pairing
 
-Users can select a device from nearby discovery and compare symbols, or pair manually by entering its address and pairing code. The apps then save each other's identities. Pairing remains until removed, independently of accounts.
+Users can select a device from nearby discovery and compare symbols, or pair manually by entering its address and pairing code.
+
+During pairing, an encrypted handshake exchanges the devices' public keys. Comparing symbols verifies both keys belong to the intended devices. With manual pairing, both devices prove they know the same code, which verifies the key exchange in both directions. Each device saves a fingerprint of the other's public key to recognize it on later connections. Pairing remains until removed, independently of accounts.
 
 ### Account membership
 
-Signing in registers the device's existing identity with the account service. Other verified devices in the same account appear automatically. Access lasts while membership remains valid; signing out or removing a device ends account access.
+Signing in registers the device's public key with the account service. The service verifies that the device holds the matching private key through a cryptographic challenge, then supplies other devices in the same account with its public-key fingerprint. Verified devices appear automatically, without exchanging pairing codes or comparing symbols.
+
+When two account devices connect, their encrypted handshake exchanges public keys and proves each device holds the matching private key. Each checks the other's key against the fingerprint supplied by the account service. Access lasts while membership remains valid; signing out or removing a device ends account access.
 
 Both pairing and verified account membership authorize connections. The receiving device needs **Allow connections** enabled and the OS permissions required by the selected mode. No additional connection approval is needed.
 
