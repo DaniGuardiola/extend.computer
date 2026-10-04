@@ -33,7 +33,7 @@ Recovery restores a connection; it does not establish the cause of a network sta
 
 ## Input scope
 
-The adapter forwards mouse movement, supported buttons, pixel scrolling, modifiers, and tagged Mac virtual key codes. Receiver keyboard layout determines characters. 
+The adapter forwards mouse movement, supported buttons, pixel scrolling, modifiers, and tagged Mac virtual key codes. Receiver keyboard layout determines characters.
 
 > [!NOTE]
 > Cross-platform native input adapters are **not supported yet**. Display modes have separate [support banners](sharing-modes.md). Clipboard sharing and file transfer are not implemented.
