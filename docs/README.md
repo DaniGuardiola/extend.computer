@@ -1,7 +1,5 @@
 # Technical documentation
 
-How extend.computer connects devices and shares input and displays across platforms.
-
 ## Index
 
 | Topic | Contents |
