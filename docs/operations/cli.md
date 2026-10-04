@@ -14,8 +14,7 @@ as a normal user stop.
 
 The desktop sender retries transport failures after an established connection up
 to three times, waiting 1, 2, and 4 seconds. It shows Connecting while recovering,
-pins the same peer identity, and requests only already remembered control on
-retries. Each capture starts locally with fresh input state. Disconnect cancels
+pins the same peer identity, and rechecks pairing on retries. Each capture starts locally with fresh input state. Disconnect cancels
 backoff; permission, identity, helper, and protocol failures are terminal. An
 unrecovered outgoing failure appears as an error instead of silently returning
 to idle. This recovery does not diagnose or eliminate the underlying network
@@ -41,7 +40,7 @@ extend-computer --state "$HOME/Library/Application Support/extend.computer" cont
   --edge left --offset-y 0
 ```
 
-Enter the receiver's pairing code and choose `remember` when approving its authenticated identity locally. On the receiver, choose `always-control` to remember this controlling device's full-control permission, or `allow-control` for this connection only. The listener supports one active connection at a time.
+Enter the receiver's pairing code and type `pair` on both devices to confirm pairing. Subsequent connections need no approval prompt. The listener supports one active connection at a time.
 
 Find fingerprints with `extend-computer --state PATH peers`. Then reconnect without another pairing code:
 
@@ -50,21 +49,19 @@ extend-computer --state PATH control RECEIVER:48177 --peer RECEIVER_FINGERPRINT 
   --helper HELPER_PATH --edge left --reconnect
 ```
 
-`--reconnect` requires a persistent identity, a pinned receiver fingerprint, and already remembered full-control permission on the receiver. It retries transport failures with 1/2/4-second backoff. Identity mismatch, permission denial/removal, protocol errors, and normal user stop are terminal. Every new capture starts locally; no stale keys, button state, or remote cursor ownership are replayed.
+`--reconnect` requires a persistent identity, a pinned receiver fingerprint, and a paired receiver with receiving enabled. It retries transport failures with 1/2/4-second backoff. Identity mismatch, removed pairing, missing OS permissions, and protocol errors, and normal user stop are terminal. Every new capture starts locally; no stale keys, button state, or remote cursor ownership are replayed.
 
-`--seconds N` optionally limits each connection. Without it, control continues until stopped/disconnected. Fixed short-test deadlines remain unchanged in the existing diagnostic modes. Protocol is now `EXTEND04`; update both Rust endpoints together.
+`--seconds N` optionally limits each connection. Without it, control continues until stopped/disconnected. Fixed short-test deadlines remain unchanged in the existing diagnostic modes. Protocol is `EXTEND05`; update both Rust endpoints together.
 
-## Permissions and stop controls
+## Stop controls
 
-On the receiver:
+Stop the receiver's foreground `serve` command to stop accepting connections. To block one device:
 
 ```sh
-extend-computer --state PATH permissions CONTROLLER_FINGERPRINT --input ask
-extend-computer --state PATH permissions CONTROLLER_FINGERPRINT --input allow
 extend-computer --state PATH revoke CONTROLLER_FINGERPRINT
 ```
 
-`ask` removes saved full-control permission and terminates an active session using that permission on its next message/heartbeat. `allow` requires an already known peer. `revoke` blocks the device entirely. Changing saved permissions does not silently upgrade old cursor-only consent. Old trust files default to no automatic full-control permission.
+Revocation blocks new connections and ends an active connection on its next message or heartbeat. Existing pairings remain valid regardless of legacy saved control-permission flags.
 
 Control-Option-Escape stops the controlling session. Ctrl-C stops the foreground CLI. Both native endpoints retain two-second missing-heartbeat recovery, and the receiver releases owned input state on graceful disconnect or stop. Native hard-SIGKILL input-state recovery remains unproven.
 
@@ -72,7 +69,7 @@ The existing AWDL broker stays bounded to 30 seconds. The engine obtains a repla
 
 ## Validation
 
-Core and desktop lifecycle tests exercise consent, pinned reconnect, cancellation, and input release. Physical handoff and native permission behavior require signed two-Mac testing.
+Core and desktop lifecycle tests exercise pairing, account access, pinned reconnect, cancellation, and input release. Physical handoff and native permission behavior require signed two-Mac testing.
 
 ---
 

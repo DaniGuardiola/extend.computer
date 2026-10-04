@@ -256,7 +256,7 @@ select their highest common protocol and intersect capabilities. App versions
 need not match. Input, cursor, and persistent control requests require negotiated
 capabilities on both sender and receiver.
 
-Unsupported ranges fail before consent or input. Paired-device presence displays
+Unsupported ranges fail before input starts. Paired-device presence displays
 “Update required” after a pinned, authenticated compatibility failure. Errors tell users to update;
 pairings are preserved. This bootstrap intentionally breaks older development
 builds: rebuild both devices before testing this change. Keep the compatibility

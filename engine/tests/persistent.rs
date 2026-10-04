@@ -1,7 +1,7 @@
 use extend_computer_agent::{
     identity::Identity,
     pairing::PairingWindow,
-    session::{serve_connection_with_cursor, Client, ControlApproval, CursorSink, Decision},
+    session::{serve_connection_with_cursor, Client, CursorSink, Decision},
     trust::TrustStore,
 };
 use std::{
@@ -14,26 +14,22 @@ use std::{
     time::{Duration, Instant},
 };
 struct Sink {
-    approvals: Arc<AtomicUsize>,
+    starts: Arc<AtomicUsize>,
 }
 impl CursorSink for Sink {
-    fn approve(&mut self, _: &str) -> anyhow::Result<bool> {
+    fn start_cursor(&mut self, _: &str) -> anyhow::Result<bool> {
         Ok(false)
     }
-    fn approve_control(&mut self, _: &str, remembered: bool) -> anyhow::Result<ControlApproval> {
-        self.approvals.fetch_add(1, Ordering::SeqCst);
-        Ok(if remembered {
-            ControlApproval::Once
-        } else {
-            ControlApproval::Remember
-        })
+    fn start_control(&mut self, _: &str) -> anyhow::Result<bool> {
+        self.starts.fetch_add(1, Ordering::SeqCst);
+        Ok(true)
     }
     fn move_to(&mut self, _: f64, _: f64) -> anyhow::Result<()> {
         Ok(())
     }
 }
 #[test]
-fn remembered_control_survives_test_deadline_reconnects_and_permission_removal_stops_it() {
+fn paired_control_reconnects_without_approval_and_unpair_stops_it() {
     let a = Identity::generate();
     let b = Identity::generate();
     let a_id = a.fingerprint();
@@ -47,8 +43,8 @@ fn remembered_control_survives_test_deadline_reconnects_and_permission_removal_s
     let code = window.as_ref().unwrap().code().unwrap().to_owned();
     let l = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = l.local_addr().unwrap();
-    let approvals = Arc::new(AtomicUsize::new(0));
-    let observed = approvals.clone();
+    let starts = Arc::new(AtomicUsize::new(0));
+    let observed = starts.clone();
     let server = thread::spawn(move || {
         (0..3)
             .map(|_| {
@@ -57,9 +53,9 @@ fn remembered_control_survives_test_deadline_reconnects_and_permission_removal_s
                     &b,
                     &bs,
                     &mut window,
-                    |_, _| Decision::Once,
+                    |_, _| Decision::Remember,
                     &mut Sink {
-                        approvals: approvals.clone(),
+                        starts: starts.clone(),
                     },
                 )
                 .is_ok()
@@ -75,8 +71,8 @@ fn remembered_control_survives_test_deadline_reconnects_and_permission_removal_s
         |_, _| Decision::Remember,
     )
     .unwrap();
-    first.request_control(false).unwrap();
-    assert!(bt.peer(&a_id).unwrap().unwrap().automatic_input);
+    first.request_control().unwrap();
+    assert!(bt.peer(&a_id).unwrap().is_some());
     let start = Instant::now();
     while start.elapsed() < Duration::from_secs(32) {
         first.probe().unwrap();
@@ -90,52 +86,52 @@ fn remembered_control_survives_test_deadline_reconnects_and_permission_removal_s
         &at,
         None,
         Some(&b_id),
-        |_, _| Decision::Once,
+        |_, _| Decision::Remember,
     )
     .unwrap();
-    second.request_control(true).unwrap();
+    second.request_control().unwrap();
     second.move_cursor(0.5, 0.4).unwrap();
-    bt.require_control_consent(&a_id).unwrap();
+    bt.forget(&a_id).unwrap();
     assert!(second.probe().is_err());
     drop(second);
-    let mut third = Client::connect(
+    assert!(Client::connect(
         TcpStream::connect(addr).unwrap(),
         &a,
         &at,
         None,
         Some(&b_id),
-        |_, _| Decision::Once,
+        |_, _| panic!("paired reconnect must not ask for approval"),
     )
-    .unwrap();
-    assert!(third.request_control(true).is_err());
-    drop(third);
-    assert_eq!(server.join().unwrap(), vec![true, false, false]);
+    .is_err());
+    assert_eq!(server.join().unwrap(), vec![true, false, true]);
     assert_eq!(
         observed.load(Ordering::SeqCst),
         2,
-        "reconnect without permission must not prompt/start native control"
+        "removed pairing must not start native control"
     );
 }
 #[test]
-fn legacy_trust_migrates_to_no_input_and_probe_updates_preserve_explicit_control() {
-    let d = tempfile::tempdir().unwrap();
-    let id = "a".repeat(64);
-    std::fs::write(
-        d.path().join("trust.json"),
-        format!("{{\"peers\":{{\"{id}\":{{\"automatic_probe\":true}}}},\"revoked\":[]}}"),
-    )
-    .unwrap();
-    let t = TrustStore::open(d.path()).unwrap();
-    assert!(!t.peer(&id).unwrap().unwrap().automatic_input);
-    t.allow_control(&id).unwrap();
-    t.remember(&id, false).unwrap();
-    assert!(t.peer(&id).unwrap().unwrap().automatic_input);
-    t.revoke(&id).unwrap();
-    assert!(t.allow_control(&id).is_err());
+fn legacy_pairings_ignore_old_control_flags_and_preserve_revocation() {
+    for input in [false, true] {
+        let d = tempfile::tempdir().unwrap();
+        let id = "a".repeat(64);
+        std::fs::write(d.path().join("trust.json"), format!(
+            "{{\"peers\":{{\"{id}\":{{\"automatic_probe\":true,\"automatic_input\":{input}}}}},\"revoked\":[]}}"
+        )).unwrap();
+        let t = TrustStore::open(d.path()).unwrap();
+        assert!(t.peer(&id).unwrap().is_some());
+        t.remember(&id).unwrap();
+        assert!(!std::fs::read_to_string(d.path().join("trust.json"))
+            .unwrap()
+            .contains("automatic_"));
+        t.revoke(&id).unwrap();
+        assert!(t.peer(&id).is_err());
+        assert!(t.remember(&id).is_err());
+    }
 }
 
 #[test]
-fn actual_transport_drop_reconnects_with_pinned_identity_and_saved_control() {
+fn actual_transport_drop_reconnects_with_pinned_identity() {
     use std::net::Shutdown;
     let a = Identity::generate();
     let b = Identity::generate();
@@ -148,7 +144,7 @@ fn actual_transport_drop_reconnects_with_pinned_identity_and_saved_control() {
     let code = window.as_ref().unwrap().code().unwrap().to_owned();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
-    let approvals = Arc::new(AtomicUsize::new(0));
+    let starts = Arc::new(AtomicUsize::new(0));
     let server = thread::spawn(move || {
         (0..3)
             .map(|index| {
@@ -167,9 +163,9 @@ fn actual_transport_drop_reconnects_with_pinned_identity_and_saved_control() {
                     &b,
                     &bt,
                     &mut window,
-                    |_, _| Decision::Once,
+                    |_, _| Decision::Remember,
                     &mut Sink {
-                        approvals: approvals.clone(),
+                        starts: starts.clone(),
                     },
                 )
                 .is_ok();
@@ -189,7 +185,7 @@ fn actual_transport_drop_reconnects_with_pinned_identity_and_saved_control() {
         |_, _| Decision::Remember,
     )
     .unwrap();
-    paired.request_control(false).unwrap();
+    paired.request_control().unwrap();
     paired.close().unwrap();
     let mut attempts = 0;
     extend_computer_agent::reconnect::run(true, || {
@@ -200,9 +196,9 @@ fn actual_transport_drop_reconnects_with_pinned_identity_and_saved_control() {
             &at,
             None,
             Some(&b_id),
-            |_, _| Decision::Once,
+            |_, _| Decision::Remember,
         )?;
-        client.request_control(true)?;
+        client.request_control()?;
         let start = Instant::now();
         while start.elapsed() < Duration::from_millis(500) {
             client.probe()?;
@@ -249,9 +245,9 @@ fn unexpected_native_capture_stop_reports_failure_instead_of_idle_success() {
                 &b,
                 &bt,
                 &mut window,
-                |_, _| Decision::Once,
+                |_, _| Decision::Remember,
                 &mut Sink {
-                    approvals: Arc::new(AtomicUsize::new(0)),
+                    starts: Arc::new(AtomicUsize::new(0)),
                 },
             );
         });
@@ -261,13 +257,12 @@ fn unexpected_native_capture_stop_reports_failure_instead_of_idle_success() {
             &at,
             Some(&code),
             None,
-            |_, _| Decision::Once,
+            |_, _| Decision::Remember,
         )
         .unwrap();
-        let error = extend_computer_agent::control::send_session(
-            client, &helper, false, "left", 0.0, None, false,
-        )
-        .unwrap_err();
+        let error =
+            extend_computer_agent::control::send_session(client, &helper, false, "left", 0.0, None)
+                .unwrap_err();
         assert!(error.to_string().contains(expected), "{error:#}");
         assert!(!extend_computer_agent::error::is_connection_failure(&error));
         server.join().unwrap();
@@ -280,11 +275,11 @@ fn emergency_stop_wins_over_simultaneous_connection_failure() {
     use std::os::unix::fs::PermissionsExt;
     struct FailingHeartbeat;
     impl CursorSink for FailingHeartbeat {
-        fn approve(&mut self, _: &str) -> anyhow::Result<bool> {
+        fn start_cursor(&mut self, _: &str) -> anyhow::Result<bool> {
             Ok(false)
         }
-        fn approve_control(&mut self, _: &str, _: bool) -> anyhow::Result<ControlApproval> {
-            Ok(ControlApproval::Once)
+        fn start_control(&mut self, _: &str) -> anyhow::Result<bool> {
+            Ok(true)
         }
         fn move_to(&mut self, _: f64, _: f64) -> anyhow::Result<()> {
             Ok(())
@@ -312,7 +307,7 @@ fn emergency_stop_wins_over_simultaneous_connection_failure() {
             &b,
             &bt,
             &mut window,
-            |_, _| Decision::Once,
+            |_, _| Decision::Remember,
             &mut FailingHeartbeat,
         )
         .is_err()
@@ -327,11 +322,9 @@ fn emergency_stop_wins_over_simultaneous_connection_failure() {
             &at,
             Some(&code),
             None,
-            |_, _| Decision::Once,
+            |_, _| Decision::Remember,
         )?;
-        extend_computer_agent::control::send_session(
-            client, &helper, false, "left", 0.0, None, false,
-        )
+        extend_computer_agent::control::send_session(client, &helper, false, "left", 0.0, None)
     })
     .unwrap();
     assert_eq!(attempts, 1);

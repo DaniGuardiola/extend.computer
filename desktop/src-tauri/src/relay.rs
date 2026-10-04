@@ -444,12 +444,9 @@ esac
             app.sync_account_peers("test-account", &[json!({"id":second.device,"fingerprint":receiver_fp,"name":"receiver","key_verified":true})]).unwrap();
             app.account_relay.configure(Some(first.clone()));
             app.connect(receiver_fp.clone(), crate::peers::Device { name:"Receiver".into(), address:"0.0.0.0:48177".into(), edge:"left".into() }).unwrap();
-            let deadline = Instant::now()+Duration::from_secs(30);
-            while desktop.approvals.current().is_none() { assert!(Instant::now()<deadline,"Internet control did not ask for local consent"); std::thread::sleep(Duration::from_millis(50)); }
-            let approval = desktop.approvals.current().unwrap(); assert_eq!(approval.kind,"control");
-            desktop.approvals.answer(approval.id,crate::approval::Answer::Remember).unwrap();
             let deadline=Instant::now()+Duration::from_secs(15);
             while !app.snapshot().unwrap().session.is_some_and(|session|serde_json::to_value(session).unwrap()["phase"]=="connected") { assert!(Instant::now()<deadline,"Internet control never connected");std::thread::sleep(Duration::from_millis(50)); }
+            assert!(desktop.approvals.current().is_none());
             app
         };
         let (status, other) = if let Some(fixtures) = &fixtures { (201, fixtures[1].clone()) } else {

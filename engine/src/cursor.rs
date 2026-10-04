@@ -1,4 +1,4 @@
-//! Native helper boundary. Cursor and full-input sessions have distinct consent.
+//! Native helper boundary. Starts native resources after peer authentication.
 use crate::error::EngineError;
 use crate::session::{Client, CursorSink, DisplaySize};
 use anyhow::{ensure, Context, Result};
@@ -72,13 +72,6 @@ impl NativeSink {
     }
 }
 impl NativeSink {
-    /// Start only after the embedding UI has obtained control consent.
-    /// This boundary deliberately performs no stdin interaction.
-    pub fn start_approved_control(&mut self) -> Result<()> {
-        let path = self.path.as_ref().context(EngineError::HelperUnavailable)?;
-        self.helper = Some(spawn(path, "inject-control", &[])?);
-        Ok(())
-    }
     fn command(&mut self, line: &str) -> Result<()> {
         let child = &mut self
             .helper
@@ -97,46 +90,17 @@ impl NativeSink {
     }
 }
 impl CursorSink for NativeSink {
-    fn approve_control(
-        &mut self,
-        peer: &str,
-        remembered: bool,
-    ) -> Result<crate::session::ControlApproval> {
-        use crate::session::ControlApproval;
+    fn start_control(&mut self, _: &str) -> Result<bool> {
         let Some(path) = &self.path else {
-            return Ok(ControlApproval::Deny);
-        };
-        let approval = if remembered {
-            eprintln!("Previously approved peer {peer} requests control until disconnect. Ctrl-C stops receiver.");
-            ControlApproval::Once
-        } else {
-            eprintln!("Peer {peer} requests full control until disconnect. Ctrl-C stops receiver.");
-            eprint!("Type allow-control (once), always-control (remember this device), or deny: ");
-            std::io::stderr().flush()?;
-            let mut answer = String::new();
-            std::io::stdin().read_line(&mut answer)?;
-            match answer.trim() {
-                "allow-control" => ControlApproval::Once,
-                "always-control" => ControlApproval::Remember,
-                _ => return Ok(ControlApproval::Deny),
-            }
+            return Ok(false);
         };
         self.helper = Some(spawn(path, "inject-control", &[])?);
-        Ok(approval)
+        Ok(true)
     }
-
-    fn approve_input(&mut self, peer: &str) -> Result<bool> {
+    fn start_input(&mut self, _: &str) -> Result<bool> {
         let Some(path) = &self.path else {
             return Ok(false);
         };
-        eprintln!("Peer {peer} requests MOUSE, SCROLLING, AND KEYBOARD CONTROL for 30 seconds. Ctrl-C stops receiver.");
-        eprint!("Type allow-input to approve this session: ");
-        std::io::stderr().flush()?;
-        let mut answer = String::new();
-        std::io::stdin().read_line(&mut answer)?;
-        if answer.trim() != "allow-input" {
-            return Ok(false);
-        }
         self.helper = Some(spawn(path, "inject-input", &[])?);
         Ok(true)
     }
@@ -147,18 +111,10 @@ impl CursorSink for NativeSink {
         self.command("ALIVE")
     }
 
-    fn approve(&mut self, peer: &str) -> Result<bool> {
+    fn start_cursor(&mut self, _: &str) -> Result<bool> {
         let Some(path) = &self.path else {
             return Ok(false);
         };
-        eprintln!("Peer {peer} requests CURSOR MOVEMENT on this Mac for 30 seconds. No clicks or keys. Ctrl-C stops receiver.");
-        eprint!("Type allow-cursor to approve this session: ");
-        std::io::stderr().flush()?;
-        let mut answer = String::new();
-        std::io::stdin().read_line(&mut answer)?;
-        if answer.trim() != "allow-cursor" {
-            return Ok(false);
-        }
         self.helper = Some(spawn(path, "inject", &[])?);
         Ok(true)
     }
@@ -173,7 +129,11 @@ impl CursorSink for NativeSink {
     }
     fn move_to(&mut self, x: f64, y: f64) -> Result<()> {
         self.trace.record("inject_start", self.updates, 0);
-        let child = &mut self.helper.as_mut().context("cursor not approved")?.0;
+        let child = &mut self
+            .helper
+            .as_mut()
+            .context("native cursor helper unavailable")?
+            .0;
         ensure!(child.try_wait()?.is_none(), "native helper stopped");
         let input = child.stdin.as_mut().context("helper input closed")?;
         writeln!(input, "{x} {y}")?;

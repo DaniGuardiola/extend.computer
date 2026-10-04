@@ -21,10 +21,10 @@ struct Sink {
     state: Arc<Mutex<Observed>>,
 }
 impl CursorSink for Sink {
-    fn approve(&mut self, _: &str) -> anyhow::Result<bool> {
+    fn start_cursor(&mut self, _: &str) -> anyhow::Result<bool> {
         Ok(true)
     }
-    fn approve_input(&mut self, _: &str) -> anyhow::Result<bool> {
+    fn start_input(&mut self, _: &str) -> anyhow::Result<bool> {
         Ok(self.allow)
     }
     fn move_to(&mut self, _: f64, _: f64) -> anyhow::Result<()> {
@@ -62,7 +62,7 @@ fn scenario(
             &b,
             &store,
             &mut window,
-            |_, _| Decision::AutomaticProbe,
+            |_, _| Decision::Remember,
             &mut Sink { allow, state },
         )
         .is_ok()
@@ -73,7 +73,7 @@ fn scenario(
         &at,
         Some(&code),
         None,
-        |_, _| Decision::AutomaticProbe,
+        |_, _| Decision::Remember,
     )
     .unwrap();
     action(&mut c, &bt, &a.fingerprint());
@@ -102,7 +102,7 @@ fn cursor_grant_does_not_authorize_keys() {
     .is_empty());
 }
 #[test]
-fn automatic_probe_does_not_authorize_input() {
+fn unavailable_input_adapter_blocks_input() {
     assert!(scenario(
         false,
         |c, _, _| {

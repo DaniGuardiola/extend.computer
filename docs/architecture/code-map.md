@@ -12,14 +12,14 @@
 
 `desktop/src/` contains React UI and the typed Tauri bridge. `usePermissions.ts` owns startup/focus checks, coalesces concurrent requests, polls while permission setup is open, and checks fresh access before connecting. `PermissionsDialog.tsx` presents effective input capabilities; Accessibility can also satisfy read access without a separate Input Monitoring grant. The native guide retains its own close-on-grant observer. `desktop/src-tauri/src/main.rs` handles application startup and IPC. The `runtime` module owns shared job state and snapshots:
 
-- `runtime/incoming.rs`: receiver lifecycle and the native input consent adapter.
+- `runtime/incoming.rs`: receiver lifecycle and native input readiness checks.
 - `runtime/unpair.rs`: local access removal, pinned peer notification, and persistent explicit retry.
 - `runtime/outgoing.rs`: initiated pairing, code normalization, and pinned control connections.
 - `runtime/state.rs`: typed session kinds/phases and allowed transitions, serialized with stable IPC strings.
 - `runtime/errors.rs`: user-facing translation of typed engine errors and transport failures.
 - `runtime/tests.rs`: encrypted pairing/control lifecycle tests with a fake native input helper.
 
-`approval.rs` owns pending consent, `peers.rs` device metadata, `native.rs` helper permission preflight, and `permission_flow.rs` main-thread access to native permission guidance. Device metadata never grants trust. GUI IPC exposes implemented UI actions; GUI unpair removes local trust and tracks removal metadata; CLI revocation remains a separate persistent block.
+`approval.rs` owns pending pairing confirmations, `peers.rs` device metadata, `native.rs` helper permission preflight, and `permission_flow.rs` main-thread access to native permission guidance. Device metadata never grants trust. GUI IPC exposes implemented UI actions; GUI unpair removes local trust and tracks removal metadata; CLI revocation remains a separate persistent block.
 
 `accounts.rs` owns account sessions and browser sign-in; `relay.rs` bridges account WebSockets to the existing encrypted engine. `runtime/presence.rs` checks peer reachability and availability independently of control sessions. See [accounts and routing](accounts-and-routing.md).
 

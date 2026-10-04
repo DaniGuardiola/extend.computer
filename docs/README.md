@@ -13,7 +13,7 @@ How extend.computer connects devices to share input and displays across platform
 | 3. [Sharing modes](architecture/sharing-modes.md) | Input sharing, extension, mirroring, and remote desktop |
 | 4. [Platforms and adapters](architecture/platforms.md) | Device roles, platform boundaries, and support status |
 | 5. [Pairing](architecture/pairing.md) | Verification, pinned identities, and removing trust |
-| 6. [Accounts and routing](architecture/accounts-and-routing.md) | Account consent, local connections, and internet relay |
+| 6. [Accounts and routing](architecture/accounts-and-routing.md) | Account membership, local connections, and internet relay |
 | 7. [Input control](architecture/input-control.md) | Capture, handoff, ordering, heartbeats, and recovery |
 | 8. [macOS permissions](architecture/macos-permissions.md) | Current macOS permission and optimization adapter |
 | 9. [Desktop development](development/desktop.md) | Build profiles, local workflow, and validation |

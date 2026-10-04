@@ -26,7 +26,7 @@ Raw `tauri dev` is not the stable signed development-bundle workflow. Release bu
 
 ## Desktop behavior
 
-Local pairing opens a discoverable window on both devices and verifies ordered symbols. Manual code entry is available as a fallback. Account sign-in uses the account service and browser handoff; account-only peers still require receiver control consent. The device row starts and stops keyboard/mouse sessions and chooses the handoff edge.
+Local pairing opens a discoverable window on both devices and verifies ordered symbols. Manual code entry is available as a fallback. Account sign-in uses the account service and browser handoff; verified account membership authorizes connections alongside manual pairing. The device row starts and stops keyboard/mouse sessions and chooses the handoff edge.
 
 Permission guidance runs inside the app through native bridges. Effective helper checks determine readiness. The floating guidance offers the outer application bundle for System Settings; it does not grant permissions itself.
 

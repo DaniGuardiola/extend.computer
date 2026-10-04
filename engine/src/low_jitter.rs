@@ -258,27 +258,22 @@ impl<S: CursorSink> CursorSink for ManagedCursor<S> {
     fn unpaired(&mut self, peer: &str) -> Result<()> {
         self.inner.unpaired(peer)
     }
-    fn approve_control(
-        &mut self,
-        peer: &str,
-        remembered: bool,
-    ) -> Result<crate::session::ControlApproval> {
-        let result = self.inner.approve_control(peer, remembered)?;
-        if result != crate::session::ControlApproval::Deny {
-            self.start()?;
-        }
-        Ok(result)
-    }
-
-    fn approve(&mut self, peer: &str) -> Result<bool> {
-        if !self.inner.approve(peer)? {
+    fn start_control(&mut self, peer: &str) -> Result<bool> {
+        if !self.inner.start_control(peer)? {
             return Ok(false);
         }
         self.start()?;
         Ok(true)
     }
-    fn approve_input(&mut self, peer: &str) -> Result<bool> {
-        if !self.inner.approve_input(peer)? {
+    fn start_cursor(&mut self, peer: &str) -> Result<bool> {
+        if !self.inner.start_cursor(peer)? {
+            return Ok(false);
+        }
+        self.start()?;
+        Ok(true)
+    }
+    fn start_input(&mut self, peer: &str) -> Result<bool> {
+        if !self.inner.start_input(peer)? {
             return Ok(false);
         }
         self.start()?;

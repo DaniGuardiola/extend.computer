@@ -8,14 +8,23 @@ use std::{
     path::{Path, PathBuf},
 };
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+/// A verified pairing. Older permission flags are accepted only for migration.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(from = "LegacyPeer")]
+pub struct Peer {}
+
+#[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Peer {
-    /// Grants only diagnostic probes; never inherited by future input/video features.
-    pub automatic_probe: bool,
-    /// Explicit receiver-side full-control permission; old stores default to ask.
-    #[serde(default)]
-    pub automatic_input: bool,
+struct LegacyPeer {
+    #[serde(default, rename = "automatic_probe")]
+    _probe: bool,
+    #[serde(default, rename = "automatic_input")]
+    _input: bool,
+}
+impl From<LegacyPeer> for Peer {
+    fn from(_: LegacyPeer) -> Self {
+        Self {}
+    }
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -33,7 +42,6 @@ pub struct Records {
 pub struct TrustStore {
     root: PathBuf,
     account: crate::account_trust::AccountTrust,
-    account_enabled: bool,
 }
 
 impl TrustStore {
@@ -48,14 +56,12 @@ impl TrustStore {
         let store = Self {
             root,
             account: Default::default(),
-            account_enabled: false,
         };
         store.load()?; // Corrupt state must fail closed.
         Ok(store)
     }
     pub fn with_account_trust(mut self, account: crate::account_trust::AccountTrust) -> Self {
         self.account = account;
-        self.account_enabled = true;
         self
     }
     pub fn is_account_peer(&self, id: &str) -> Result<bool> {
@@ -91,7 +97,7 @@ impl TrustStore {
     pub fn is_revoked(&self, id: &str) -> Result<bool> {
         Ok(self.load()?.revoked.contains(id))
     }
-    pub fn remember(&self, id: &str, automatic_probe: bool) -> Result<()> {
+    pub fn remember(&self, id: &str) -> Result<()> {
         self.modify(|r| {
             ensure!(
                 !r.revoked.contains(id),
@@ -99,49 +105,11 @@ impl TrustStore {
             );
             r.pending_unpairs.remove(id);
             r.account_blocked.remove(id);
-            let automatic_input = r.peers.get(id).is_some_and(|p| p.automatic_input);
-            r.peers.insert(
-                id.to_owned(),
-                Peer {
-                    automatic_probe,
-                    automatic_input,
-                },
-            );
+            r.peers.insert(id.to_owned(), Peer::default());
             Ok(())
         })
     }
-    pub fn allow_control(&self, id: &str) -> Result<()> {
-        if self.account_enabled && !self.load_records()?.peers.contains_key(id) {
-            ensure!(!self.is_revoked(id)?, "device revoked");
-            ensure!(self.account.allow_control(id), "account membership expired");
-            return Ok(());
-        }
-        ensure!(
-            id.len() == 64 && hex::decode(id)?.len() == 32,
-            "expected full device fingerprint"
-        );
-        self.modify(|r| {
-            ensure!(!r.revoked.contains(id), "device revoked");
-            ensure!(
-                !self.account_enabled || r.peers.contains_key(id),
-                "pairing was removed"
-            );
-            let peer = r.peers.entry(id.to_owned()).or_insert(Peer {
-                automatic_probe: false,
-                automatic_input: false,
-            });
-            peer.automatic_input = true;
-            Ok(())
-        })
-    }
-    pub fn require_control_consent(&self, id: &str) -> Result<()> {
-        self.modify(|r| {
-            let peer = r.peers.get_mut(id).context("unknown device")?;
-            peer.automatic_input = false;
-            Ok(())
-        })
-    }
-    /// Forget pairing and remembered permissions without blocking future pairing.
+    /// Forget pairing without blocking future pairing.
     /// Explicit revocation is separate and must never be cleared by this action.
     pub fn forget(&self, id: &str) -> Result<()> {
         ensure!(

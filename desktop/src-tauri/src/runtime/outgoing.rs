@@ -191,7 +191,6 @@ impl Desktop {
                         &device.edge,
                         0.,
                         None,
-                        retries > 0,
                         || {
                             connected_once = true;
                             app.stage(id, Phase::Connected, None);

@@ -45,7 +45,6 @@ fn main() -> Result<()> {
             edge,
             offset,
             (seconds != 0).then(|| Duration::from_secs(seconds)),
-            false,
         )
     } else {
         let send = if args.get(5).is_some_and(|a| a == "input") {

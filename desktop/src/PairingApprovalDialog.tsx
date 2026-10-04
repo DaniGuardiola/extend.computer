@@ -26,20 +26,10 @@ export function PairingApprovalDialog({
   return (
     <Dialog
       title={
-        request.kind === "control"
-          ? "Allow this device to control your computer?"
-          : request.kind === "verify"
-            ? "Do these match?"
-            : "Pair with this device?"
+        request.kind === "verify" ? "Do these match?" : "Pair with this device?"
       }
       onClose={() => void answer(false)}
     >
-      {request.kind === "control" && (
-        <p className="text-sm leading-6">
-          This device is signed in to your account. Allow its mouse and keyboard
-          while you stay signed in.
-        </p>
-      )}
       {request.kind === "pair" && (
         <p className="text-sm leading-6">
           Another device entered your pairing code. Pair only if you’re
@@ -80,11 +70,7 @@ export function PairingApprovalDialog({
           disabled={busy}
           onClick={() => void answer(true)}
         >
-          {request.kind === "control"
-            ? "Allow control"
-            : request.kind === "verify"
-              ? "They match"
-              : "Pair device"}
+          {request.kind === "verify" ? "They match" : "Pair device"}
         </button>
       </div>
     </Dialog>

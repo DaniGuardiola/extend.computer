@@ -67,7 +67,6 @@ pub fn send_session(
     edge: &str,
     offset: f64,
     duration: Option<Duration>,
-    remembered_only: bool,
 ) -> Result<()> {
     run(
         client,
@@ -76,12 +75,12 @@ pub fn send_session(
         edge,
         offset,
         duration,
-        Some(remembered_only),
+        Some(()),
         || {},
         || None,
     )
 }
-/// GUI entry point: report readiness only after consent and native capture startup.
+/// GUI entry point: report readiness only after authentication and native capture startup.
 #[allow(clippy::too_many_arguments)]
 pub fn send_session_with_ready(
     client: Client,
@@ -90,7 +89,6 @@ pub fn send_session_with_ready(
     edge: &str,
     offset: f64,
     duration: Option<Duration>,
-    remembered_only: bool,
     ready: impl FnOnce(),
     desired_edge: impl Fn() -> Option<String>,
 ) -> Result<()> {
@@ -101,7 +99,7 @@ pub fn send_session_with_ready(
         edge,
         offset,
         duration,
-        Some(remembered_only),
+        Some(()),
         ready,
         desired_edge,
     )
@@ -114,7 +112,7 @@ fn run(
     edge: &str,
     offset: f64,
     duration: Option<Duration>,
-    session: Option<bool>,
+    session: Option<()>,
     ready: impl FnOnce(),
     desired_edge: impl Fn() -> Option<String>,
 ) -> Result<()> {
@@ -122,8 +120,8 @@ fn run(
         matches!(edge, "left" | "right") && offset.is_finite(),
         "invalid layout"
     );
-    let display = if let Some(remembered_only) = session {
-        client.request_control(remembered_only)?
+    let display = if let Some(()) = session {
+        client.request_control()?
     } else {
         client.request_input()?
     };

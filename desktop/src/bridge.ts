@@ -23,7 +23,7 @@ export type Peer = Device & {
 export type Candidate = { name: string; addresses: string[] };
 export type Request = {
   id: number;
-  kind: "pair" | "verify" | "control";
+  kind: "pair" | "verify";
   peer: string;
   symbols: number[] | null;
 };

@@ -94,7 +94,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let store = TrustStore::open(root.path()).unwrap();
         if known {
-            store.remember(&client.fingerprint(), false).unwrap();
+            store.remember(&client.fingerprint()).unwrap();
         }
         let before = std::fs::read(root.path().join("trust.json")).ok();
         let expected = if correct_pin {
@@ -152,7 +152,7 @@ mod tests {
             let client = Identity::generate();
             let root = tempfile::tempdir().unwrap();
             let store = TrustStore::open(root.path()).unwrap();
-            store.remember(&client.fingerprint(), false).unwrap();
+            store.remember(&client.fingerprint()).unwrap();
             let listener = TcpListener::bind("127.0.0.1:0").unwrap();
             let addr = listener.local_addr().unwrap();
             let worker = std::thread::spawn(move || {

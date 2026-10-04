@@ -13,7 +13,7 @@ fn check(known: bool, correct_pin: bool) {
     let dir = tempfile::tempdir().unwrap();
     let store = TrustStore::open(dir.path()).unwrap();
     if known {
-        store.remember(&caller.fingerprint(), false).unwrap();
+        store.remember(&caller.fingerprint()).unwrap();
     }
     let before = std::fs::read(dir.path().join("trust.json")).ok();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();

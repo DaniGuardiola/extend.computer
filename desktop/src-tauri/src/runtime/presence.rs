@@ -297,7 +297,7 @@ mod recovery_tests {
         let caller = app(&root.path().join("caller"));
         let server = Identity::generate();
         let peer = server.fingerprint();
-        caller.store().unwrap().remember(&peer, false).unwrap();
+        caller.store().unwrap().remember(&peer).unwrap();
         let stale = Device {
             name: "Custom name".into(),
             address: "127.0.0.2:9".into(),
@@ -313,7 +313,7 @@ mod recovery_tests {
             let store = TrustStore::open(root.path().join(if correct { "right" } else { "wrong" }))
                 .unwrap();
             store
-                .remember(&caller.identity().unwrap().fingerprint(), false)
+                .remember(&caller.identity().unwrap().fingerprint())
                 .unwrap();
             std::thread::scope(|scope| {
                 scope.spawn(|| {

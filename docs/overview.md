@@ -25,7 +25,7 @@ extend.computer connects devices to share input and displays across platforms. D
 | Component | Responsibility | Source |
 | --- | --- | --- |
 | Desktop UI | Devices, permissions, account sign-in, connection controls, and updates | [`desktop/src/`](../desktop/src/) |
-| Desktop runtime | Incoming/outgoing jobs, approvals, presence, and connection lifecycle | [`desktop/src-tauri/src/runtime.rs`](../desktop/src-tauri/src/runtime.rs) |
+| Desktop runtime | Incoming/outgoing jobs, pairing verification, presence, and connection lifecycle | [`desktop/src-tauri/src/runtime.rs`](../desktop/src-tauri/src/runtime.rs) |
 | Shared engine | Identity, trust, encrypted sessions, input ordering, and reconnect | [`engine/src/lib.rs`](../engine/src/lib.rs) |
 | CLI | Terminal commands using the shared engine | [`engine/src/main.rs`](../engine/src/main.rs) |
 | Account services | Sign-in, verified device membership, presence, and encrypted relay transport | [`web/`](../web/) and [`server/`](../server/) |
@@ -45,14 +45,15 @@ Each device has a cryptographic key pair. Its public key identifies it to other 
 
 ## Pairing and accounts
 
-Devices can recognize each other in two ways:
+### Pairing
 
-- **Pairing:** users verify the two devices and save each other's identities. The pairing remains until removed, independently of accounts.
-- **Account membership:** signing in registers the device's existing identity with the account service. Devices in the same account appear automatically. Access lasts while membership remains valid; signing out or removing a device ends account access.
+Nearby discovery lists devices by name and network address so users can choose a device to pair with. Users verify the devices by comparing symbols or entering a pairing code, then the apps save each other's identities. Pairing remains until removed, independently of accounts.
 
-Discovery lists nearby devices by name and network address. The app checks their cryptographic identities before allowing access.
+### Account membership
 
-Pairing or account membership lets devices authenticate each other. The receiving device also needs incoming connections enabled and the permissions required by the selected mode. Account-only input control requires local approval of the first request.
+Signing in registers the device's existing identity with the account service. Other verified devices in the same account appear automatically. Access lasts while membership remains valid; signing out or removing a device ends account access.
+
+Both pairing and verified account membership authorize connections. The receiving device needs **Allow connections** enabled and the OS permissions required by the selected mode. No additional connection approval is needed.
 
 ## Connection lifecycle
 
@@ -60,7 +61,7 @@ With pairing or account membership established, each connection to another devic
 
 1. The initiating device tries the saved local address. Account-connected devices can fall back to an internet relay if the local connection fails.
 2. The engine performs a Noise handshake, checks the other device's identity against its pairing or account record, and establishes encryption. Relay servers forward encrypted data without decrypting it.
-3. The receiving device checks the selected mode's capabilities, consent, and OS permissions before allowing it to start.
+3. The receiving device checks the selected mode's capabilities and OS permissions before allowing it to start.
 4. Platform adapters prepare the resources needed for the selected mode.
 5. The devices exchange the mode's data. For example, input sharing forwards ordered events while preserving key and button transitions.
 6. Heartbeats check responsiveness. Disconnect, emergency stop, loss of permission, or an unrecovered failure ends the connection and releases its resources.
@@ -84,7 +85,7 @@ The same pinned encrypted protocol crosses either route. A loopback relay bridge
 ## Runtime constraints
 
 - Platform-specific optimizations belong in adapters. The macOS implementation uses a privileged Wi-Fi broker with a narrow authenticated API, and native user-session helpers for input capture and injection.
-- The desktop runtime permits one active connection job at a time. The CLI uses the same engine with its own operation and consent flow.
+- The desktop runtime permits one active connection job at a time. The CLI uses the same engine through terminal commands.
 
 ---
 

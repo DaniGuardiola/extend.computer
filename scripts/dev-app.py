@@ -62,7 +62,7 @@ def build():
         previous = DEST.with_name('extend.computer.previous.app')
         if previous.exists(): shutil.rmtree(previous)
         if DEST.exists(): DEST.rename(previous)
-        shutil.copytree(app, DEST)
+        shutil.copytree(app, DEST, symlinks=True)
     print(DEST)
 
 

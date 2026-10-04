@@ -16,7 +16,7 @@ use std::{
 use zeroize::Zeroizing;
 
 #[derive(Parser)]
-#[command(about = "extend.computer pairing and opt-in cursor prototype.")]
+#[command(about = "extend.computer device pairing and input control.")]
 struct Args {
     #[arg(long, default_value = ".extend-computer-state", global = true)]
     state: PathBuf,
@@ -45,7 +45,7 @@ enum Command {
         pair: bool,
         #[arg(long)]
         advertise: bool,
-        /// Native helper executable; enables a separate cursor consent prompt.
+        /// Native helper executable; enables input for paired devices.
         #[arg(long)]
         cursor_helper: Option<PathBuf>,
     },
@@ -73,7 +73,7 @@ enum Command {
         /// Remote top relative to local top, in logical display points; positive is down.
         #[arg(long, default_value_t = 0.0, allow_hyphen_values = true)]
         offset_y: f64,
-        /// Request full mouse and keyboard control with separate receiver consent.
+        /// Request full mouse and keyboard control for a paired device.
         #[arg(long)]
         input: bool,
     },
@@ -88,18 +88,12 @@ enum Command {
         edge: String,
         #[arg(long, default_value_t = 0.0, allow_hyphen_values = true)]
         offset_y: f64,
-        /// Retry network failures; requires an already-pinned peer and saved receiver permission.
+        /// Retry network failures; requires an already-pinned peer and enabled receiving.
         #[arg(long, requires = "peer")]
         reconnect: bool,
         /// Optional per-connection run limit; omitted means until stopped/disconnected.
         #[arg(long, value_parser = clap::value_parser!(u64).range(1..=86400))]
         seconds: Option<u64>,
-    },
-    /// Change this Mac's remembered receiver-side control permission.
-    Permissions {
-        fingerprint: String,
-        #[arg(long, value_parser = ["allow", "ask"])]
-        input: String,
     },
     Discover {
         #[arg(long, default_value_t = 8)]
@@ -112,19 +106,18 @@ enum Command {
     Identity,
 }
 
-fn approval(peer: &str, known: bool) -> Decision {
-    eprintln!("Verified peer: {peer} (remembered={known}). Diagnostic probes ONLY.");
-    eprint!("Approve [once / remember / automatic-probe / deny] (default deny): ");
+fn confirm_pairing(peer: &str, known: bool) -> Decision {
+    if known {
+        return Decision::Once;
+    }
+    eprintln!("Pair with device {peer}?");
+    eprint!("Type pair to confirm (default deny): ");
     let _ = io::stderr().flush();
     let mut answer = String::new();
-    if io::stdin().read_line(&mut answer).is_err() {
-        return Decision::Deny;
-    }
-    match answer.trim() {
-        "once" => Decision::Once,
-        "remember" => Decision::Remember,
-        "automatic-probe" => Decision::AutomaticProbe,
-        _ => Decision::Deny,
+    if io::stdin().read_line(&mut answer).is_ok() && answer.trim() == "pair" {
+        Decision::Remember
+    } else {
+        Decision::Deny
     }
 }
 
@@ -169,29 +162,9 @@ fn main() -> Result<()> {
         }
         Command::Peers => {
             let store = TrustStore::open(&args.state)?;
-            for (id, peer) in store.load()?.peers {
-                println!(
-                    "{id} automatic_probe={} automatic_input={}",
-                    peer.automatic_probe, peer.automatic_input
-                );
+            for id in store.load()?.peers.keys() {
+                println!("{id}");
             }
-            return Ok(());
-        }
-        Command::Permissions {
-            ref fingerprint,
-            ref input,
-        } => {
-            let store = TrustStore::open(&args.state)?;
-            ensure!(
-                store.peer(fingerprint)?.is_some(),
-                "unknown device; pair first"
-            );
-            if input == "allow" {
-                store.allow_control(fingerprint)?;
-            } else {
-                store.require_control_consent(fingerprint)?;
-            }
-            println!("control permission for {fingerprint}: {input}");
             return Ok(());
         }
         Command::Revoke { ref fingerprint } => {
@@ -254,7 +227,7 @@ fn main() -> Result<()> {
                     &identity,
                     &store,
                     &mut window,
-                    approval,
+                    confirm_pairing,
                     &mut cursor,
                 ) {
                     Ok(()) => eprintln!("session closed"),
@@ -274,7 +247,7 @@ fn main() -> Result<()> {
                 &store,
                 Some(code.trim()),
                 None,
-                approval,
+                confirm_pairing,
             )?;
             probes(client, count)
         }
@@ -289,7 +262,7 @@ fn main() -> Result<()> {
                 &store,
                 None,
                 Some(&peer),
-                approval,
+                confirm_pairing,
             )?;
             probes(client, count)
         }
@@ -312,7 +285,7 @@ fn main() -> Result<()> {
                 &store,
                 code.as_ref().map(|s| s.trim()),
                 peer.as_deref(),
-                approval,
+                confirm_pairing,
             )?;
             let send = if input {
                 extend_computer_agent::control::send
@@ -356,7 +329,7 @@ fn main() -> Result<()> {
                         if peer.is_some() && known {
                             Decision::Once
                         } else {
-                            approval(id, known)
+                            confirm_pairing(id, known)
                         }
                     },
                 )?;
@@ -367,7 +340,6 @@ fn main() -> Result<()> {
                     &edge,
                     offset_y,
                     seconds.map(Duration::from_secs),
-                    reconnect,
                 )
             })
         }

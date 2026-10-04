@@ -18,7 +18,7 @@ struct Dummy {
     count: u64,
 }
 impl CursorSink for Dummy {
-    fn approve(&mut self, _: &str) -> Result<bool> {
+    fn start_cursor(&mut self, _: &str) -> Result<bool> {
         Ok(true)
     }
     fn move_to(&mut self, _: f64, _: f64) -> Result<()> {

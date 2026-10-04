@@ -102,15 +102,6 @@ esac
         .peer(&sender_id)
         .unwrap()
         .is_some());
-    assert!(
-        !receiver
-            .store()
-            .unwrap()
-            .peer(&sender_id)
-            .unwrap()
-            .unwrap()
-            .automatic_input
-    );
     assert_eq!(sender.snapshot().unwrap().peers[0].name, "Test Mac");
     assert_eq!(
         receiver.snapshot().unwrap().peers[0].name,
@@ -150,15 +141,12 @@ esac
             .as_ref()
             .is_some_and(|s| s.phase == Phase::Connected)
     });
-    assert!(
-        receiver
-            .store()
-            .unwrap()
-            .peer(&sender_id)
-            .unwrap()
-            .unwrap()
-            .automatic_input
-    );
+    assert!(receiver
+        .store()
+        .unwrap()
+        .peer(&sender_id)
+        .unwrap()
+        .is_some());
     wait(|| {
         receiver
             .snapshot()
@@ -338,15 +326,12 @@ esac
         .peer(&visual_receiver)
         .unwrap()
         .is_some());
-    assert!(
-        !receiver
-            .store()
-            .unwrap()
-            .peer(&visual_sender)
-            .unwrap()
-            .unwrap()
-            .automatic_input
-    );
+    assert!(receiver
+        .store()
+        .unwrap()
+        .peer(&visual_sender)
+        .unwrap()
+        .is_some());
     assert_eq!(
         receiver.devices.lock().unwrap()[&visual_sender].name,
         peers::local_name()
@@ -494,11 +479,7 @@ esac
     assert!(receiver.snapshot().unwrap().notification.is_some());
     assert!(receiver.approvals.current().is_none());
     // Explicit connection reconciles the same authenticated response without input approval.
-    receiver
-        .store()
-        .unwrap()
-        .remember(&visual_sender, false)
-        .unwrap();
+    receiver.store().unwrap().remember(&visual_sender).unwrap();
     receiver
         .save_device(&visual_sender, target.clone())
         .unwrap();
@@ -781,7 +762,7 @@ fn custom_local_name_persists_and_resets_without_changing_identity() {
 
 #[test]
 #[cfg(unix)]
-fn account_pairing_requires_local_control_consent_and_ends_on_signout() {
+fn account_control_connects_without_approval_and_ends_on_signout() {
     use std::os::unix::fs::PermissionsExt;
     let temp = tempfile::tempdir().unwrap();
     let helper = temp.path().join("helper");
@@ -789,7 +770,7 @@ fn account_pairing_requires_local_control_consent_and_ends_on_signout() {
         &helper,
         r#"#!/bin/sh
 case "$1" in
-status) echo 'listen=true post=true wifi=true';;
+status) if [ -e "${0%/*}/deny-post" ]; then echo 'listen=true post=false wifi=true'; else echo 'listen=true post=true wifi=true'; fi;;
 inject-control) echo 'READY 1728 1117'; while IFS= read -r line; do echo OK; done;;
 capture-control-*) echo 'READY 1512 982'; while IFS= read -r line; do :; done;;
 *) exit 1;;
@@ -798,8 +779,12 @@ esac
     )
     .unwrap();
     std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let sender_helper_dir = temp.path().join("sender-helper");
+    std::fs::create_dir(&sender_helper_dir).unwrap();
+    let sender_helper = sender_helper_dir.join("helper");
+    std::fs::copy(&helper, &sender_helper).unwrap();
     let receiver = Desktop::new(temp.path().join("receiver"), helper.clone()).unwrap();
-    let sender = Desktop::new(temp.path().join("sender"), helper).unwrap();
+    let sender = Desktop::new(temp.path().join("sender"), sender_helper).unwrap();
     receiver.set_test_identity(Identity::generate());
     sender.set_test_identity(Identity::generate());
     let receiver_id = receiver.identity().unwrap().fingerprint();
@@ -817,34 +802,6 @@ esac
     };
     sender.save_device(&receiver_id, device.clone()).unwrap();
     sender.connect(receiver_id.clone(), device.clone()).unwrap();
-    wait(|| receiver.approvals.current().is_some());
-    let approval = receiver.approvals.current().unwrap();
-    assert_eq!(approval.kind, "control");
-    receiver
-        .approvals
-        .answer(approval.id, Answer::Deny)
-        .unwrap();
-    wait(|| {
-        sender.snapshot().unwrap().session.is_none()
-            && receiver.snapshot().unwrap().session.is_none()
-    });
-    assert!(
-        !receiver
-            .store()
-            .unwrap()
-            .peer(&sender_id)
-            .unwrap()
-            .unwrap()
-            .automatic_input
-    );
-    sender.connect(receiver_id, device).unwrap();
-    wait(|| receiver.approvals.current().is_some());
-    let approval = receiver.approvals.current().unwrap();
-    assert_eq!(approval.kind, "control");
-    receiver
-        .approvals
-        .answer(approval.id, Answer::Remember)
-        .unwrap();
     wait(|| {
         sender
             .snapshot()
@@ -852,14 +809,46 @@ esac
             .session
             .is_some_and(|session| session.phase == Phase::Connected)
     });
+    assert!(receiver.approvals.current().is_none());
+    assert!(sender.approvals.current().is_none());
     assert!(
         TrustStore::open(&receiver.root)
             .unwrap()
             .peer(&sender_id)
             .unwrap()
             .is_none(),
-        "Account consent must never become permanent local pairing"
+        "Account membership must never become permanent local pairing"
     );
+    sender.disconnect();
+    wait(|| {
+        sender.snapshot().unwrap().session.is_none()
+            && receiver.snapshot().unwrap().session.is_none()
+    });
+    receiver.inner.lock().unwrap().receiving_enabled = false;
+    sender.connect(receiver_id.clone(), device.clone()).unwrap();
+    wait(|| sender.snapshot().unwrap().session.is_none());
+    assert!(receiver.approvals.current().is_none());
+    wait(|| receiver.snapshot().unwrap().session.is_none());
+    receiver.inner.lock().unwrap().receiving_enabled = true;
+    std::fs::write(temp.path().join("deny-post"), "").unwrap();
+    sender.connect(receiver_id.clone(), device.clone()).unwrap();
+    wait(|| {
+        sender.snapshot().unwrap().session.is_none()
+            && receiver.snapshot().unwrap().session.is_none()
+    });
+    assert!(!receiver.snapshot().unwrap().receiving);
+    assert!(receiver.approvals.current().is_none());
+    std::fs::remove_file(temp.path().join("deny-post")).unwrap();
+    receiver.inner.lock().unwrap().receiving_enabled = true;
+    sender.connect(receiver_id, device).unwrap();
+    wait(|| {
+        sender
+            .snapshot()
+            .unwrap()
+            .session
+            .is_some_and(|session| session.phase == Phase::Connected)
+    });
+    assert!(receiver.approvals.current().is_none());
     receiver.clear_account_peers();
     wait(|| receiver.snapshot().unwrap().session.is_none());
     sender.shutdown();

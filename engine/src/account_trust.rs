@@ -17,20 +17,12 @@ struct State {
 impl AccountTrust {
     pub fn replace(&self, scope: &str, fingerprints: &[String], lifetime: Duration) {
         let mut state = self.0.lock().unwrap();
-        let keep = state.scope == scope && state.until.is_some_and(|until| until > Instant::now());
         let mut peers = BTreeMap::new();
         for id in fingerprints {
             if id.len() != 64 || hex::decode(id).map_or(true, |bytes| bytes.len() != 32) {
                 continue;
             }
-            let consent = keep && state.peers.get(id).is_some_and(|p| p.automatic_input);
-            peers.insert(
-                id.clone(),
-                Peer {
-                    automatic_probe: false,
-                    automatic_input: consent,
-                },
-            );
+            peers.insert(id.clone(), Peer::default());
         }
         state.peers = peers;
         state.scope = scope.into();
@@ -47,18 +39,6 @@ impl AccountTrust {
             BTreeMap::new()
         }
     }
-    pub(crate) fn allow_control(&self, id: &str) -> bool {
-        let mut state = self.0.lock().unwrap();
-        if !state.until.is_some_and(|until| until > Instant::now()) {
-            return false;
-        }
-        if let Some(peer) = state.peers.get_mut(id) {
-            peer.automatic_input = true;
-            true
-        } else {
-            false
-        }
-    }
     pub(crate) fn forget(&self, id: &str) {
         self.0.lock().unwrap().peers.remove(id);
     }
@@ -69,38 +49,37 @@ mod tests {
     use super::*;
     use crate::trust::TrustStore;
     #[test]
-    fn membership_and_consent_never_become_manual_pairing() {
+    fn membership_grants_access_without_creating_manual_pairing() {
         let dir = tempfile::tempdir().unwrap();
         let account = AccountTrust::default();
         let id = "a".repeat(64);
-        account.replace("server/account", &[id.clone()], Duration::from_secs(60));
+        account.replace(
+            "server/account",
+            std::slice::from_ref(&id),
+            Duration::from_secs(60),
+        );
         let store = TrustStore::open(dir.path())
             .unwrap()
             .with_account_trust(account.clone());
         assert!(store.peer(&id).unwrap().is_some());
-        assert!(!store.peer(&id).unwrap().unwrap().automatic_input);
-        store.allow_control(&id).unwrap();
-        assert!(store.peer(&id).unwrap().unwrap().automatic_input);
         assert!(TrustStore::open(dir.path())
             .unwrap()
             .peer(&id)
             .unwrap()
             .is_none());
-        account.replace(
-            "other-server/account",
-            &[id.clone()],
-            Duration::from_secs(60),
-        );
-        assert!(!store.peer(&id).unwrap().unwrap().automatic_input);
         account.clear();
         assert!(store.peer(&id).unwrap().is_none());
-        assert!(
-            store.allow_control(&id).is_err(),
-            "Expired consent must not create manual trust"
+        account.replace(
+            "server/account",
+            std::slice::from_ref(&id),
+            Duration::from_secs(60),
         );
-        account.replace("server/account", &[id.clone()], Duration::from_secs(60));
         store.complete_unpair(&id).unwrap();
-        account.replace("server/account", &[id.clone()], Duration::from_secs(60));
+        account.replace(
+            "server/account",
+            std::slice::from_ref(&id),
+            Duration::from_secs(60),
+        );
         assert!(
             store.peer(&id).unwrap().is_none(),
             "Refresh must not undo an explicit unpair"
@@ -114,10 +93,14 @@ mod tests {
         let store = TrustStore::open(dir.path())
             .unwrap()
             .with_account_trust(account.clone());
-        account.replace("account", &[id.clone()], Duration::ZERO);
+        account.replace("account", std::slice::from_ref(&id), Duration::ZERO);
         assert!(store.peer(&id).unwrap().is_none());
-        store.remember(&id, false).unwrap();
-        account.replace("account", &[id.clone()], Duration::from_secs(60));
+        store.remember(&id).unwrap();
+        account.replace(
+            "account",
+            std::slice::from_ref(&id),
+            Duration::from_secs(60),
+        );
         account.clear();
         assert!(store.peer(&id).unwrap().is_some());
         store.revoke(&id).unwrap();

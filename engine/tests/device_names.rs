@@ -15,7 +15,7 @@ struct NamedSink {
     received: Arc<Mutex<Vec<(String, String)>>>,
 }
 impl CursorSink for NamedSink {
-    fn approve(&mut self, _: &str) -> anyhow::Result<bool> {
+    fn start_cursor(&mut self, _: &str) -> anyhow::Result<bool> {
         panic!("metadata requested control")
     }
     fn move_to(&mut self, _: f64, _: f64) -> anyhow::Result<()> {
@@ -44,7 +44,7 @@ fn exchange(known: bool, correct_pin: bool, remote_name: &str) {
     let dir = tempfile::tempdir().unwrap();
     let store = TrustStore::open(dir.path()).unwrap();
     if known {
-        store.remember(&caller_id, false).unwrap();
+        store.remember(&caller_id).unwrap();
     }
     let before = std::fs::read(dir.path().join("trust.json")).ok();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();

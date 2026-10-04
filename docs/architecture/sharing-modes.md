@@ -36,7 +36,7 @@ A device presents another device's desktop and supplies authorized control input
 
 ## Shared boundaries
 
-Device discovery, cryptographic identity, consent, OS permissions, routing, and session lifecycle apply across all sharing modes.
+Device discovery, cryptographic identity, pairing or account membership, OS permissions, routing, and session lifecycle apply across all sharing modes.
 
 ---
 

@@ -40,7 +40,7 @@ fn main() -> Result<()> {
         &store,
         Some(code.trim()),
         None,
-        |_, _| Decision::AutomaticProbe,
+        |_, _| Decision::Remember,
     )?;
     let peer = client.peer().to_owned();
     let sustained = std::env::var_os("EXTEND_COMPUTER_SUSTAINED_PROBES").is_some();
@@ -80,7 +80,7 @@ fn main() -> Result<()> {
     drop(client);
     ensure!(
         Client::connect(dial()?, &identity, &store, None, Some(&peer), |_, _| {
-            Decision::AutomaticProbe
+            Decision::Remember
         })
         .is_err(),
         "revoked identity reconnected"

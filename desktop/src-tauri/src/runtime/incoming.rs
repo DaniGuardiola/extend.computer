@@ -1,9 +1,9 @@
-//! Incoming listener and the GUI consent adapter for native input.
+//! Incoming listener and platform readiness checks for native input.
 use super::*;
 use extend_computer_agent::{
     cursor::NativeSink,
     low_jitter::ManagedCursor,
-    session::{self, ControlApproval, CursorSink, Decision, DisplaySize},
+    session::{self, CursorSink, Decision, DisplaySize},
 };
 use std::net::TcpListener;
 
@@ -270,32 +270,20 @@ impl CursorSink for GuiSink {
     fn unpaired(&mut self, peer: &str) -> Result<()> {
         self.app.received_unpair(peer)
     }
-    fn approve(&mut self, _: &str) -> Result<bool> {
+    fn start_cursor(&mut self, _: &str) -> Result<bool> {
         Ok(false)
     }
-    fn approve_control(&mut self, peer: &str, remembered: bool) -> Result<ControlApproval> {
+    fn start_control(&mut self, peer: &str) -> Result<bool> {
         let permissions = self.app.refresh_permissions()?;
         if !self.app.inner.lock().unwrap().receiving_enabled || !permissions.can_receive() {
-            return Ok(ControlApproval::Deny);
+            return Ok(false);
         }
-        // Pairing authorizes control. Still require an authenticated, paired peer,
-        // receiving enabled, OS permissions, and a live session.
         if self.app.store()?.peer(peer)?.is_none() || self.app.cancelled(self.job, &self.cancelled)
         {
-            return Ok(ControlApproval::Deny);
-        }
-        if self.app.store()?.is_account_peer(peer)? && !remembered {
-            self.app.stage(self.job, Phase::Approval, Some(peer));
-            if self.app.approvals.ask("control", peer, || {
-                self.app.cancelled(self.job, &self.cancelled)
-            }) == Answer::Deny
-            {
-                return Ok(ControlApproval::Deny);
-            }
+            return Ok(false);
         }
         self.app.stage(self.job, Phase::Connecting, Some(peer));
-        self.inner.start_approved_control()?;
-        Ok(ControlApproval::Remember)
+        self.inner.start_control(peer)
     }
     fn move_to(&mut self, x: f64, y: f64) -> Result<()> {
         self.inner.move_to(x, y)

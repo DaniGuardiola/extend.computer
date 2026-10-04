@@ -11,7 +11,7 @@ use std::{
 };
 struct NoInput;
 impl CursorSink for NoInput {
-    fn approve(&mut self, _: &str) -> anyhow::Result<bool> {
+    fn start_cursor(&mut self, _: &str) -> anyhow::Result<bool> {
         panic!("pairing requested control")
     }
     fn move_to(&mut self, _: f64, _: f64) -> anyhow::Result<()> {
@@ -71,10 +71,8 @@ fn scenario(local: bool, remote: bool, window: Option<Duration>) {
     assert_eq!(server_result.is_ok(), succeeds);
     assert_eq!(own, *observed.lock().unwrap());
     if succeeds {
-        let peer = at.peer(&bid).unwrap().unwrap();
-        assert!(!peer.automatic_input && !peer.automatic_probe);
-        let peer = bt.peer(&a.fingerprint()).unwrap().unwrap();
-        assert!(!peer.automatic_input && !peer.automatic_probe);
+        assert!(at.peer(&bid).unwrap().is_some());
+        assert!(bt.peer(&a.fingerprint()).unwrap().is_some());
     } else {
         assert!(at.peer(&bid).unwrap().is_none());
         assert!(bt.peer(&a.fingerprint()).unwrap().is_none());
@@ -106,15 +104,13 @@ fn forgetting_clears_grants_allows_pairing_and_preserves_explicit_blocks() {
     let dir = tempfile::tempdir().unwrap();
     let store = TrustStore::open(dir.path()).unwrap();
     let peer = Identity::generate().fingerprint();
-    store.remember(&peer, true).unwrap();
-    store.allow_control(&peer).unwrap();
+    store.remember(&peer).unwrap();
     store.forget(&peer).unwrap();
     assert!(store.peer(&peer).unwrap().is_none());
-    store.remember(&peer, false).unwrap();
-    let permissions = store.peer(&peer).unwrap().unwrap();
-    assert!(!permissions.automatic_input && !permissions.automatic_probe);
+    store.remember(&peer).unwrap();
+    assert!(store.peer(&peer).unwrap().is_some());
     store.revoke(&peer).unwrap();
     store.forget(&peer).unwrap();
     assert!(store.is_revoked(&peer).unwrap());
-    assert!(store.remember(&peer, false).is_err());
+    assert!(store.remember(&peer).is_err());
 }

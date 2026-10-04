@@ -65,7 +65,7 @@ def main():
             elif 'Pair code' not in line: print('receiver:', line, flush=True)
         # User explicitly selected this receiver and authorized this short test.
         if not args.synthetic:
-            server.stdin.write('once\n' + ('allow-control\n' if args.session else 'allow-input\n' if args.input else 'allow-cursor\n')); server.stdin.flush()
+            server.stdin.write('pair\n'); server.stdin.flush()
         client_env = os.environ.copy()
         client_env.pop('EXTEND_COMPUTER_TEST_LOW_JITTER', None)
         if args.low_jitter: client_env['EXTEND_COMPUTER_TEST_LOW_JITTER'] = '1'

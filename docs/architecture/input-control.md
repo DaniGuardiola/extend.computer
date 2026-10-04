@@ -27,7 +27,7 @@ The wire window permits four pending input events. A probe acknowledges precedin
 
 Heartbeats keep native capture and injection alive. Native helpers stop on missing heartbeats and release held input. Unexpected capture shutdowns report their cause, including display changes or lost capture access.
 
-After an established connection suffers a transport failure, the desktop sender retries up to three times with 1-, 2-, and 4-second backoff. It pins the same peer and requests already remembered control consent. Each replacement capture starts locally with fresh input state. Canceling the job also cancels reconnect. Permission, identity, helper, and protocol failures are terminal.
+After an established connection suffers a transport failure, the desktop sender retries up to three times with 1-, 2-, and 4-second backoff. It pins the same peer and checks that pairing or account membership still authorizes access. Each replacement capture starts locally with fresh input state. Canceling the job also cancels reconnect. Permission, identity, helper, and protocol failures are terminal.
 
 ## Input scope
 

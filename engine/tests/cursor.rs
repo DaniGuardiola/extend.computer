@@ -26,7 +26,7 @@ impl CursorSink for Sink {
         self.finished
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     }
-    fn approve(&mut self, _: &str) -> anyhow::Result<bool> {
+    fn start_cursor(&mut self, _: &str) -> anyhow::Result<bool> {
         Ok(self.allow)
     }
     fn move_to(&mut self, x: f64, y: f64) -> anyhow::Result<()> {
@@ -65,7 +65,7 @@ fn scenario(
             &b,
             &store,
             &mut window,
-            |_, _| Decision::AutomaticProbe,
+            |_, _| Decision::Remember,
             &mut sink,
         )
         .is_ok();
@@ -82,7 +82,7 @@ fn scenario(
         &at,
         Some(&code),
         None,
-        |_, _| Decision::AutomaticProbe,
+        |_, _| Decision::Remember,
     )
     .unwrap();
     action(&mut client, &bt, &a.fingerprint());
@@ -91,7 +91,7 @@ fn scenario(
     assert_eq!(observed.lock().unwrap().len(), expected_moves);
 }
 #[test]
-fn automatic_probe_never_grants_cursor() {
+fn unavailable_cursor_adapter_blocks_movement() {
     scenario(
         false,
         |c, _, _| {

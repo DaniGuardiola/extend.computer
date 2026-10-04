@@ -29,20 +29,18 @@ pub enum Decision {
     Deny,
     Once,
     Remember,
-    AutomaticProbe,
 }
 
 impl Decision {
     fn persist(self, store: &TrustStore, peer: &str) -> Result<()> {
         match self {
-            Self::Remember => store.remember(peer, false),
-            Self::AutomaticProbe => store.remember(peer, true),
+            Self::Remember => store.remember(peer),
             _ => Ok(()),
         }
     }
 }
 
-/// Logical display-point dimensions disclosed only after cursor consent.
+/// Logical display-point dimensions disclosed after authenticated input startup.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DisplaySize {
@@ -90,6 +88,7 @@ enum Message {
     RequestCursor,
     RequestInput,
     RequestControl {
+        // Retained for compatibility with older endpoints; new receivers use pairing/account access.
         remembered_only: bool,
     },
     ControlGranted {
@@ -243,21 +242,14 @@ pub fn serve_connection(
     )
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ControlApproval {
-    Deny,
-    Once,
-    Remember,
-}
-
-/// Cursor authorization is separate from remembered diagnostic permissions.
+/// Platform resources start only for authenticated peers.
 pub trait CursorSink {
-    fn approve(&mut self, peer: &str) -> Result<bool>;
+    fn start_cursor(&mut self, peer: &str) -> Result<bool>;
     fn move_to(&mut self, x: f64, y: f64) -> Result<()>;
-    fn approve_control(&mut self, _peer: &str, _remembered: bool) -> Result<ControlApproval> {
-        Ok(ControlApproval::Deny)
+    fn start_control(&mut self, _peer: &str) -> Result<bool> {
+        Ok(false)
     }
-    fn approve_input(&mut self, _peer: &str) -> Result<bool> {
+    fn start_input(&mut self, _peer: &str) -> Result<bool> {
         Ok(false)
     }
     fn input(&mut self, _event: &crate::input::InputEvent) -> Result<()> {
@@ -293,7 +285,7 @@ impl<S: CursorSink> Drop for CursorSession<'_, S> {
 }
 struct DisabledCursor;
 impl CursorSink for DisabledCursor {
-    fn approve(&mut self, _: &str) -> Result<bool> {
+    fn start_cursor(&mut self, _: &str) -> Result<bool> {
         Ok(false)
     }
     fn move_to(&mut self, _: f64, _: f64) -> Result<()> {
@@ -392,7 +384,7 @@ pub fn serve_connection_with_verification(
                     .is_some_and(|(_, expires)| Instant::now() < *expires)
         })?;
         ensure!(!store.is_revoked(&peer)?, "device revoked");
-        store.remember(&peer, false)?;
+        store.remember(&peer)?;
         return Ok(());
     }
     channel.consent_timeout()?;
@@ -414,12 +406,10 @@ pub fn serve_connection_with_verification(
         Message::RequestProbe => {}
         _ => bail!(EngineError::RequestRejected),
     }
-    let decision = if known.as_ref().is_some_and(|p| p.automatic_input) {
+    let decision = if known.is_some() {
         Decision::Once
-    } else if known.as_ref().is_some_and(|p| p.automatic_probe) {
-        Decision::AutomaticProbe
     } else {
-        approve(&peer, known.is_some())
+        approve(&peer, false)
     };
     if matches!(decision, Decision::Deny) {
         channel.send(&Message::Denied)?;
@@ -438,18 +428,16 @@ pub fn serve_connection_with_verification(
     let mut pending_cursor = 0;
     let mut input_granted = false;
     let mut session_control = false;
-    let mut stored_control = false;
+    let mut active_input = false;
     loop {
         let message: Message = channel.receive()?;
         ensure!(
             session_control || Instant::now() < deadline,
             "session expired"
         );
-        if store.is_revoked(&peer)?
-            || (stored_control && !store.peer(&peer)?.is_some_and(|p| p.automatic_input))
-        {
+        if store.is_revoked(&peer)? || (active_input && store.peer(&peer)?.is_none()) {
             channel.send(&Message::Denied)?;
-            bail!("control permission removed or device revoked");
+            bail!("pairing or account access removed");
         }
         let streamed = matches!(message, Message::CursorStream { .. });
         match message {
@@ -466,25 +454,17 @@ pub fn serve_connection_with_verification(
                 channel.send(&Message::Pong { sequence })?;
                 pending_cursor = 0;
             }
-            Message::RequestControl { remembered_only } => {
+            Message::RequestControl { .. } => {
                 channel.require_capability(crate::protocol::CONTROL)?;
                 ensure!(cursor_deadline.is_none(), "control already requested");
-                let remembered = store.peer(&peer)?.is_some_and(|p| p.automatic_input);
-                if remembered_only && !remembered {
+                ensure!(store.peer(&peer)?.is_some(), EngineError::RequestRejected);
+                if !cursor.start_control(&peer)? {
                     channel.send(&Message::Denied)?;
-                    bail!("remembered control permission required");
+                    bail!(EngineError::RequestRejected);
                 }
-                let approval = cursor.approve_control(&peer, remembered)?;
-                if approval == ControlApproval::Deny {
-                    channel.send(&Message::Denied)?;
-                    bail!(EngineError::LocalConsentDenied);
-                }
-                ensure!(!store.is_revoked(&peer)?, "device revoked");
+                ensure!(store.peer(&peer)?.is_some(), EngineError::RequestRejected);
                 let display = cursor.display_size()?.validate()?;
-                if approval == ControlApproval::Remember {
-                    store.allow_control(&peer)?;
-                }
-                stored_control = remembered || approval == ControlApproval::Remember;
+                active_input = true;
                 cursor_deadline = Some(Instant::now()); // Marks a nonrenewable request; session scope uses heartbeat instead.
                 input_granted = true;
                 session_control = true;
@@ -493,10 +473,9 @@ pub fn serve_connection_with_verification(
             Message::RequestInput => {
                 channel.require_capability(crate::protocol::INPUT)?;
                 ensure!(cursor_deadline.is_none(), "control already requested");
-                ensure!(
-                    cursor.approve_input(&peer)?,
-                    EngineError::LocalConsentDenied
-                );
+                ensure!(store.peer(&peer)?.is_some(), EngineError::RequestRejected);
+                ensure!(cursor.start_input(&peer)?, EngineError::RequestRejected);
+                active_input = true;
                 ensure!(!store.is_revoked(&peer)?, "device revoked");
                 let display = cursor.display_size()?.validate()?;
                 cursor_deadline = Some(Instant::now() + Duration::from_secs(30));
@@ -519,7 +498,9 @@ pub fn serve_connection_with_verification(
             Message::RequestCursor => {
                 channel.require_capability(crate::protocol::CURSOR)?;
                 ensure!(cursor_deadline.is_none(), "cursor already requested");
-                ensure!(cursor.approve(&peer)?, EngineError::LocalConsentDenied);
+                ensure!(store.peer(&peer)?.is_some(), EngineError::RequestRejected);
+                ensure!(cursor.start_cursor(&peer)?, EngineError::RequestRejected);
+                active_input = true;
                 ensure!(!store.is_revoked(&peer)?, "device revoked");
                 let display = cursor.display_size()?.validate()?;
                 cursor_deadline = Some(Instant::now() + Duration::from_secs(30));
@@ -683,7 +664,7 @@ pub fn pair_visually(
         approve(&peer, symbols)
     })?;
     ensure!(!store.is_revoked(&peer)?, "device revoked");
-    store.remember(&peer, false)?;
+    store.remember(&peer)?;
     Ok(peer)
 }
 
@@ -733,10 +714,10 @@ impl Client {
             Message::NotPaired if code.is_none() => bail!(EngineError::PeerUnpaired),
             _ => bail!(EngineError::RequestRejected),
         }
-        let decision = if known.as_ref().is_some_and(|p| p.automatic_probe) {
-            Decision::AutomaticProbe
+        let decision = if known.is_some() {
+            Decision::Once
         } else {
-            approve(&peer, known.is_some())
+            approve(&peer, false)
         };
         ensure!(
             !matches!(decision, Decision::Deny),
@@ -779,11 +760,12 @@ impl Client {
             _ => bail!("invalid probe response"),
         }
     }
-    pub fn request_control(&mut self, remembered_only: bool) -> Result<DisplaySize> {
+    pub fn request_control(&mut self) -> Result<DisplaySize> {
         self.channel.require_capability(crate::protocol::CONTROL)?;
         ensure!(!self.store.is_revoked(&self.peer)?, "device revoked");
-        self.channel
-            .send(&Message::RequestControl { remembered_only })?;
+        self.channel.send(&Message::RequestControl {
+            remembered_only: false,
+        })?;
         self.channel.consent_timeout()?;
         let display = match self.channel.receive()? {
             Message::ControlGranted { display } => display,

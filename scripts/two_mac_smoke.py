@@ -56,8 +56,8 @@ def main():
                 code = match.group(1)
             elif "Pair code" not in line:
                 print("server:", line, flush=True)
-        # Deliberate test approval of diagnostic probes. No production bypass flag.
-        server.stdin.write("automatic-probe\n")
+        # Deliberate pairing with the selected test device. No production bypass flag.
+        server.stdin.write("pair\n")
         server.stdin.flush()
         discovery = subprocess.run([args.local_bin, "discover", "--seconds", "8"],
                                    capture_output=True, text=True, timeout=15)
