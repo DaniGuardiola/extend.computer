@@ -11,7 +11,7 @@ extend.computer connects devices so input and displays can be shared across plat
 | Share input | Use one device's keyboard and mouse to control another | Implemented for macOS peers |
 | Extend display | Use another device as an additional display | Not supported yet |
 | Mirror screen | Present a copy of a device's screen on another | Not supported yet |
-| Remote desktop | View and control another device through a remote session | Display streaming not supported yet |
+| Remote desktop | View and control another device through a remote session | Not supported yet |
 
 See [sharing modes](architecture/sharing-modes.md) for the role of each mode and [platforms and adapters](architecture/platforms.md) for platform boundaries.
 
