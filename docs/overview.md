@@ -55,7 +55,7 @@ During pairing, an encrypted handshake exchanges the devices' public keys. Compa
 
 Signing in registers the device's public key with the account service. The service verifies that the device holds the matching private key through a cryptographic challenge, then supplies other devices in the same account with its public-key fingerprint. Devices in the same account appear automatically, without exchanging pairing codes or comparing symbols.
 
-When two account devices connect, their encrypted handshake exchanges public keys and proves each device holds the matching private key. Each checks the other's key against the fingerprint supplied by the account service. Access lasts while membership remains valid; signing out or removing a device ends account access.
+On every new connection, including reconnects, the devices perform an encrypted handshake. The account service has already established which public keys belong to the account; the handshake proves that the device at the other end of this connection holds the matching private key and creates fresh encryption keys for the connection. Each device checks the other's public key against the fingerprint supplied by the account service. Access lasts while membership remains valid; signing out or removing a device ends account access.
 
 Both pairing and account membership authorize connections. The receiving device needs **Allow connections** enabled and the OS permissions required by the selected mode. No additional connection approval is needed.
 
