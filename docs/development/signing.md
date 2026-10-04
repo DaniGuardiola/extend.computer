@@ -1,6 +1,6 @@
-> 🤖🔧 ai generated
-
 # Stable macOS development signing
+
+[← Desktop development](desktop.md) · [Contents](../README.md) · [CLI operation →](../operations/cli.md)
 
 Use `npm run desktop:build:dev` from `desktop/` (quit extend.computer first). This builds the native helper and a debug app with `dev-identity`, then signs its libraries, helper, and outer bundle using one persistent local certificate. `npm run desktop:dev` also opens the built app. The installed development bundle is `target/development/extend.computer.app`.
 
@@ -15,3 +15,7 @@ Deploy the signed bundle to other test Macs; do not copy the signing key or keyc
 Permission-retention check: grant permissions to the new dev app, rebuild and replace it at the same path with the same certificate, reopen and verify the permissions remain allowed. Confirm that app code hashes changed while designated requirements remained identical. The app's `extend.computer Development` data profile and existing paired identities are unchanged.
 
 Run `python3 scripts/test-dev-signing.py` to verify stable requirements across different binaries, rejection of an impostor signature, and rejection of production bundle identifiers.
+
+---
+
+[← Desktop development](desktop.md) · [Contents](../README.md) · [CLI operation →](../operations/cli.md)

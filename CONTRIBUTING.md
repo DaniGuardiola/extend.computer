@@ -17,7 +17,7 @@ npm run desktop:dev --prefix desktop
 
 The root npm workspace includes the desktop app. The website has its own
 dependencies and deployment process; see [web/README.md](web/README.md).
-See the [desktop guide](docs/desktop-preview.md) for local signing, permission
+See the [desktop guide](docs/archived/desktop-preview.md) for local signing, permission
 setup, and development identities.
 
 ## Pull requests and validation
@@ -78,7 +78,7 @@ Use the normal Changesets and GitHub Actions process:
 Release signing uses the `desktop-release` GitHub environment. Contributors do
 not need production credentials. Never commit certificates, private keys,
 passwords, local databases, or generated installers. Maintainer setup and
-verification commands are in [macOS releases](docs/releases.md).
+verification commands are in [macOS releases](docs/operations/releases.md).
 
 Release notes come from the generated desktop changelog and are bundled into
 the app's offline “What's new” view. The stable landing-page download points to
@@ -132,6 +132,6 @@ repository public enables mandatory provenance in CI; it still needs a live
 public release verification.
 
 For the planned pre-public history and test-release reset, follow the
-[public launch checklist](docs/public-launch-checklist.md). Preserve signing
+[public launch checklist](docs/archived/public-launch-checklist.md). Preserve signing
 credentials and explicitly confirm which installations and release state are
 disposable before resetting anything.

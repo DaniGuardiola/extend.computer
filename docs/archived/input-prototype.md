@@ -1,8 +1,10 @@
+> Archived proposal or historical report. Claims and instructions describe the document’s original milestone, not the current app. See the [current documentation](../README.md).
+
 > 🤖🔧 ai generated
 
 # Full input prototype
 
-For sessions beyond 30 seconds and trusted reconnect, see [persistent control](persistent-control.md). The short test mode described below remains available.
+For sessions beyond 30 seconds and trusted reconnect, see [persistent control](../operations/cli.md). The short test mode described below remains available.
 
 Mac-to-Mac edge control now forwards left/right/middle clicks, double-clicks, pointer dragging, two-axis scrolling, ordinary keyboard input, repeats, and Shift/Control/Option/Command shortcuts. The user confirmed clicking, typing, shortcuts, text selection, scrolling, and returning locally worked in the first live test (1,145 ordered input events).
 

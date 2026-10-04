@@ -1,3 +1,5 @@
+> Archived proposal or historical report. Claims and instructions describe the document’s original milestone, not the current app. See the [current documentation](../README.md).
+
 # Clean public launch checklist
 
 This is the pre-public reset plan. Nothing below authorizes deleting data or
@@ -135,4 +137,4 @@ update continuity and support the published data/protocol formats.
 - [ ] Complete a final fresh-install smoke test against the reset hosted account
   service, then publish the launch downloads and announcement.
 
-Implementation and verification commands: [macOS releases](releases.md).
+Implementation and verification commands: [macOS releases](../operations/releases.md).

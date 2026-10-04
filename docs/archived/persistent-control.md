@@ -1,3 +1,5 @@
+> Archived milestone report. See [current input control](../architecture/input-control.md) and [CLI operation](../operations/cli.md).
+
 > 🤖🔧 ai generated
 
 # Terminal sessions and trusted reconnect

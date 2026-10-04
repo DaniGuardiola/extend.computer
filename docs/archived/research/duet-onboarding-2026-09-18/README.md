@@ -1,3 +1,5 @@
+> Archived proposal or historical report. Claims and instructions describe the document’s original milestone, not the current app. See the [current documentation](../../../README.md).
+
 > 🤖🔧 ai generated
 
 # Duet onboarding research — 2026-09-18

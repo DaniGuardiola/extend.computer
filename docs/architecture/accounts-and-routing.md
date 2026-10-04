@@ -1,5 +1,7 @@
 # Account connections
 
+[← Pairing](pairing.md) · [Contents](../README.md) · [Input control →](input-control.md)
+
 Signing in registers the computer's existing X25519 identity. A fresh, one-use server challenge verifies its private key without uploading the key. Other verified devices in the account appear automatically, without exchanging pairing codes.
 
 Account membership authorizes a pinned encrypted handshake, not input control. The receiver still needs Allow connections enabled, OS permissions, and local approval of the first account control request. That approval lasts while account membership remains fresh; it is not saved as a manual pairing. Signing out, removing a device, changing MFA settings, or losing membership ends account access. Manual pairings remain independent.
@@ -19,3 +21,7 @@ cargo test --manifest-path desktop/src-tauri/Cargo.toml \
 ```
 
 The test creates disposable accounts. Set `EXTEND_RELAY_TEST_CLEANUP` to a temporary file to record their exact IDs for cleanup. It checks wrong-key proof rejection, one-use proofs, pinned encrypted presence and actual desktop control using fake input helpers, wrong peer identity, cross-account rejection, and logout revocation. The desktop account-control regression separately verifies denial, explicit local consent, and active-session termination on sign-out.
+
+---
+
+[← Pairing](pairing.md) · [Contents](../README.md) · [Input control →](input-control.md)

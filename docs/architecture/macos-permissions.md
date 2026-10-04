@@ -1,10 +1,24 @@
-> 🤖🔧 ai generated
-
 # Native Wi-Fi optimization permission
+
+[← Input control](input-control.md) · [Contents](../README.md) · [Desktop development →](../development/desktop.md)
 
 The app uses Apple's `SMAppService.daemon(plistName:)` API on macOS 13 and later. Registration runs inside the GUI process through the signed Swift permissions bridge without invoking AppleScript, Python, or sudo. macOS owns approval in Login Items & Extensions and associates the background service with extend.computer. Development also supports an explicit administrator-installed signed broker, described below.
 
-## User flow
+## Input permissions and guidance
+
+The native input helper checks effective input-monitoring and event-posting access. Accessibility can satisfy the effective read check without a separate Input Monitoring grant. The desktop refreshes status on startup, focus, and while setup is open.
+
+The PermissionFlow bridge opens the relevant System Settings page and shows a floating guide containing the outer app bundle for dragging into the permissions list. Its observer closes the guide when access is granted. Native approval remains a user action; guidance does not bypass macOS checks.
+
+## Session leases
+
+Both endpoints inspect the actual routed interface. Eligible Wi-Fi control sessions require an authenticated optimization lease before native input is ready. Ethernet and loopback relay bridges skip the lease. Missing or failed required leases end control rather than silently accepting unoptimized Wi-Fi.
+
+The broker temporarily pauses AWDL, holds a restoration obligation, and renews while its session process remains alive. Disconnect, expiry, and process loss release leases. The prior interface state is restored after the last lease; originally disabled AWDL stays disabled. Externally reactivated AWDL invalidates a lease. AirDrop and some Continuity features can be affected while paused.
+
+The broker API permits only lease and status operations, not arbitrary commands or paths. Its client checks signing identity; the daemon also checks the active console user. Standalone historical installations and measurements are documented in the [archive](../archived/low-jitter-helper.md).
+
+## Wi-Fi setup flow
 
 1. Choose Allow beside Wi-Fi optimization in Permissions.
 2. The app checks the bundled broker's signing identity and registers its LaunchDaemon.
@@ -22,7 +36,7 @@ The app uses Apple's `SMAppService.daemon(plistName:)` API on macOS 13 and later
 - The broker and daemon mutually require the broker signing identity. Development pins the certificate; production pins the Apple team plus broker identifier. The daemon additionally restricts clients to the active console user.
 - Each profile has a distinct fixed root-owned recovery journal under `/private/var/db`. Lease expiry, disconnect restoration, signature checks, and Wi-Fi-only session gates remain in force.
 
-Install production apps in `/Applications` so the daemon remains available before user login, as Apple recommends. Development uses the existing stable workspace app path. Production distribution still needs the normal Developer ID signing and notarization pipeline; this change does not supply a release certificate or claim notarization.
+Install production apps in `/Applications` so the daemon remains available before user login, as Apple recommends. Development uses the existing stable workspace app path. Production builds use the [Developer ID signing and notarization pipeline](../operations/releases.md).
 
 ## Legacy development installation
 
@@ -32,7 +46,7 @@ The older standalone helper and manual installer remain diagnostic tools. They a
 
 On machines where macOS approves the local certificate but blocks daemon launch
 with `Launch Constraint Violation`, `npm --prefix desktop run desktop:wifi:prepare`
-prepares a separate administrator installer. See [installation and removal](../native/macos/LowJitter/README.md#administrator-installed-signed-development-broker).
+prepares a separate administrator installer. See [installation and removal](../archived/low-jitter-helper.md#administrator-installed-signed-development-broker).
 It copies the same signed bundled broker to a root-owned location, verifies its
 certificate pin and payload hash, and installs a separate `.development.manual`
 daemon label with the existing development Mach service. Production identities
@@ -47,5 +61,6 @@ Run `scripts/test-wifi-signing.py` after configuring local dev signing. It verif
 
 References: [Apple SMAppService](https://developer.apple.com/documentation/servicemanagement/smappservice), and the installed macOS SDK's `SMAppService.h` (bundle-relative daemon programs, approval state, and asynchronous unregister completion).
 
+---
 
-Local live check (2026-09-18): the signed development app registered successfully, opened macOS Login Items & Extensions, and appeared as `extend.computer.app` under App Background Activity with its switch off. The app changed Allow to Open settings while approval was pending. No AppleScript authorization dialog appeared. Service activation and a real AWDL session remain pending user approval; no production Developer ID certificate was available for a distribution test.
+[← Input control](input-control.md) · [Contents](../README.md) · [Desktop development →](../development/desktop.md)

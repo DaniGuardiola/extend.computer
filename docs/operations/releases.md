@@ -1,6 +1,8 @@
 # macOS releases and compatibility
 
-Before publishing the clean baseline, follow the [public launch checklist](public-launch-checklist.md).
+[← CLI operation](cli.md) · [Contents](../README.md) · [Documentation →](../README.md)
+
+Before publishing the clean baseline, follow the [public launch checklist](../archived/public-launch-checklist.md).
 
 The macOS app embeds Sparkle 2.10.0 (MIT). GitHub Actions builds releases;
 GitHub Releases hosts downloads; a static, signed Sparkle feed advertises them.
@@ -298,3 +300,7 @@ builds through a staging feed and then the production feed:
   update-required errors without input injection or lost pairings.
 - Test channel switching, unavailable feeds, canceled downloads, and retry after
   publishing binaries but before publishing the feed.
+
+---
+
+[← CLI operation](cli.md) · [Contents](../README.md) · [Documentation →](../README.md)

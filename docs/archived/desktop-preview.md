@@ -1,3 +1,5 @@
+> Archived proposal or historical report. Claims and instructions describe the document’s original milestone, not the current app. See the [current documentation](../README.md).
+
 > 🤖🔧 ai generated
 
 # extend.computer desktop preview
@@ -47,7 +49,7 @@ Normal builds keep Keychain storage and the `extend.computer` profile. There is 
 
 ## Wi-Fi optimization permission
 
-Wi-Fi optimization appears alongside Accessibility in Permissions. Allow registers the bundled helper through app-owned native macOS service approval. Pending approval opens Login Items & Extensions in System Settings. No shell or Python installer is used. See [native setup and signing](wifi-permissions.md).
+Wi-Fi optimization appears alongside Accessibility in Permissions. Allow registers the bundled helper through app-owned native macOS service approval. Pending approval opens Login Items & Extensions in System Settings. No shell or Python installer is used. See [native setup and signing](../architecture/macos-permissions.md).
 
 Outgoing GUI control checks the actual peer route before connecting. Both endpoints require a successful optimization lease for eligible Wi-Fi routes before input-session readiness. Ethernet, loopback, and other non-Wi-Fi routes do not require this permission. Receiver listening and pairing remain available without it because no control route exists yet. A local helper failure opens the existing permission dialog for the relevant role; peer-side failure closes the connection and must be repaired on that peer.
 
