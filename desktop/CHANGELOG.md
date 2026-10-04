@@ -1,5 +1,11 @@
 # extend.computer
 
+## 0.2.2
+
+### Patch Changes
+
+- [`9023d58`](https://github.com/DaniGuardiola/extend.computer/commit/9023d58fb7056b6aaa265a3831f36efd8f86bb9e) Thanks [@DaniGuardiola](https://github.com/DaniGuardiola)! - Paired devices and verified devices in the same account connect without an extra control approval prompt. Allow connections and the required OS permissions still need to be enabled on the receiving device.
+
 ## 0.2.1
 
 ### Patch Changes
