@@ -63,7 +63,7 @@ Both pairing and verified account membership authorize connections. The receivin
 
 With pairing or account membership established, each connection to another device follows these steps:
 
-1. The initiating device tries the saved local address. Account-connected devices can fall back to an internet relay if the local connection fails.
+1. The initiating device tries the latest saved local address. Background discovery can find a paired device at a new address and update its record after verifying its public key. If the local connection fails, account-connected devices can use the internet relay.
 2. The engine performs a Noise handshake, checks the other device's identity against its pairing or account record, and establishes encryption. Relay servers forward encrypted data without decrypting it.
 3. The receiving device checks the selected mode's capabilities and OS permissions before allowing it to start.
 4. Platform adapters prepare the resources needed for the selected mode.
@@ -84,7 +84,11 @@ flowchart LR
     Peer --> Native[Platform adapter: native input helper today]
 ```
 
-The same pinned encrypted protocol crosses either route. A loopback relay bridge is an implementation detail; it does not make the connection a local-network connection. Account presence can also use relay, so an online device is not proof that direct LAN access works.
+The local route connects devices directly over TCP. Background discovery checks nearby addresses for previously paired devices; connection attempts use the latest saved address rather than starting a new discovery scan.
+
+The internet route carries traffic through the hosted or self-hosted account server over WebSockets. This is a relay for the connection's encrypted data, not just a signaling server that helps devices connect directly. Both devices authenticate each other and encrypt their data end to end; the relay cannot decrypt it. Direct internet connections through NAT traversal are not implemented yet.
+
+Account presence can also use the relay, so a device appearing online does not guarantee it is reachable over the local network.
 
 ## Runtime constraints
 
