@@ -10,8 +10,8 @@ import shutil
 import subprocess
 import tempfile
 
-REPO = Path(__file__).resolve().parent.parent
-spec = importlib.util.spec_from_file_location('dev_signing', REPO/'scripts/dev-signing.py')
+REPO = Path(__file__).resolve().parents[2]
+spec = importlib.util.spec_from_file_location('dev_signing', REPO/'scripts/macos/dev-signing.py')
 signing = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(signing)
 DEST = REPO/'target/development/extend.computer.app'
@@ -19,7 +19,7 @@ DEST = REPO/'target/development/extend.computer.app'
 
 def build():
     signing.setup()
-    subprocess.run(['sh', 'scripts/build-cursor-helper.sh'], cwd=REPO, check=True)
+    subprocess.run(['sh', 'scripts/macos/build-cursor-helper.sh'], cwd=REPO, check=True)
     # No caller-supplied flags: this path cannot select a release profile.
     subprocess.run(['npm', 'run', 'tauri', '--', 'build', '--debug', '--features', 'dev-identity', '--target', 'aarch64-apple-darwin', '--config', json.dumps({'identifier': 'computer.extend.desktop.development'})], cwd=REPO/'desktop', check=True)
     source = REPO/'desktop/src-tauri/target/aarch64-apple-darwin/debug/bundle/macos/extend.computer.app'

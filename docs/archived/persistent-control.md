@@ -25,7 +25,7 @@ stall.
 
 ## Existing two-Mac launcher
 
-Replace `--input` with `--session` in the previous `scripts/two_mac_cursor.py` command. It starts both sides over the existing SSH setup, uses ephemeral test identities, and runs until Control-Option-Escape or Ctrl-C. Add `--seconds 75` for an optional automatic stop. This development launcher does not provide identity continuity or automatic reconnect across process restarts.
+Replace `--input` with `--session` in the previous `scripts/macos/two_mac_cursor.py` command. It starts both sides over the existing SSH setup, uses ephemeral test identities, and runs until Control-Option-Escape or Ctrl-C. Add `--seconds 75` for an optional automatic stop. This development launcher does not provide identity continuity or automatic reconnect across process restarts.
 
 ## Normal CLI workflow
 

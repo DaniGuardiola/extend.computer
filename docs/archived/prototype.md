@@ -60,11 +60,11 @@ No claim that library selection alone makes this composition audited. Before ena
 
 ## Two-Mac automation
 
-`examples/peer_smoke.rs` exercises pairing, encrypted probes, reconnection, active revocation and rejection after revocation. It uses temporary state and an in-memory identity. `scripts/two_mac_smoke.py` starts the normal listener over authenticated SSH, drives explicit diagnostic approval through stdin, discovers it, runs the example over ordinary LAN TCP, revokes via SSH, and terminates the remote listener. SSH is orchestration only, never the probe transport.
+`examples/peer_smoke.rs` exercises pairing, encrypted probes, reconnection, active revocation and rejection after revocation. It uses temporary state and an in-memory identity. `scripts/macos/two_mac_smoke.py` starts the normal listener over authenticated SSH, drives explicit diagnostic approval through stdin, discovers it, runs the example over ordinary LAN TCP, revokes via SSH, and terminates the remote listener. SSH is orchestration only, never the probe transport.
 
 ```sh
 cargo build --locked --bins --examples
-python3 scripts/two_mac_smoke.py \
+python3 scripts/macos/two_mac_smoke.py \
   --ssh-host USER@REMOTE.local --peer-host REMOTE.local \
   --key /path/to/ssh-key --known-hosts /path/to/verified-known-hosts \
   --remote-dir /path/to/second-mac-checkout \

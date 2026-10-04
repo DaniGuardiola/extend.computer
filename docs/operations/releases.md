@@ -40,7 +40,7 @@ material or paste it into chat.
 Generate the Sparkle key on a trusted Mac:
 
 ```sh
-bash scripts/build-updater.sh
+bash scripts/macos/build-updater.sh
 native/macos/Updater/vendor/bin/generate_keys --account computer.extend.updates
 native/macos/Updater/vendor/bin/generate_keys --account computer.extend.updates -p
 ```
@@ -274,8 +274,8 @@ On a configured signing Mac, the isolated native integration test exercises the
 shipping Sparkle bridge without opening the desktop app or its device database:
 
 ```sh
-python3 scripts/test-updater-macos.py
-python3 scripts/test-updater-macos.py --tamper
+python3 scripts/macos/test-updater-macos.py
+python3 scripts/macos/test-updater-macos.py --tamper
 ```
 
 It signs two disposable Cocoa host bundles, serves a signed loopback appcast,

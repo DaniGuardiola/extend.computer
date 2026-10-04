@@ -176,7 +176,7 @@ fn main() -> Result<()> {
         eprintln!("Test mode: ephemeral identity; lost on exit.");
         Identity::generate()
     } else {
-        Identity::load_keychain(&args.identity)
+        Identity::load_persistent(&args.identity)
             .context("Keychain identity unavailable; no insecure fallback")?
     };
     let store = TrustStore::open(&args.state)?;

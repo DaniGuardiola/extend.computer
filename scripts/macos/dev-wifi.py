@@ -12,10 +12,10 @@ import plistlib
 import shutil
 import subprocess
 
-REPO = Path(__file__).resolve().parent.parent
+REPO = Path(__file__).resolve().parents[2]
 APP = REPO / 'target/development/extend.computer.app'
 OUTPUT = REPO / 'target/development/wifi-admin'
-spec = importlib.util.spec_from_file_location('dev_signing', REPO / 'scripts/dev-signing.py')
+spec = importlib.util.spec_from_file_location('dev_signing', REPO / 'scripts/macos/dev-signing.py')
 signing = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(signing)
 

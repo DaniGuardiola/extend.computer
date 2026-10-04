@@ -7,8 +7,8 @@ import shutil
 import subprocess
 import tempfile
 
-REPO = Path(__file__).resolve().parent.parent
-spec = importlib.util.spec_from_file_location('dev_signing', REPO/'scripts/dev-signing.py')
+REPO = Path(__file__).resolve().parents[2]
+spec = importlib.util.spec_from_file_location('dev_signing', REPO/'scripts/macos/dev-signing.py')
 signing = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(signing)
 with tempfile.TemporaryDirectory(prefix='extend-wifi-signing-') as temporary:

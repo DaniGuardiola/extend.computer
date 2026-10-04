@@ -38,7 +38,7 @@ def main():
     if args.input and args.synthetic: parser.error('--input cannot use cursor-only synthetic driver')
     ssh = ['ssh', '-o', 'BatchMode=yes', '-o', 'IdentitiesOnly=yes', '-o', 'StrictHostKeyChecking=yes', '-o', f'UserKnownHostsFile={args.known_hosts}', '-o', 'ConnectTimeout=8', '-i', args.key, args.ssh_host]
     state = '.test-state-cursor-' + uuid.uuid4().hex
-    helper = args.remote_dir + '/scripts/desktop-cursor-helper.py'
+    helper = args.remote_dir + '/scripts/macos/desktop-cursor-helper.py'
     trace_remote = args.remote_dir + '/' + state + '-timing.csv'
     variables = []
     if args.trace_dir: variables.append('EXTEND_COMPUTER_TIMING_PATH=' + shlex.quote(trace_remote))

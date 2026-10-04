@@ -17,7 +17,7 @@ Deploy the signed bundle to other test Macs; do not copy the signing key or keyc
 
 Permission-retention check: grant permissions to the new dev app, rebuild and replace it at the same path with the same certificate, reopen and verify the permissions remain allowed. Confirm that app code hashes changed while designated requirements remained identical. The app's `extend.computer Development` data profile and existing paired identities are unchanged.
 
-Run `python3 scripts/test-dev-signing.py` to verify stable requirements across different binaries, rejection of an impostor signature, and rejection of production bundle identifiers.
+Run `python3 scripts/macos/test-dev-signing.py` to verify stable requirements across different binaries, rejection of an impostor signature, and rejection of production bundle identifiers.
 
 ---
 

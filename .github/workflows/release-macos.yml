@@ -18,7 +18,40 @@ concurrency:
   group: desktop-release
   cancel-in-progress: false
 jobs:
+  version:
+    name: Check release version change
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      changed: ${{ steps.version.outputs.changed }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Compare desktop versions
+        id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          python3 - <<'PY'
+          import json, os, subprocess
+          from pathlib import Path
+          current = json.loads(Path('desktop/package.json').read_text())['version']
+          before = os.environ.get('BEFORE_SHA', '')
+          changed = True
+          if os.environ['EVENT_NAME'] == 'push' and before and set(before) != {'0'}:
+              previous = json.loads(subprocess.check_output(['git', 'show', before + ':desktop/package.json']))['version']
+              changed = current != previous
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'changed={str(changed).lower()}\n')
+          PY
   release:
+    needs: version
+    if: needs.version.outputs.changed == 'true'
     runs-on: macos-14
     timeout-minutes: 45
     environment: desktop-release
@@ -98,7 +131,7 @@ jobs:
       - name: Test core and desktop
         if: steps.release.outputs.ready == 'true'
         run: |
-          sh scripts/build-cursor-helper.sh
+          sh scripts/macos/build-cursor-helper.sh
           npm run native:permissions --prefix desktop
           cargo test --locked
           cargo test --manifest-path desktop/src-tauri/Cargo.toml --locked
@@ -116,7 +149,7 @@ jobs:
           SPARKLE_PUBLIC_KEY: ${{ secrets.SPARKLE_PUBLIC_KEY }}
           UPDATE_FEED_BASE: ${{ vars.UPDATE_FEED_BASE }}
           RELEASE_BUILD: ${{ steps.release.outputs.build }}
-        run: bash scripts/release-macos.sh
+        run: bash scripts/macos/release-macos.sh
       - name: Preserve notarization diagnostics
         if: always() && steps.release.outputs.ready == 'true' && steps.release.outputs.repair != 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -152,7 +185,7 @@ jobs:
       - name: Prepare Sparkle tools
         if: steps.release.outputs.ready == 'true'
         run: |
-          bash scripts/build-updater.sh
+          bash scripts/macos/build-updater.sh
           python3 scripts/test-release.py
       - name: Sign appcast
         if: steps.release.outputs.ready == 'true'

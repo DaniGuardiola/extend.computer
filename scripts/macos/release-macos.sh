@@ -1,7 +1,7 @@
 #!/bin/bash
 # Production signing material is confined to the runner's temporary directory.
 set -euo pipefail
-root=$(cd "$(dirname "$0")/.." && pwd)
+root=$(cd "$(dirname "$0")/../.." && pwd)
 cd "$root"
 for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_TEAM_ID APPLE_API_KEY_ID APPLE_API_ISSUER APPLE_API_KEY SPARKLE_PUBLIC_KEY RELEASE_BUILD; do
   [[ -n ${!name:-} ]] || { echo "Missing release credential: $name" >&2; exit 1; }
@@ -54,7 +54,7 @@ PY
 export APPLE_SIGNING_IDENTITY_SHA1
 python3 scripts/release.py config --channel "$RELEASE_CHANNEL" --build "$RELEASE_BUILD"
 export APPLE_SIGNING_IDENTITY="$APPLE_SIGNING_IDENTITY_SHA1"
-sh scripts/build-cursor-helper.sh
+sh scripts/macos/build-cursor-helper.sh
 # Our credential names intentionally differ from Tauri's notarization variables.
 # We notarize the final, explicitly signed bundle ourselves below.
 env -u APPLE_CERTIFICATE -u APPLE_CERTIFICATE_PASSWORD -u APPLE_API_KEY -u APPLE_API_ISSUER \

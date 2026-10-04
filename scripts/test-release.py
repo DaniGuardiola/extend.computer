@@ -98,7 +98,7 @@ class ReleaseTests(unittest.TestCase):
 
     def test_signed_feed_retries_retains_history_and_rejects_tampering(self):
         tools = REPO / 'native/macos/Updater/vendor/bin'
-        if not (tools / 'sign_update').exists(): self.skipTest('Run build-updater.sh on macOS first')
+        if not (tools / 'sign_update').exists(): self.skipTest('Run scripts/macos/build-updater.sh on macOS first')
         # OpenSSL PKCS#8 Ed25519 DER ends in the 32-byte seed. Do not touch Keychain.
         private = subprocess.check_output(['openssl', 'genpkey', '-algorithm', 'ed25519', '-outform', 'DER'])
         key = base64.b64encode(private[-32:]).decode()

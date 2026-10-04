@@ -16,7 +16,7 @@ import uuid
 def main():
     if sys.argv[1:] not in (['inject'], ['inject-input'], ['inject-control']):
         raise SystemExit('desktop helper supports inject only')
-    native = Path(__file__).resolve().parents[1] / 'target/extend.computer Cursor.app/Contents/MacOS/ExtendComputerCursor'
+    native = Path(__file__).resolve().parents[2] / 'target/extend.computer Cursor.app/Contents/MacOS/ExtendComputerCursor'
     label = 'computer.extend.prototype.cursor-session.' + uuid.uuid4().hex
     domain = f'gui/{os.getuid()}'
     with tempfile.TemporaryDirectory(prefix='extend-computer-cursor-') as directory:
