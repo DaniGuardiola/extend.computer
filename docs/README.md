@@ -19,11 +19,6 @@ How extend.computer connects devices to share input and displays across platform
 | 11. [CLI operation](operations/cli.md) | Terminal control sessions and diagnostic commands |
 | 12. [Releases and updates](operations/releases.md) | Current macOS CI, signing, channels, and updates |
 
-## Services
-
-- [Account server](../server/README.md): standalone server setup and API.
-- [Website](../web/README.md): hosted account service and deployment.
-
 ---
 
 [System overview →](overview.md)

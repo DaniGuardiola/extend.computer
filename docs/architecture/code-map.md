@@ -27,6 +27,11 @@
 
 The warp-suppression adjustment, background cursor visibility fallback, session AWDL leases, and blocking accepted sockets each address observed failures. Do not remove them as cosmetic compatibility code without reproducing their original cases. Diagnostic notes live in the milestone documents.
 
+## Account server and website
+
+- [Account server](../../server/README.md): standalone server setup and API.
+- [Website](../../web/README.md): hosted account service and deployment.
+
 ## Checks
 
 With Rust on PATH, run from the repository root:
