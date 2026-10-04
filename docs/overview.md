@@ -41,13 +41,15 @@ extend.computer connects devices to share input and displays across platforms. D
 
 ## Shared session lifecycle
 
-1. Each app loads its device identity and trust state through its platform credential store. The current macOS production adapter uses Keychain; development has a separate explicitly selected profile.
+Every sharing session follows the same sequence: identify the devices, authorize access, connect, exchange data, and release resources when it ends.
+
+1. Each app loads its device identity and saved trust. Private keys use the platform's secure storage, such as an OS credential store.
 2. The devices establish trust through local pairing or verified membership in the same account. Discovery names and addresses are routing hints, not proof of identity.
-3. The receiving device enables incoming connections. A mode can start only when its capabilities, user consent, and platform permissions are available. The implemented control mode checks native input access.
+3. The receiving device enables incoming connections. A mode can start only when its capabilities, user consent, and platform permissions are available.
 4. The sender tries the saved local endpoint. Account-connected devices can fall back to an authenticated internet relay when the local connection fails.
 5. The Rust engine establishes a Noise-encrypted session and pins the peer identity. Relay servers carry encrypted bytes; they do not replace peer authentication.
-6. Platform resources start after authorization and readiness checks. In current macOS control sessions, eligible Wi-Fi routes acquire optimization leases before native input helpers become ready.
-7. The selected mode carries its supported data. Current input sharing uses screen-edge handoff and ordered event forwarding, preserving key and button transitions while coalescing adjacent movement.
+6. Platform adapters prepare the resources needed for the selected mode after authorization and readiness checks.
+7. The devices exchange the selected mode's data. For example, input sharing forwards ordered events while preserving key and button transitions.
 8. Heartbeats check responsiveness. Disconnect, emergency stop, loss of permission, or an unrecovered failure ends the session and releases input and optimization resources.
 
 ## Connection paths
