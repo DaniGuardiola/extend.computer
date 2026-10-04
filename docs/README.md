@@ -1,5 +1,7 @@
 # Technical documentation
 
+[← Project](../README.md) · [Contents](#index) · [System overview →](overview.md)
+
 How extend.computer connects devices to share input and displays across platforms.
 
 ## Index
@@ -21,4 +23,4 @@ How extend.computer connects devices to share input and displays across platform
 
 ---
 
-[System overview →](overview.md)
+[← Project](../README.md) · [Contents](#index) · [System overview →](overview.md)

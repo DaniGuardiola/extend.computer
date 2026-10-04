@@ -2,13 +2,18 @@
 
 [← Documentation](README.md) · [Contents](README.md) · [Code map →](architecture/code-map.md)
 
-extend.computer connects devices so input and displays can be shared across platforms. A device can supply input, receive control, supply a display image, or present another device's image. The app manages setup and sessions; the shared engine manages identity, trust, authorization, and connections; platform adapters implement the capabilities exposed by each operating system.
+extend.computer connects devices to share input and displays across platforms. Devices can send and receive input, share their displays, and present displays from other devices.
+
+- **Apps** manage device setup and sessions.
+- **Shared engine** manages identity, trust, authorization, and connections.
+- **Platform adapters** provide each operating system's input and display capabilities.
+- **Account service**, hosted or self-hosted, manages sign-in, device membership, presence, and encrypted relay transport.
 
 ## Sharing modes
 
 | Mode | Purpose | Implementation status |
 | --- | --- | --- |
-| Share input | Use one device's keyboard and mouse to control another | Implemented for macOS peers |
+| Share input | Use one device's keyboard and mouse to control another | macOS |
 | Extend display | Use another device as an additional display | Not supported yet |
 | Mirror screen | Present a copy of a device's screen on another | Not supported yet |
 | Remote desktop | View and control another device through a remote session | Not supported yet |
