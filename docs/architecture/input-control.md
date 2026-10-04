@@ -2,7 +2,12 @@
 
 [← Accounts and routing](accounts-and-routing.md) · [Contents](../README.md) · [macOS permissions →](macos-permissions.md)
 
-The sender captures input locally and forwards it through the authenticated Rust session. The receiver validates messages and posts events through its native helper. The desktop app and CLI share this engine.
+Input sharing has two roles: a device supplies input, and a device receives control. The shared engine carries authorized, ordered events; platform adapters capture and apply them.
+
+> [!NOTE]
+> Concrete handoff, shortcuts, event mappings, and helper behavior below describe the current macOS adapter. Other native input adapters are **not supported yet**.
+
+The current sender captures input locally and forwards it through the authenticated Rust session. The receiver validates messages and posts events through its native helper. The desktop app and CLI share this engine.
 
 ## Handoff
 
@@ -28,7 +33,10 @@ Recovery restores a connection; it does not establish the cause of a network sta
 
 ## Input scope
 
-The adapter forwards mouse movement, supported buttons, pixel scrolling, modifiers, and tagged Mac virtual key codes. Receiver keyboard layout determines characters. Clipboard sharing, file transfer, display streaming, and cross-platform native input adapters are unavailable.
+The adapter forwards mouse movement, supported buttons, pixel scrolling, modifiers, and tagged Mac virtual key codes. Receiver keyboard layout determines characters. 
+
+> [!NOTE]
+> Cross-platform native input adapters are **not supported yet**. Display modes have separate [support banners](sharing-modes.md). Clipboard sharing and file transfer are not implemented.
 
 ---
 

@@ -2,6 +2,9 @@
 
 [← Input control](input-control.md) · [Contents](../README.md) · [Desktop development →](../development/desktop.md)
 
+> [!NOTE]
+> This chapter documents the current **macOS permission and optimization adapter**. Equivalent workflows for other platforms are **not supported yet**; these OS-specific details do not define the whole product.
+
 The app uses Apple's `SMAppService.daemon(plistName:)` API on macOS 13 and later. Registration runs inside the GUI process through the signed Swift permissions bridge without invoking AppleScript, Python, or sudo. macOS owns approval in Login Items & Extensions and associates the background service with extend.computer. Development also supports an explicit administrator-installed signed broker, described below.
 
 ## Input permissions and guidance

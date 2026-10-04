@@ -1,6 +1,11 @@
 # Technical documentation
 
-Start here to understand how extend.computer connects two Macs and shares keyboard and mouse input. These pages describe the current implementation; proposals and historical experiments live in the [archive](archived/README.md).
+Start here to understand how extend.computer connects devices to share input and displays across platforms. The documentation covers the whole product: input sharing, display extension, mirroring, and remote desktop.
+
+> [!NOTE]
+> Missing modes and platform adapters are marked **Not supported yet** on their pages. General architecture describes shared responsibilities; implementation details identify the supported platform and mode. A documented capability is not a claim that it already ships.
+
+Detailed proposals and historical experiments live in the [archive](archived/README.md).
 
 ## Read in order
 
@@ -8,14 +13,16 @@ Start here to understand how extend.computer connects two Macs and shares keyboa
 | --- | --- |
 | 1. [System overview](overview.md) | Components and the complete connection flow |
 | 2. [Code map](architecture/code-map.md) | Where each part lives in the repository |
-| 3. [Pairing and device identity](architecture/pairing.md) | Verification, pinned identities, and removing trust |
-| 4. [Accounts and connection routes](architecture/accounts-and-routing.md) | Account consent, local connections, and internet relay |
-| 5. [Keyboard and mouse sessions](architecture/input-control.md) | Capture, handoff, ordering, heartbeats, and recovery |
-| 6. [macOS permissions and Wi-Fi optimization](architecture/macos-permissions.md) | Permission guidance, native helper approval, and session leases |
-| 7. [Desktop development](development/desktop.md) | Build profiles, local workflow, and validation |
-| 8. [Development signing](development/signing.md) | Stable development identity and permission retention |
-| 9. [CLI operation](operations/cli.md) | Terminal control sessions and diagnostic commands |
-| 10. [Releases and updates](operations/releases.md) | CI, signing, notarization, channels, and compatibility |
+| 3. [Sharing modes](architecture/sharing-modes.md) | Input sharing, extension, mirroring, and remote desktop |
+| 4. [Platforms and adapters](architecture/platforms.md) | Device roles, platform boundaries, and support status |
+| 5. [Pairing](architecture/pairing.md) | Verification, pinned identities, and removing trust |
+| 6. [Accounts and routing](architecture/accounts-and-routing.md) | Account consent, local connections, and internet relay |
+| 7. [Input control](architecture/input-control.md) | Capture, handoff, ordering, heartbeats, and recovery |
+| 8. [macOS permissions](architecture/macos-permissions.md) | Current macOS permission and optimization adapter |
+| 9. [Desktop development](development/desktop.md) | Build profiles, local workflow, and validation |
+| 10. [Development signing](development/signing.md) | Stable development identity and permission retention |
+| 11. [CLI operation](operations/cli.md) | Terminal control sessions and diagnostic commands |
+| 12. [Releases and updates](operations/releases.md) | Current macOS CI, signing, channels, and updates |
 
 Each chapter has previous/next links at the top and bottom. Paths in prose are relative to the repository root unless stated otherwise.
 
@@ -28,7 +35,7 @@ Each chapter has previous/next links at the top and bottom. Paths in prose are r
 
 ## Scope
 
-The implemented sharing mode is keyboard and mouse control between Macs. Screen extension, mirroring, and remote desktop display streaming are unavailable. Connection availability, cryptographic trust, user consent, OS permissions, and transport selection are separate checks.
+Devices take roles within a session: supplying input, receiving control, supplying a display image, or presenting that image. Which roles a device can perform depends on its platform adapter, hardware, and OS permissions. Connection availability, cryptographic trust, user consent, capabilities, and transport selection remain separate checks across all modes.
 
 Older documents retain the conclusions and verification limits from their own milestone. Consult the archive for research context, not current setup instructions.
 

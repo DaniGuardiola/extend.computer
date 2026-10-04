@@ -2,7 +2,21 @@
 
 [← Documentation](README.md) · [Contents](README.md) · [Code map →](architecture/code-map.md)
 
-extend.computer shares keyboard and mouse input between two Macs. The desktop app supplies setup and session controls; the shared Rust engine authenticates devices and carries input; native macOS helpers capture and inject events.
+extend.computer connects devices so input and displays can be shared across platforms. A device can supply input, receive control, supply a display image, or present another device's image. The app manages setup and sessions; the shared engine manages identity, trust, authorization, and connections; platform adapters implement the capabilities exposed by each operating system.
+
+## Sharing modes
+
+| Mode | Purpose | Implementation status |
+| --- | --- | --- |
+| Share input | Use one device's keyboard and mouse to control another | Implemented for macOS peers |
+| Extend display | Use another device as an additional display | Not supported yet |
+| Mirror screen | Present a copy of a device's screen on another | Not supported yet |
+| Remote desktop | View and control another device through a remote session | Display streaming not supported yet |
+
+See [sharing modes](architecture/sharing-modes.md) for the role of each mode and [platforms and adapters](architecture/platforms.md) for platform boundaries.
+
+> [!NOTE]
+> Current executable session path is macOS keyboard and mouse sharing. Display pipelines and other platform adapters are not supported yet. The following source links and concrete connection flow describe that implementation.
 
 ## Components
 
@@ -17,15 +31,15 @@ extend.computer shares keyboard and mouse input between two Macs. The desktop ap
 | Account services | Sign-in, verified device membership, presence, and encrypted relay transport | [`web/`](../web/) and [`server/`](../server/) |
 | Updater | Sparkle integration and signed release feeds | [`native/macos/Updater/`](../native/macos/Updater/) |
 
-## From setup to input
+## Shared session lifecycle
 
-1. Each app loads its device identity and trust state. Production identities use macOS Keychain. Development uses a separate explicitly selected profile.
+1. Each app loads its device identity and trust state through its platform credential store. The current macOS production adapter uses Keychain; development has a separate explicitly selected profile.
 2. The devices establish trust through local pairing or verified membership in the same account. Discovery names and addresses are routing hints, not proof of identity.
-3. The receiver enables incoming connections. Native permission checks and control consent gate input access.
+3. The receiving device enables incoming connections. A mode can start only when its capabilities, user consent, and platform permissions are available. The implemented control mode checks native input access.
 4. The sender tries the saved local endpoint. Account-connected devices can fall back to an authenticated internet relay when the local connection fails.
 5. The Rust engine establishes a Noise-encrypted session and pins the peer identity. Relay servers carry encrypted bytes; they do not replace peer authentication.
-6. Eligible Wi-Fi sessions acquire optimization leases. Native helpers start after authorization and readiness checks.
-7. Crossing an exposed configured screen edge transfers input to the receiver. Ordered event forwarding preserves key and button transitions while coalescing adjacent movement.
+6. Platform resources start after authorization and readiness checks. In current macOS control sessions, eligible Wi-Fi routes acquire optimization leases before native input helpers become ready.
+7. The selected mode carries its supported data. Current input sharing uses screen-edge handoff and ordered event forwarding, preserving key and button transitions while coalescing adjacent movement. Display modes do not have an implemented streaming path yet.
 8. Heartbeats check responsiveness. Disconnect, emergency stop, loss of permission, or an unrecovered failure ends the session and releases input and optimization resources.
 
 ## Connection paths
@@ -39,7 +53,7 @@ flowchart LR
     LAN --> Peer[Peer Rust engine]
     Relay --> PeerBridge[Peer relay bridge]
     PeerBridge --> Peer
-    Peer --> Native[Native input helper]
+    Peer --> Native[Platform adapter: native input helper today]
 ```
 
 The same pinned encrypted protocol crosses either route. A loopback relay bridge is an implementation detail; it does not make the connection a local-network session. Account presence can also use relay, so an online device is not proof that direct LAN access works.
@@ -49,11 +63,11 @@ The same pinned encrypted protocol crosses either route. A loopback relay bridge
 - Device metadata stores names, addresses, and screen edges. It does not grant trust.
 - Manual pairing persists verified identities independently of accounts.
 - Account membership is refreshed and expires; its control consent is scoped to that membership.
-- Native OS permissions are checked from effective helper access, not a saved setup-complete flag.
-- Wi-Fi optimization uses a privileged broker with a narrow authenticated API. Input capture and injection remain in native user-session helpers.
+- Platform capabilities and effective OS permissions gate each operation, independently of trust or a saved setup-complete flag.
+- Platform-specific optimizations belong in adapters. The macOS implementation uses a privileged Wi-Fi broker with a narrow authenticated API, and native user-session helpers for input capture and injection.
 - The desktop runtime permits one active connection job at a time. The CLI uses the same engine with its own operation and consent flow.
 
-For detailed behavior, continue through the chapters below. Historical latency measurements and unimplemented design proposals are kept in the archive.
+The current connection diagram shows the implemented session transport, not a completed video pipeline. Mode-specific data paths must be documented when implemented. Detailed proposals and historical latency measurements stay in the archive.
 
 ---
 

@@ -2,6 +2,9 @@
 
 [← Desktop development](desktop.md) · [Contents](../README.md) · [CLI operation →](../operations/cli.md)
 
+> [!NOTE]
+> This chapter documents the current **macOS development signing**. Equivalent workflows for other platforms are **not supported yet**; these OS-specific details do not define the whole product.
+
 Use `npm run desktop:build:dev` from `desktop/` (quit extend.computer first). This builds the native helper and a debug app with `dev-identity`, then signs its libraries, helper, and outer bundle using one persistent local certificate. `npm run desktop:dev` also opens the built app. The installed development bundle is `target/development/extend.computer.app`.
 
 Development identifiers are `computer.extend.desktop.development` and `computer.extend.prototype.cursor.development`. Production configuration uses separate identifiers and signing settings. The dev build wrapper accepts no release flags; the existing Rust `dev-identity` guard rejects release profiles. Raw `tauri dev` does not use this signed bundle workflow.

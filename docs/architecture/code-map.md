@@ -1,6 +1,6 @@
 # Code map
 
-[← System overview](../overview.md) · [Contents](../README.md) · [Pairing →](pairing.md)
+[← System overview](../overview.md) · [Contents](../README.md) · [Sharing modes →](sharing-modes.md)
 
 ## Shared engine
 
@@ -46,4 +46,4 @@ To preserve existing development permission grants, source-only cleanup need not
 
 ---
 
-[← System overview](../overview.md) · [Contents](../README.md) · [Pairing →](pairing.md)
+[← System overview](../overview.md) · [Contents](../README.md) · [Sharing modes →](sharing-modes.md)

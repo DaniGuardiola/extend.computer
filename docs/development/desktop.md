@@ -2,6 +2,9 @@
 
 [← macOS permissions](../architecture/macos-permissions.md) · [Contents](../README.md) · [Development signing →](signing.md)
 
+> [!NOTE]
+> This chapter documents the current **macOS development workflow**. Equivalent workflows for other platforms are **not supported yet**; these OS-specific details do not define the whole product.
+
 The desktop uses Tauri 2, React, Tailwind CSS, Ariakit controls, and native macOS helpers. Production and development have separate application identities and data profiles.
 
 ## Local workflow

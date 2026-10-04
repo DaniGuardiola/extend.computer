@@ -1,6 +1,6 @@
 # Visual pairing
 
-[← Code map](code-map.md) · [Contents](../README.md) · [Accounts and routing →](accounts-and-routing.md)
+[← Platforms and adapters](platforms.md) · [Contents](../README.md) · [Accounts and routing →](accounts-and-routing.md)
 
 Discovery is the default GUI path. Open Pair device on both computers, choose a device on one, and compare eight ordered symbols. Names/addresses are untrusted routing hints. A two-minute, single-attempt window gates incoming requests and renews automatically while the pairing dialog stays open. Closing pairing cancels pending approval and removes its advertisement. No automatic retry or unverified-trust fallback occurs. Manual SPAKE2 code pairing remains available.
 
@@ -24,4 +24,4 @@ After manual or visual pairing, GUI peers exchange bounded display names through
 
 ---
 
-[← Code map](code-map.md) · [Contents](../README.md) · [Accounts and routing →](accounts-and-routing.md)
+[← Platforms and adapters](platforms.md) · [Contents](../README.md) · [Accounts and routing →](accounts-and-routing.md)
