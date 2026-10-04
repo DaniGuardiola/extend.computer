@@ -12,24 +12,40 @@ concurrency:
   cancel-in-progress: false
 jobs:
   version:
-    runs-on: macos-14
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
+      - name: Check for a pending release
+        id: pending
+        run: echo "ready=$(python3 scripts/release.py pending)" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        if: steps.pending.outputs.ready == 'true'
         with:
           node-version-file: .node-version
           cache: npm
           cache-dependency-path: package-lock.json
       - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable action; compiler pinned below
+        if: steps.pending.outputs.ready == 'true'
         with:
           toolchain: 1.98.1
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+        if: steps.pending.outputs.ready == 'true'
+        with:
+          cache-targets: 'false'
+          workspaces: |
+            . -> target
+            desktop/src-tauri -> target
       - run: npm ci
+        if: steps.pending.outputs.ready == 'true'
       - run: |
-          cargo fetch
-          cargo fetch --manifest-path desktop/src-tauri/Cargo.toml
+          cargo fetch --locked
+          cargo fetch --manifest-path desktop/src-tauri/Cargo.toml --locked
+        if: steps.pending.outputs.ready == 'true'
       - name: Create or update the release PR
+        if: steps.pending.outputs.ready == 'true'
         run: bash scripts/prepare-release-pr.sh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

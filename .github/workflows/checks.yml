@@ -11,24 +11,48 @@ concurrency:
   group: checks-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  desktop:
-    name: macOS checks
-    runs-on: macos-14
-    env:
-      DEVELOPER_DIR: /Applications/Xcode_16.2.app/Contents/Developer
+  changes:
+    name: Release checks and changed paths
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      desktop: ${{ steps.paths.outputs.desktop }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
           persist-credentials: false
+      # Keep the workflow running for every PR so required checks can be skipped
+      # successfully rather than left pending by workflow-level path filters.
+      - uses: dorny/paths-filter@15192bc058cc28a13dbf6cde61f19e18988b7af6 # v3
+        id: paths
+        if: github.event_name != 'workflow_dispatch'
+        with:
+          base: ${{ github.ref }}
+          filters: |
+            desktop:
+              - 'desktop/**'
+              - 'engine/**'
+              - 'native/**'
+              - 'scripts/**'
+              - '.cargo/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'rust-toolchain*'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.npmrc'
+              - '.node-version'
+              - '.github/workflows/checks.yml'
+              - '.github/workflows/release-macos.yml'
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: .node-version
           cache: npm
           cache-dependency-path: package-lock.json
-      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable action; compiler pinned below
-        with:
-          toolchain: 1.98.1
       - run: npm ci
       - name: Validate versions and Changesets
         run: |
@@ -38,6 +62,33 @@ jobs:
         env:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: python3 scripts/changeset-summary.py "$RUNNER_TEMP/changeset-status.json"
+  desktop:
+    name: macOS build and tests
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.desktop == 'true'
+    runs-on: macos-14
+    timeout-minutes: 20
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.2.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable action; compiler pinned below
+        with:
+          toolchain: 1.98.1
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+        with:
+          workspaces: |
+            . -> target
+            desktop/src-tauri -> target
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: npm ci
       - name: Build native resources and desktop frontend
         run: |
           sh scripts/build-cursor-helper.sh
@@ -48,3 +99,24 @@ jobs:
           cargo test --locked
           cargo test --manifest-path desktop/src-tauri/Cargo.toml --locked
           python3 scripts/test-release.py
+  result:
+    # Preserve the existing required check name, including validation failures
+    # and intentional skips when a PR does not affect the desktop app.
+    name: macOS checks
+    needs: [changes, desktop]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require successful checks
+        env:
+          RELEASE_CHECKS: ${{ needs.changes.result }}
+          DESKTOP_CHECKS: ${{ needs.desktop.result }}
+          DESKTOP_CHANGED: ${{ needs.changes.outputs.desktop }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          [[ "$RELEASE_CHECKS" == success ]] || exit 1
+          if [[ "$DESKTOP_CHECKS" == success ]]; then
+            exit 0
+          fi
+          [[ "$DESKTOP_CHECKS" == skipped && "$DESKTOP_CHANGED" == false && "$EVENT_NAME" != workflow_dispatch ]]
