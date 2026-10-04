@@ -20,6 +20,7 @@ concurrency:
 jobs:
   release:
     runs-on: macos-14
+    timeout-minutes: 45
     environment: desktop-release
     env:
       DEVELOPER_DIR: /Applications/Xcode_16.2.app/Contents/Developer
@@ -85,6 +86,12 @@ jobs:
         with:
           toolchain: 1.98.1
           targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+        if: steps.release.outputs.ready == 'true'
+        with:
+          workspaces: |
+            . -> target
+            desktop/src-tauri -> target
       - name: Install dependencies
         if: steps.release.outputs.ready == 'true'
         run: npm ci
