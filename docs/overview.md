@@ -4,7 +4,7 @@
 
 extend.computer connects devices to share input and displays across platforms. Devices can send and receive input, share their displays, and present displays from other devices.
 
-- **Apps** manage device setup and sessions.
+- **Apps** manage device setup and connections.
 - **Shared engine** manages identity, trust, authorization, and connections.
 - **Platform adapters** provide each operating system's input and display capabilities.
 - **Account service**, hosted or self-hosted, manages sign-in, device membership, presence, and encrypted relay transport.
@@ -16,7 +16,7 @@ extend.computer connects devices to share input and displays across platforms. D
 | Share input | Use one device's keyboard and mouse to control another | macOS |
 | Extend display | Use another device as an additional display | Not supported yet |
 | Mirror screen | Present a copy of a device's screen on another | Not supported yet |
-| Remote desktop | View and control another device through a remote session | Not supported yet |
+| Remote desktop | View and control another device through a remote connection | Not supported yet |
 
 ## Components
 
@@ -39,9 +39,9 @@ extend.computer connects devices to share input and displays across platforms. D
 | Wi-Fi broker | Session-scoped AWDL optimization and restoration | [`native/macos/LowJitter/`](../native/macos/LowJitter/) |
 | Updater | Sparkle integration and signed release feeds | [`native/macos/Updater/`](../native/macos/Updater/) |
 
-## Shared session lifecycle
+## Connection lifecycle
 
-Every sharing session follows the same sequence: identify the devices, authorize access, connect, exchange data, and release resources when it ends.
+Connecting to another device follows the same sequence across modes: identify the devices, authorize access, establish the connection, exchange data, and release resources when it ends.
 
 1. Each app loads its device identity and saved trust. Private keys use the platform's secure storage, such as an OS credential store.
 2. The devices establish trust through local pairing or verified membership in the same account. Discovery names and addresses are routing hints, not proof of identity.
@@ -50,7 +50,7 @@ Every sharing session follows the same sequence: identify the devices, authorize
 5. The Rust engine establishes a Noise-encrypted session and pins the peer identity. Relay servers carry encrypted bytes; they do not replace peer authentication.
 6. Platform adapters prepare the resources needed for the selected mode after authorization and readiness checks.
 7. The devices exchange the selected mode's data. For example, input sharing forwards ordered events while preserving key and button transitions.
-8. Heartbeats check responsiveness. Disconnect, emergency stop, loss of permission, or an unrecovered failure ends the session and releases input and optimization resources.
+8. Heartbeats check responsiveness. Disconnect, emergency stop, loss of permission, or an unrecovered failure ends the connection and releases input and optimization resources.
 
 ## Connection paths
 
@@ -66,7 +66,7 @@ flowchart LR
     Peer --> Native[Platform adapter: native input helper today]
 ```
 
-The same pinned encrypted protocol crosses either route. A loopback relay bridge is an implementation detail; it does not make the connection a local-network session. Account presence can also use relay, so an online device is not proof that direct LAN access works.
+The same pinned encrypted protocol crosses either route. A loopback relay bridge is an implementation detail; it does not make the connection a local-network connection. Account presence can also use relay, so an online device is not proof that direct LAN access works.
 
 ## State and boundaries
 
