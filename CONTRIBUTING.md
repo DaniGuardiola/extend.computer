@@ -38,7 +38,7 @@ The `macOS checks` job validates release metadata, builds the native resources
 and frontend, and runs core, desktop, and release-tool tests. Local equivalents:
 
 ```sh
-sh scripts/build-cursor-helper.sh
+sh scripts/macos/build-cursor-helper.sh
 npm run native:permissions --prefix desktop
 npm run build --prefix desktop
 cargo test --locked

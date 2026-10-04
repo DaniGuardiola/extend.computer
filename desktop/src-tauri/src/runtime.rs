@@ -198,7 +198,7 @@ impl Desktop {
         let value = Arc::new(Identity::load_development(&self.root)?);
         #[cfg(not(all(feature = "dev-identity", debug_assertions, unix)))]
         let value =
-            Arc::new(Identity::load_keychain("default").context(errors::KeychainAccessError)?);
+            Arc::new(Identity::load_persistent("default").context(errors::KeychainAccessError)?);
         *identity = Some(value.clone());
         Ok(value)
     }

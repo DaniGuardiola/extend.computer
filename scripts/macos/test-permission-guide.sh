@@ -1,10 +1,10 @@
 #!/bin/bash
 set -eu
-ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 PACKAGE="$ROOT/native/macos/Permissions"
 ARCH=$(uname -m)
 BUILD="$PACKAGE/.build/$ARCH"
-if [ ! -f "$BUILD/SystemSettingsKit.swiftmodule" ]; then bash "$ROOT/scripts/build-permission-flow.sh"; fi
+if [ ! -f "$BUILD/SystemSettingsKit.swiftmodule" ]; then bash "$ROOT/scripts/macos/build-permission-flow.sh"; fi
 TMP=$(mktemp -d /tmp/extend-permission-guide.XXXXXX)
 trap 'rm -rf "$TMP"' EXIT
 sources=()

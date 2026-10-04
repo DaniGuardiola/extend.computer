@@ -7,6 +7,7 @@ pub mod discovery;
 pub mod identity;
 pub mod low_jitter;
 pub mod pairing;
+mod platform;
 pub mod session;
 pub mod timing;
 pub mod trust;

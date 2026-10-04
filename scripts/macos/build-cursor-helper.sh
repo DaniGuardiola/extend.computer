@@ -1,6 +1,6 @@
 #!/bin/sh
 set -eu
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 app="$PWD/target/extend.computer Cursor.app"
 sdk=${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}
 mkdir -p "$app/Contents/MacOS"

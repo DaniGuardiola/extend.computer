@@ -16,7 +16,7 @@ impl Identity {
         Self::from_secret(bytes)
     }
 
-    fn from_secret(bytes: [u8; 32]) -> Self {
+    pub(crate) fn from_secret(bytes: [u8; 32]) -> Self {
         let public = PublicKey::from(&StaticSecret::from(bytes)).to_bytes();
         Self {
             secret: Zeroizing::new(bytes),
@@ -110,33 +110,9 @@ impl Identity {
         Ok(Self::from_secret(bytes))
     }
 
-    #[cfg(target_os = "macos")]
-    pub fn load_keychain(account: &str) -> Result<Self> {
-        use security_framework::passwords::{get_generic_password, set_generic_password};
-        const SERVICE: &str = "computer.extend.prototype.identity.v1";
-        match get_generic_password(SERVICE, account) {
-            Ok(secret) => {
-                let secret = Zeroizing::new(secret);
-                ensure!(
-                    secret.len() == 32,
-                    "invalid identity in Keychain; refusing replacement"
-                );
-                let mut bytes = [0; 32];
-                bytes.copy_from_slice(&secret);
-                Ok(Self::from_secret(bytes))
-            }
-            Err(error) if error.code() == -25300 => {
-                let identity = Self::generate();
-                set_generic_password(SERVICE, account, identity.secret())?;
-                Ok(identity)
-            }
-            Err(error) => Err(error.into()),
-        }
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    pub fn load_keychain(_: &str) -> Result<Self> {
-        anyhow::bail!("persistent identity adapter not implemented on this OS")
+    /// Load the platform persistent identity adapter.
+    pub fn load_persistent(account: &str) -> Result<Self> {
+        crate::platform::load_identity(account)
     }
 }
 

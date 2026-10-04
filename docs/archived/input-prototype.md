@@ -10,7 +10,7 @@ Mac-to-Mac edge control now forwards left/right/middle clicks, double-clicks, po
 
 ## Run
 
-Add `--input` to the previous `scripts/two_mac_cursor.py` command to run the explicitly authorized two-Mac development test. This harness starts both endpoints using the configured SSH key, grants one-session full input consent, and stops after approximately 30 seconds. Omit `--input` to retain cursor-only behavior.
+Add `--input` to the previous `scripts/macos/two_mac_cursor.py` command to run the explicitly authorized two-Mac development test. This harness starts both endpoints using the configured SSH key, grants one-session full input consent, and stops after approximately 30 seconds. Omit `--input` to retain cursor-only behavior.
 
 For manual pairing:
 

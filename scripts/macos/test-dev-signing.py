@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Opt-in signing test; requires scripts/dev-app.py setup on macOS."""
+"""Opt-in signing test; requires scripts/macos/dev-app.py setup on macOS."""
 import importlib.util
 from pathlib import Path
 import subprocess

@@ -8,6 +8,12 @@
 
 `session.rs` owns the encrypted protocol and authorization; `control.rs` forwards ordered input; `cursor.rs` manages the native subprocess. Identity, trust, reconnect, discovery, wire framing, input events, and AWDL leases each have separate modules. `verification.rs` implements visual-pairing commitments and bilateral confirmation; see [pairing](pairing.md) for its protocol and review limits. `error.rs` defines failures that callers classify; diagnostic text is not used as a machine-readable error code. CLI diagnostic modes and `engine/examples/` reproduce timing and recovery failures.
 
+Shared modules expose the engine interfaces; `engine/src/platform/mod.rs` selects their implementations at compile time. macOS Keychain storage and AWDL broker code live under `engine/src/platform/macos/`. Other operating systems currently use explicit unsupported identity storage and inactive Wi-Fi optimization adapters; this does not imply native desktop support. Small Unix file-permission guards remain with the shared storage code.
+
+Repository-wide versioning, Changesets, and publishing entry points live in `scripts/`. macOS build, signing, permission, updater, and two-Mac diagnostic tools live in `scripts/macos/`. Native implementations live in `native/macos/`; add future OS implementations in sibling platform directories. Shared native implementations belong in `native/shared/`.
+
+The macOS CI whitelist includes shared engine and build inputs plus the explicit macOS directories. Future `native/linux/`, `scripts/linux/`, or `engine/src/platform/linux/` changes do not trigger macOS builds; platform dispatch changes in `engine/src/platform/mod.rs` do. New platform directories need their own checks before shipping support.
+
 ## Desktop
 
 `desktop/src/` contains React UI and the typed Tauri bridge. `usePermissions.ts` owns startup/focus checks, coalesces concurrent requests, polls while permission setup is open, and checks fresh access before connecting. `PermissionsDialog.tsx` presents effective input capabilities; Accessibility can also satisfy read access without a separate Input Monitoring grant. The native guide retains its own close-on-grant observer. `desktop/src-tauri/src/main.rs` handles application startup and IPC. The `runtime` module owns shared job state and snapshots:
@@ -44,7 +50,7 @@ cargo clippy --all-targets -- -D warnings
 cargo test --manifest-path desktop/src-tauri/Cargo.toml --target aarch64-apple-darwin
 cargo clippy --manifest-path desktop/src-tauri/Cargo.toml --target aarch64-apple-darwin --all-targets -- -D warnings
 npm --prefix desktop run build
-bash scripts/build-permission-flow.sh
+bash scripts/macos/build-permission-flow.sh
 ```
 
 The desktop integration test uses an isolated ephemeral listening port and does not interrupt a running app. It uses temporary trust stores and identities, and does not capture input. Native GUI permission and edge-handoff behavior still require live testing. Build outputs are ignored. Generated mobile/Windows Store icons were removed because those app targets are not configured; regenerate from `desktop/public/extend-computer.svg` when adding those targets.

@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 [[ $(uname -s) == Darwin ]] || exit 0
-root=$(cd "$(dirname "$0")/.." && pwd)
+root=$(cd "$(dirname "$0")/../.." && pwd)
 vendor="$root/native/macos/Updater/vendor"
 version=2.10.0
 digest=c2bf58aa8387266ac179357b1415d6f2635f044da8be41042af32425dae6da0c

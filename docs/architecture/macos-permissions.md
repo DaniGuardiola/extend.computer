@@ -35,7 +35,7 @@ The broker API permits only lease and status operations, not arbitrary commands 
 - Production service: `computer.extend.lowjitter`; broker: `computer.extend.lowjitter.broker`.
 - Development service: `computer.extend.lowjitter.development`; broker: `computer.extend.lowjitter.broker.development`.
 - Production requires an Apple-anchored signature, the expected broker identifier, and the application's team identifier. Set `APPLE_SIGNING_IDENTITY` to the production signing identity when building; the native helper build uses it too. Ad-hoc builds cannot register through the GUI.
-- `scripts/dev-app.py` rewrites the development daemon label and associated bundle identifier, and signs the broker, bridge and app with the existing stable local development certificate. It uses the same registration API as production.
+- `scripts/macos/dev-app.py` rewrites the development daemon label and associated bundle identifier, and signs the broker, bridge and app with the existing stable local development certificate. It uses the same registration API as production.
 - The broker and daemon mutually require the broker signing identity. Development pins the certificate; production pins the Apple team plus broker identifier. The daemon additionally restricts clients to the active console user.
 - Each profile has a distinct fixed root-owned recovery journal under `/private/var/db`. Lease expiry, disconnect restoration, signature checks, and Wi-Fi-only session gates remain in force.
 
@@ -73,7 +73,7 @@ involved. The installer refuses to replace a running development service.
 
 ## Verification
 
-Run `scripts/test-wifi-signing.py` after configuring local dev signing. It verifies matching app/helper acceptance and rejects a wrong identifier, wrong signer, and ad-hoc application. Rust tests cover pending approval, setup failure, and connection permission gates; native lifecycle tests cover restoration and externally reactivated AWDL. Live approval remains a macOS user action. A production certificate build must also be tested in the release environment.
+Run `scripts/macos/test-wifi-signing.py` after configuring local dev signing. It verifies matching app/helper acceptance and rejects a wrong identifier, wrong signer, and ad-hoc application. Rust tests cover pending approval, setup failure, and connection permission gates; native lifecycle tests cover restoration and externally reactivated AWDL. Live approval remains a macOS user action. A production certificate build must also be tested in the release environment.
 
 References: [Apple SMAppService](https://developer.apple.com/documentation/servicemanagement/smappservice), and the installed macOS SDK's `SMAppService.h` (bundle-relative daemon programs, approval state, and asynchronous unregister completion).
 

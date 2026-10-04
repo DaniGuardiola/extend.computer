@@ -22,7 +22,7 @@ The sender keeps only the latest captured position and sends within a receiver-e
 
 ```
 cargo build --locked --bins --examples
-sh scripts/build-cursor-helper.sh
+sh scripts/macos/build-cursor-helper.sh
 ```
 
 The build produces universal `target/extend.computer Cursor.app` (arm64 and x86_64), signed ad hoc with a stable bundle identifier and registered with Launch Services. Explicit architectures avoid accidentally shipping Intel-only output when the build shell runs under Rosetta. It explicitly targets macOS 13 or later; development toolchain defaults on the second Mac unexpectedly selected macOS 28. Rebuilds can require renewed permission because these are development signatures.
@@ -49,7 +49,7 @@ extend-computer cursor RECEIVER:48177 --edge left --offset-y 0 --helper "$PWD/ta
 
 Enter the pairing code privately, approve the diagnostic session, then approve the separate cursor request on the receiver. `--peer FINGERPRINT` uses a previously remembered identity instead of a pairing code; it still requires fresh cursor consent. Ctrl-C stops either endpoint. Sender stops after 29 seconds, leaving margin before the receiver's 30-second limit.
 
-`scripts/two_mac_cursor.py` automates this explicitly authorized test using ephemeral identities and one-session consent. It accepts SSH host/key/pinned-known-hosts, peer hostname, remote checkout, local driver, and local helper paths. It does not retain the pairing code and cleans up the listener. No persistent permission to control a device is saved.
+`scripts/macos/two_mac_cursor.py` automates this explicitly authorized test using ephemeral identities and one-session consent. It accepts SSH host/key/pinned-known-hosts, peer hostname, remote checkout, local driver, and local helper paths. It does not retain the pairing code and cleans up the listener. No persistent permission to control a device is saved.
 
 ## Scope and validation
 
@@ -66,7 +66,7 @@ Native API references: [Apple event taps](https://developer.apple.com/documentat
 
 The receiver showed Accessibility enabled, but a separate PostEvent record was denied. Clearing only extend.computer's PostEvent denial with `tccutil reset PostEvent computer.extend.prototype.cursor` and registering its app with Launch Services resulted in a fresh desktop-session check reporting event posting allowed, without another prompt. Do not equate an event-posting preflight failure with the Accessibility toggle being off.
 
-SSH-launched processes were attributed to `sshd-keygen-wrapper` by TCC. The cursor harness now uses `scripts/desktop-cursor-helper.py` to launch the already approved app as a temporary job in the logged-in GUI session. Private FIFOs carry cursor coordinates and acknowledgments. The job and files are removed when the test ends; no permission is granted to SSH. This is development orchestration, not the eventual app lifecycle.
+SSH-launched processes were attributed to `sshd-keygen-wrapper` by TCC. The cursor harness now uses `scripts/macos/desktop-cursor-helper.py` to launch the already approved app as a temporary job in the logged-in GUI session. Private FIFOs carry cursor coordinates and acknowledgments. The job and files are removed when the test ends; no permission is granted to SSH. This is development orchestration, not the eventual app lifecycle.
 
 ## Bounded streaming benchmark
 
@@ -102,7 +102,7 @@ Both Macs' AWDL interfaces were active during investigation; initial Duet inspec
 
 ## Fully synthetic regression test
 
-`examples/cursor_dummy.rs` and `scripts/two_mac_cursor.py --synthetic` now generate cursor positions and deliver them through the real pairing/encrypted-session/flow-control path to a dummy sink. No native input APIs run. The first successful 15-second trial delivered 1,745 updates; 436 acknowledgment waits had median 8.50 ms, p95 89.50 ms, max 102.19 ms, with 28 waits above 40 ms. This reproduces the human-observed periodic freezes without requiring physical mouse motion. Initial startup timeouts cleared after the user approved the new executable in LuLu.
+`examples/cursor_dummy.rs` and `scripts/macos/two_mac_cursor.py --synthetic` now generate cursor positions and deliver them through the real pairing/encrypted-session/flow-control path to a dummy sink. No native input APIs run. The first successful 15-second trial delivered 1,745 updates; 436 acknowledgment waits had median 8.50 ms, p95 89.50 ms, max 102.19 ms, with 28 waits above 40 ms. This reproduces the human-observed periodic freezes without requiring physical mouse motion. Initial startup timeouts cleared after the user approved the new executable in LuLu.
 
 The sender-only AWDL A/B comparison did not remove stalls. Raw TCP had 28 waits above 40 ms with sender AWDL down (max 99.90 ms), versus 28 after restoration (max 105.69 ms). UDP had 186 delayed replies above 40 ms with sender AWDL down, versus 192 after restoration. The watcher verified the local interface remained down through the test and later returned up. Receiver-side AWDL trial remains pending a user-run admin step.
 

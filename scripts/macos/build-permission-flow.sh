@@ -5,7 +5,7 @@ set -eu
 if [ "$(/usr/sbin/sysctl -n sysctl.proc_translated 2>/dev/null || true)" = 1 ]; then
   exec /usr/bin/arch -arm64 /bin/bash "$0" "$@"
 fi
-ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 ARCH=${TAURI_ENV_ARCH:-${EXTEND_COMPUTER_BUILD_ARCH:-}}
 if [ "$ARCH" = universal ]; then
   UNIVERSAL_BUILD="$ROOT/native/macos/Permissions/.build/universal"
