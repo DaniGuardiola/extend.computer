@@ -34,7 +34,7 @@ def pending_changesets():
 
 def sync(check=False):
     expected = version()
-    for path in (ROOT / 'Cargo.toml', DESKTOP / 'src-tauri/Cargo.toml'):
+    for path in (ROOT / 'engine/Cargo.toml', DESKTOP / 'src-tauri/Cargo.toml'):
         original = path.read_text()
         updated, count = re.subn(r'(?m)^version = "[^"]+"$', f'version = "{expected}"', original, count=1)
         assert count == 1

@@ -4,7 +4,9 @@
 
 ## Shared engine
 
-[`src/lib.rs`](../../src/lib.rs) is the shared Rust engine; [`src/main.rs`](../../src/main.rs) is the CLI that imports it. Both targets belong to the root Cargo package. The desktop depends on the library directly. `session.rs` owns the encrypted protocol and authorization; `control.rs` forwards ordered input; `cursor.rs` manages the native subprocess. Identity, trust, reconnect, discovery, wire framing, input events, and AWDL leases each have separate modules. `verification.rs` implements visual-pairing commitments and bilateral confirmation; see [pairing](pairing.md) for its protocol and review limits. `error.rs` defines failures that callers classify; diagnostic text is not used as a machine-readable error code. CLI diagnostic modes and `examples/` reproduce timing and recovery failures.
+[`engine/src/lib.rs`](../../engine/src/lib.rs) is the shared Rust engine; [`engine/src/main.rs`](../../engine/src/main.rs) is the CLI that imports it. Both targets belong to the `engine/` Cargo package. The root Cargo workspace keeps commands and build outputs at the repository root. The desktop depends on the library directly.
+
+`session.rs` owns the encrypted protocol and authorization; `control.rs` forwards ordered input; `cursor.rs` manages the native subprocess. Identity, trust, reconnect, discovery, wire framing, input events, and AWDL leases each have separate modules. `verification.rs` implements visual-pairing commitments and bilateral confirmation; see [pairing](pairing.md) for its protocol and review limits. `error.rs` defines failures that callers classify; diagnostic text is not used as a machine-readable error code. CLI diagnostic modes and `engine/examples/` reproduce timing and recovery failures.
 
 ## Desktop
 

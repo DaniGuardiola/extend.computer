@@ -26,8 +26,8 @@ extend.computer connects devices to share input and displays across platforms. D
 | --- | --- | --- |
 | Desktop UI | Devices, permissions, account sign-in, connection controls, and updates | [`desktop/src/`](../desktop/src/) |
 | Desktop runtime | Incoming/outgoing jobs, approvals, presence, and connection lifecycle | [`desktop/src-tauri/src/runtime.rs`](../desktop/src-tauri/src/runtime.rs) |
-| Shared engine | Identity, trust, encrypted sessions, input ordering, and reconnect | [`src/lib.rs`](../src/lib.rs) |
-| CLI | Terminal commands using the shared engine | [`src/main.rs`](../src/main.rs) |
+| Shared engine | Identity, trust, encrypted sessions, input ordering, and reconnect | [`engine/src/lib.rs`](../engine/src/lib.rs) |
+| CLI | Terminal commands using the shared engine | [`engine/src/main.rs`](../engine/src/main.rs) |
 | Account services | Sign-in, verified device membership, presence, and encrypted relay transport | [`web/`](../web/) and [`server/`](../server/) |
 
 ### macOS adapter

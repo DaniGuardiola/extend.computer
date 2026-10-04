@@ -11,7 +11,7 @@ git switch -C "$branch"
 npm run release:version
 version=$(node -p "require('./desktop/package.json').version")
 git add .changeset desktop/CHANGELOG.md desktop/package.json package-lock.json \
-  Cargo.toml Cargo.lock desktop/src-tauri/Cargo.toml desktop/src-tauri/Cargo.lock desktop/src-tauri/tauri.conf.json
+  engine/Cargo.toml Cargo.lock desktop/src-tauri/Cargo.toml desktop/src-tauri/Cargo.lock desktop/src-tauri/tauri.conf.json
 git commit -m "Prepare extend.computer $version release"
 git push --force-with-lease origin "HEAD:$branch"
 body=$(mktemp)
