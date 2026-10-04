@@ -63,7 +63,7 @@ Both pairing and verified account membership authorize connections. The receivin
 
 With pairing or account membership established, each connection to another device follows these steps:
 
-1. The initiating device tries the latest saved local address. Background discovery can find a paired device at a new address and update its record after verifying its public key. If the local connection fails, account-connected devices can use the internet relay.
+1. The initiating device tries the latest saved local address. Background discovery can find a paired or verified account device at a new address and update its record after verifying its public key. If the local connection fails, account-connected devices can use the internet relay.
 2. The engine performs a Noise handshake, checks the other device's identity against its pairing or account record, and establishes encryption. Relay servers forward encrypted data without decrypting it.
 3. The receiving device checks the selected mode's capabilities and OS permissions before allowing it to start.
 4. Platform adapters prepare the resources needed for the selected mode.
@@ -84,7 +84,7 @@ flowchart LR
     Peer --> Native[Platform adapter: native input helper today]
 ```
 
-The local route connects devices directly over TCP. Background discovery checks nearby addresses for previously paired devices; connection attempts use the latest saved address rather than starting a new discovery scan.
+The local route connects devices directly over TCP. Background discovery checks nearby addresses for both paired devices and verified devices in the same account, trying local addresses before checking presence through the relay. Connection attempts use the latest saved address rather than starting a new discovery scan. If discovery has not found a local address yet, an account connection uses the relay.
 
 The internet route carries traffic through the hosted or self-hosted account server over WebSockets. This is a relay for the connection's encrypted data, not just a signaling server that helps devices connect directly. Both devices authenticate each other and encrypt their data end to end; the relay cannot decrypt it. Direct internet connections through NAT traversal are not implemented yet.
 
