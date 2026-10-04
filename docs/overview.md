@@ -39,18 +39,31 @@ extend.computer connects devices to share input and displays across platforms. D
 | Wi-Fi broker | Session-scoped AWDL optimization and restoration | [`native/macos/LowJitter/`](../native/macos/LowJitter/) |
 | Updater | Sparkle integration and signed release feeds | [`native/macos/Updater/`](../native/macos/Updater/) |
 
+## Device identity
+
+Each device has a cryptographic key pair. Its public key identifies it to other devices; its private key stays on the device, protected by the platform's secure storage.
+
+## Pairing and accounts
+
+Devices can recognize each other in two ways:
+
+- **Pairing:** users verify the two devices and save each other's identities. The pairing remains until removed, independently of accounts.
+- **Account membership:** signing in registers the device's existing identity with the account service. Devices in the same account appear automatically. Access lasts while membership remains valid; signing out or removing a device ends account access.
+
+Discovery lists nearby devices by name and network address. The app checks their cryptographic identities before allowing access.
+
+Pairing or account membership lets devices authenticate each other. The receiving device also needs incoming connections enabled and the permissions required by the selected mode. Account-only input control requires local approval of the first request.
+
 ## Connection lifecycle
 
-Connecting to another device follows the same sequence across modes: identify the devices, authorize access, establish the connection, exchange data, and release resources when it ends.
+With pairing or account membership established, each connection to another device follows these steps:
 
-1. Each app loads its device identity and saved trust. Private keys use the platform's secure storage, such as an OS credential store.
-2. The devices establish trust through local pairing or verified membership in the same account. Discovery names and addresses are routing hints, not proof of identity.
-3. The receiving device enables incoming connections. A mode can start only when its capabilities, user consent, and platform permissions are available.
-4. The sender tries the saved local endpoint. Account-connected devices can fall back to an authenticated internet relay when the local connection fails.
-5. The Rust engine establishes a Noise-encrypted session and pins the peer identity. Relay servers carry encrypted bytes; they do not replace peer authentication.
-6. Platform adapters prepare the resources needed for the selected mode after authorization and readiness checks.
-7. The devices exchange the selected mode's data. For example, input sharing forwards ordered events while preserving key and button transitions.
-8. Heartbeats check responsiveness. Disconnect, emergency stop, loss of permission, or an unrecovered failure ends the connection and releases input and optimization resources.
+1. The initiating device tries the saved local address. Account-connected devices can fall back to an internet relay if the local connection fails.
+2. The engine performs a Noise handshake, checks the other device's identity against its pairing or account record, and establishes encryption. Relay servers forward encrypted data without decrypting it.
+3. The receiving device checks the selected mode's capabilities, consent, and OS permissions before allowing it to start.
+4. Platform adapters prepare the resources needed for the selected mode.
+5. The devices exchange the mode's data. For example, input sharing forwards ordered events while preserving key and button transitions.
+6. Heartbeats check responsiveness. Disconnect, emergency stop, loss of permission, or an unrecovered failure ends the connection and releases its resources.
 
 ## Connection paths
 
@@ -68,12 +81,8 @@ flowchart LR
 
 The same pinned encrypted protocol crosses either route. A loopback relay bridge is an implementation detail; it does not make the connection a local-network connection. Account presence can also use relay, so an online device is not proof that direct LAN access works.
 
-## State and boundaries
+## Runtime constraints
 
-- Device metadata stores names, addresses, and screen edges. It does not grant trust.
-- Manual pairing persists verified identities independently of accounts.
-- Account membership is refreshed and expires; its control consent is scoped to that membership.
-- Platform capabilities and effective OS permissions gate each operation, independently of trust or a saved setup-complete flag.
 - Platform-specific optimizations belong in adapters. The macOS implementation uses a privileged Wi-Fi broker with a narrow authenticated API, and native user-session helpers for input capture and injection.
 - The desktop runtime permits one active connection job at a time. The CLI uses the same engine with its own operation and consent flow.
 
