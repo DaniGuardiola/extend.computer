@@ -47,7 +47,7 @@ Each device has a cryptographic key pair. Its public key identifies it to other 
 
 ### Pairing
 
-Nearby discovery lists devices by name and network address so users can choose a device to pair with. Users verify the devices by comparing symbols or entering a pairing code, then the apps save each other's identities. Pairing remains until removed, independently of accounts.
+Users can select a device from nearby discovery and compare symbols, or pair manually by entering its address and pairing code. The apps then save each other's identities. Pairing remains until removed, independently of accounts.
 
 ### Account membership
 
