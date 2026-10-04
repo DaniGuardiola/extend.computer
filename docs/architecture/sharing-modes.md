@@ -18,7 +18,7 @@ The current implementation uses screen-edge handoff, ordered encrypted events, n
 One device supplies an additional logical display; another presents it. This expands the source device's desktop rather than duplicating an existing screen.
 
 > [!NOTE]
-> **Not supported yet.** Virtual-display creation, display capture, media transport, and presentation are not implemented. There is no supported setup procedure or released display-extension mode.
+> **Not supported yet.** Virtual-display creation, display capture, media transport, and presentation are not implemented.
 
 ## Mirror screen
 
@@ -36,7 +36,7 @@ A device presents another device's desktop and supplies authorized control input
 
 ## Shared boundaries
 
-Device discovery, cryptographic identity, consent, OS permissions, routing, and session lifecycle apply across the product. Their concrete implementations are documented in the following chapters. Detailed media and platform implementation proposals remain in the [archive](../archived/README.md); these mode definitions do not prescribe an unimplemented protocol or release schedule.
+Device discovery, cryptographic identity, consent, OS permissions, routing, and session lifecycle apply across all sharing modes.
 
 ---
 

@@ -3,9 +3,7 @@
 [← CLI operation](cli.md) · [Contents](../README.md) · [Documentation →](../README.md)
 
 > [!NOTE]
-> This chapter documents the current **macOS release and update pipeline**. Equivalent workflows for other platforms are **not supported yet**; these OS-specific details do not define the whole product.
-
-Before publishing the clean baseline, follow the [public launch checklist](../archived/public-launch-checklist.md).
+> macOS only. Other platform adapters are **not supported yet**.
 
 The macOS app embeds Sparkle 2.10.0 (MIT). GitHub Actions builds releases;
 GitHub Releases hosts downloads; a static, signed Sparkle feed advertises them.

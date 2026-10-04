@@ -1,15 +1,10 @@
 # Technical documentation
 
-Start here to understand how extend.computer connects devices to share input and displays across platforms. The documentation covers the whole product: input sharing, display extension, mirroring, and remote desktop.
+How extend.computer connects devices and shares input and displays across platforms.
 
-> [!NOTE]
-> Missing modes and platform adapters are marked **Not supported yet** on their pages. General architecture describes shared responsibilities; implementation details identify the supported platform and mode. A documented capability is not a claim that it already ships.
+## Index
 
-Detailed proposals and historical experiments live in the [archive](archived/README.md).
-
-## Read in order
-
-| Chapter | What it explains |
+| Topic | Contents |
 | --- | --- |
 | 1. [System overview](overview.md) | Components and the complete connection flow |
 | 2. [Code map](architecture/code-map.md) | Where each part lives in the repository |
@@ -24,20 +19,10 @@ Detailed proposals and historical experiments live in the [archive](archived/REA
 | 11. [CLI operation](operations/cli.md) | Terminal control sessions and diagnostic commands |
 | 12. [Releases and updates](operations/releases.md) | Current macOS CI, signing, channels, and updates |
 
-Each chapter has previous/next links at the top and bottom. Paths in prose are relative to the repository root unless stated otherwise.
+## Services
 
-## Component references
-
-- [Account server](../server/README.md): standalone server setup and API reference.
-- [Website](../web/README.md): hosted account service and website deployment.
-- [Contributing](../CONTRIBUTING.md): contribution checks and release workflow.
-- [Desktop changelog](../desktop/CHANGELOG.md): published release history.
-
-## Scope
-
-Devices take roles within a session: supplying input, receiving control, supplying a display image, or presenting that image. Which roles a device can perform depends on its platform adapter, hardware, and OS permissions. Connection availability, cryptographic trust, user consent, capabilities, and transport selection remain separate checks across all modes.
-
-Older documents retain the conclusions and verification limits from their own milestone. Consult the archive for research context, not current setup instructions.
+- [Account server](../server/README.md): standalone server setup and API.
+- [Website](../web/README.md): hosted account service and deployment.
 
 ---
 

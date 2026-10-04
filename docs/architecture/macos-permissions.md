@@ -3,7 +3,7 @@
 [← Input control](input-control.md) · [Contents](../README.md) · [Desktop development →](../development/desktop.md)
 
 > [!NOTE]
-> This chapter documents the current **macOS permission and optimization adapter**. Equivalent workflows for other platforms are **not supported yet**; these OS-specific details do not define the whole product.
+> macOS only. Other platform adapters are **not supported yet**.
 
 The app uses Apple's `SMAppService.daemon(plistName:)` API on macOS 13 and later. Registration runs inside the GUI process through the signed Swift permissions bridge without invoking AppleScript, Python, or sudo. macOS owns approval in Login Items & Extensions and associates the background service with extend.computer. Development also supports an explicit administrator-installed signed broker, described below.
 
@@ -19,7 +19,7 @@ Both endpoints inspect the actual routed interface. Eligible Wi-Fi control sessi
 
 The broker temporarily pauses AWDL, holds a restoration obligation, and renews while its session process remains alive. Disconnect, expiry, and process loss release leases. The prior interface state is restored after the last lease; originally disabled AWDL stays disabled. Externally reactivated AWDL invalidates a lease. AirDrop and some Continuity features can be affected while paused.
 
-The broker API permits only lease and status operations, not arbitrary commands or paths. Its client checks signing identity; the daemon also checks the active console user. Standalone historical installations and measurements are documented in the [archive](../archived/low-jitter-helper.md).
+The broker API permits only lease and status operations, not arbitrary commands or paths. Its client checks signing identity; the daemon also checks the active console user.
 
 ## Wi-Fi setup flow
 
@@ -49,7 +49,20 @@ The older standalone helper and manual installer remain diagnostic tools. They a
 
 On machines where macOS approves the local certificate but blocks daemon launch
 with `Launch Constraint Violation`, `npm --prefix desktop run desktop:wifi:prepare`
-prepares a separate administrator installer. See [installation and removal](../archived/low-jitter-helper.md#administrator-installed-signed-development-broker).
+prepares a separate administrator installer:
+
+```sh
+npm --prefix desktop run desktop:wifi:prepare
+sudo /usr/bin/python3 target/development/wifi-admin/install.py
+```
+
+Stop input sharing before installation. After rebuilding the broker, uninstall
+and prepare/install again. To uninstall:
+
+```sh
+sudo /usr/bin/python3 target/development/wifi-admin/install.py uninstall
+```
+
 It copies the same signed bundled broker to a root-owned location, verifies its
 certificate pin and payload hash, and installs a separate `.development.manual`
 daemon label with the existing development Mach service. Production identities

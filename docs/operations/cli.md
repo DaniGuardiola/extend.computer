@@ -21,10 +21,6 @@ unrecovered outgoing failure appears as an error instead of silently returning
 to idle. This recovery does not diagnose or eliminate the underlying network
 stall.
 
-## Diagnostic two-Mac launcher
-
-Replace `--input` with `--session` in the `scripts/two_mac_cursor.py` command described in the [archived cursor guide](../archived/cursor-prototype.md). It starts both sides over the existing SSH setup, uses ephemeral test identities, and runs until Control-Option-Escape or Ctrl-C. Add `--seconds 75` for an optional automatic stop. This development launcher does not provide identity continuity or automatic reconnect across process restarts.
-
 ## Normal CLI workflow
 
 Use a persistent Keychain identity and the same explicit state directory for every command. On each Mac, for example:
@@ -76,7 +72,7 @@ The existing AWDL broker stays bounded to 30 seconds. The engine obtains a repla
 
 ## Validation
 
-Core and desktop lifecycle tests exercise consent, pinned reconnect, cancellation, and input release. Physical handoff and native permission behavior require signed two-Mac testing. Historical benchmark results and milestone reports are in the [archive](../archived/README.md).
+Core and desktop lifecycle tests exercise consent, pinned reconnect, cancellation, and input release. Physical handoff and native permission behavior require signed two-Mac testing.
 
 ---
 

@@ -11,8 +11,6 @@ Implemented foundations include encrypted local pairing, pinned device identitie
 
 **[Start reading the technical documentation →](docs/README.md)**
 
-The documentation follows the system from its architecture through pairing, routing, input sessions, permissions, development, and releases. Each current chapter has previous/next navigation. [Proposals and historical research](docs/archived/README.md) are kept separately.
-
 - [Contributing](CONTRIBUTING.md): development checks and contribution workflow.
 - [Website](web/README.md): hosted account service and deployment.
 - [Account server](server/README.md): standalone server setup and API.

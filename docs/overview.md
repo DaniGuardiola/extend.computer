@@ -16,7 +16,7 @@ extend.computer connects devices so input and displays can be shared across plat
 See [sharing modes](architecture/sharing-modes.md) for the role of each mode and [platforms and adapters](architecture/platforms.md) for platform boundaries.
 
 > [!NOTE]
-> Current executable session path is macOS keyboard and mouse sharing. Display pipelines and other platform adapters are not supported yet. The following source links and concrete connection flow describe that implementation.
+> Display pipelines and non-macOS native adapters are **not supported yet**.
 
 ## Components
 
@@ -66,8 +66,6 @@ The same pinned encrypted protocol crosses either route. A loopback relay bridge
 - Platform capabilities and effective OS permissions gate each operation, independently of trust or a saved setup-complete flag.
 - Platform-specific optimizations belong in adapters. The macOS implementation uses a privileged Wi-Fi broker with a narrow authenticated API, and native user-session helpers for input capture and injection.
 - The desktop runtime permits one active connection job at a time. The CLI uses the same engine with its own operation and consent flow.
-
-The current connection diagram shows the implemented session transport, not a completed video pipeline. Mode-specific data paths must be documented when implemented. Detailed proposals and historical latency measurements stay in the archive.
 
 ---
 

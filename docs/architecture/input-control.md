@@ -5,7 +5,7 @@
 Input sharing has two roles: a device supplies input, and a device receives control. The shared engine carries authorized, ordered events; platform adapters capture and apply them.
 
 > [!NOTE]
-> Concrete handoff, shortcuts, event mappings, and helper behavior below describe the current macOS adapter. Other native input adapters are **not supported yet**.
+> Native input sharing currently supports macOS. Other platform adapters are **not supported yet**.
 
 The current sender captures input locally and forwards it through the authenticated Rust session. The receiver validates messages and posts events through its native helper. The desktop app and CLI share this engine.
 
@@ -28,8 +28,6 @@ The wire window permits four pending input events. A probe acknowledges precedin
 Heartbeats keep native capture and injection alive. Native helpers stop on missing heartbeats and release held input. Unexpected capture shutdowns report their cause, including display changes or lost capture access.
 
 After an established connection suffers a transport failure, the desktop sender retries up to three times with 1-, 2-, and 4-second backoff. It pins the same peer and requests already remembered control consent. Each replacement capture starts locally with fresh input state. Canceling the job also cancels reconnect. Permission, identity, helper, and protocol failures are terminal.
-
-Recovery restores a connection; it does not establish the cause of a network stall. A smooth local session also does not establish relay latency. The [archived measurements](../archived/session-low-jitter.md) describe their own test setup and limits.
 
 ## Input scope
 

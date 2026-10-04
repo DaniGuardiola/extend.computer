@@ -2,7 +2,7 @@
 
 [← Sharing modes](sharing-modes.md) · [Contents](../README.md) · [Pairing →](pairing.md)
 
-The architecture separates shared session behavior from operating-system and device capabilities. Product scope spans computers and mobile devices; documentation uses device roles rather than assuming every connection is between two identical desktop platforms.
+The shared engine manages sessions across computers and mobile devices. Platform adapters provide the input, display, permission, and credential-storage capabilities available on each operating system.
 
 > [!NOTE]
 > Current native sharing support is macOS keyboard and mouse control. Windows, Linux, mobile, and browser-based sharing adapters are **not supported yet**. The website supports account management; it is not a browser input or display-sharing client.
@@ -26,11 +26,8 @@ Identity verification, trust decisions, account membership, encrypted session au
 
 Support is per mode and role, not simply per platform name. A device might present an image without being able to create a virtual display, or accept control without being able to capture global input. Hardware, OS restrictions, and permissions determine the available operations.
 
-The current protocol negotiates its implemented capabilities. There is no implemented display-capability negotiation or completed cross-platform key mapping. Documentation must not imply that every device supports every role or that a missing adapter can be enabled with a setting.
+The current protocol negotiates its implemented capabilities. There is no implemented display-capability negotiation or completed cross-platform key mapping. Available roles depend on implemented adapters and OS capabilities.
 
-## Reading implementation details
-
-Pages for macOS permissions, native input behavior, signing, and release tooling are concrete adapter references. Their OS APIs, shortcuts, and installation commands apply to that implementation. They do not define requirements for all future devices. See the [code map](code-map.md) for the shared engine and macOS source boundaries.
 
 ---
 

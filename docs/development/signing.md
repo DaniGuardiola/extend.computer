@@ -3,7 +3,7 @@
 [← Desktop development](desktop.md) · [Contents](../README.md) · [CLI operation →](../operations/cli.md)
 
 > [!NOTE]
-> This chapter documents the current **macOS development signing**. Equivalent workflows for other platforms are **not supported yet**; these OS-specific details do not define the whole product.
+> macOS only. Other platform adapters are **not supported yet**.
 
 Use `npm run desktop:build:dev` from `desktop/` (quit extend.computer first). This builds the native helper and a debug app with `dev-identity`, then signs its libraries, helper, and outer bundle using one persistent local certificate. `npm run desktop:dev` also opens the built app. The installed development bundle is `target/development/extend.computer.app`.
 

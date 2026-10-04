@@ -3,7 +3,7 @@
 [← macOS permissions](../architecture/macos-permissions.md) · [Contents](../README.md) · [Development signing →](signing.md)
 
 > [!NOTE]
-> This chapter documents the current **macOS development workflow**. Equivalent workflows for other platforms are **not supported yet**; these OS-specific details do not define the whole product.
+> macOS only. Other platform adapters are **not supported yet**.
 
 The desktop uses Tauri 2, React, Tailwind CSS, Ariakit controls, and native macOS helpers. Production and development have separate application identities and data profiles.
 
@@ -22,7 +22,7 @@ Quit the existing app and stop input sharing before rebuilding. `desktop:build:d
 
 These commands explicitly enable the debug-only `dev-identity` feature. The development app uses `~/Library/Application Support/extend.computer Development` and a file identity protected by filesystem permissions. Production uses the `extend.computer` profile and Keychain identities. Production pairings and identities are not copied into development.
 
-Raw `tauri dev` is not the stable signed development-bundle workflow. Release builds reject `dev-identity`. Read the next chapter for certificate setup and permission retention.
+Raw `tauri dev` is not the stable signed development-bundle workflow. Release builds reject `dev-identity`.
 
 ## Desktop behavior
 
