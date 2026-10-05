@@ -17,7 +17,7 @@ npm run desktop:dev --prefix desktop
 
 The root npm workspace includes the desktop app. The website has its own
 dependencies and deployment process; see [web/README.md](web/README.md).
-See the [desktop guide](docs/archived/desktop-preview.md) for local signing, permission
+See the [desktop guide](docs/development/desktop.md) for local signing, permission
 setup, and development identities.
 
 ## Pull requests and validation
@@ -131,7 +131,7 @@ enabled. Private test releases on the current plan skip provenance. Making the
 repository public enables mandatory provenance in CI; it still needs a live
 public release verification.
 
-For the planned pre-public history and test-release reset, follow the
-[public launch checklist](docs/archived/public-launch-checklist.md). Preserve signing
+For release setup and verification, follow the
+[release guide](docs/operations/releases.md). Preserve signing
 credentials and explicitly confirm which installations and release state are
 disposable before resetting anything.
