@@ -8,11 +8,6 @@ These documents preserve design proposals, investigation evidence, and earlier m
 - [Product direction](product-direction.md)
 - [Public launch checklist](public-launch-checklist.md)
 
-## Investigations
-
-- [Duet responsiveness investigation](duet-investigation.md)
-- [Duet onboarding screenshots and assessment](research/duet-onboarding-2026-09-18/README.md)
-
 ## Historical implementation milestones
 
 - [Pairing prototype](prototype.md)
