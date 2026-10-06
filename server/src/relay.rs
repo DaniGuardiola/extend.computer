@@ -171,9 +171,11 @@ macro_rules! route {
             ws: Result<WebSocketUpgrade, axum::extract::ws::rejection::WebSocketUpgradeRejection>,
         ) -> Result<Response, ApiError> {
             if !server.config.relay_enabled {
-                return Ok((StatusCode::SERVICE_UNAVAILABLE, Json(json!({
+                let mut response = (StatusCode::SERVICE_UNAVAILABLE, Json(json!({
                     "code": "relay_disabled", "error": "Relay is disabled", "relay_enabled": false
-                }))).into_response());
+                }))).into_response();
+                response.headers_mut().insert("x-extend-relay-enabled", "false".parse().unwrap());
+                return Ok(response);
             }
             let ws = ws.map_err(|_| ApiError::bad("WebSocket required"))?;
             upgrade(server, headers, params, ws, $role).await

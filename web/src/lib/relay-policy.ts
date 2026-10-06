@@ -5,7 +5,7 @@ export function relayEnabled(env: object): boolean {
 export function relayDisabled(): Response {
   return Response.json(
     { code: 'relay_disabled', error: 'Relay is disabled', relay_enabled: false },
-    { status: 503, headers: { 'Cache-Control': 'no-store' } },
+    { status: 503, headers: { 'Cache-Control': 'no-store', 'X-Extend-Relay-Enabled': 'false' } },
   )
 }
 export function relayStatus(env: object): Response {

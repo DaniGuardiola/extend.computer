@@ -15,6 +15,7 @@ test('relay requires explicit opt-in and publishes uncached availability', async
 test('disabled attempts return a machine-readable response', async () => {
   const response = relayDisabled()
   assert.equal(response.status, 503)
+  assert.equal(response.headers.get('X-Extend-Relay-Enabled'), 'false')
   assert.deepEqual(await response.json(), {
     code: 'relay_disabled', error: 'Relay is disabled', relay_enabled: false,
   })

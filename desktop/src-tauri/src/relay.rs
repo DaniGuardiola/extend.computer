@@ -228,8 +228,9 @@ fn relay_disabled(error: &anyhow::Error) -> bool {
     matches!(error.downcast_ref::<tungstenite::Error>(),
         Some(tungstenite::Error::Http(response))
         if response.status().as_u16() == 503
-            && response.body().as_ref().and_then(|body| serde_json::from_slice::<Value>(body).ok())
-                .is_some_and(|body| body["code"] == "relay_disabled"))
+            && (response.headers().get("x-extend-relay-enabled").is_some_and(|v| v == "false")
+                || response.body().as_ref().and_then(|body| serde_json::from_slice::<Value>(body).ok())
+                    .is_some_and(|body| body["code"] == "relay_disabled")))
 }
 
 fn connect(
@@ -439,7 +440,12 @@ mod tests {
                 let (mut tcp, _) = listener.accept().unwrap();
                 let mut request = [0; 4096];
                 tcp.read(&mut request).unwrap();
-                write!(tcp, "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+                let policy = if status.starts_with("503") { "X-Extend-Relay-Enabled: false\r\n" } else { "" };
+                // Deliberately split headers from body: WebSocket rejection may
+                // arrive before the JSON payload has been read.
+                write!(tcp, "HTTP/1.1 {status}\r\n{policy}Content-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len()).unwrap();
+                std::thread::sleep(Duration::from_millis(30));
+                let _ = tcp.write_all(body.as_bytes());
             }
             listener.set_nonblocking(true).unwrap();
             std::thread::sleep(Duration::from_millis(200));
