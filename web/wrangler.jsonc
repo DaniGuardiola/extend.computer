@@ -23,6 +23,7 @@
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["AccountService"] }, { "tag": "v2", "new_sqlite_classes": ["AccountRelay"] }],
   "vars": {
     "SIGNUP_ENABLED": "true",
+    "RELAY_ENABLED": "false",
     "PUBLIC_ORIGIN": "https://extend.computer",
     "EMAIL_FROM": "extend.computer <accounts@mail.extend.computer>",
   },

@@ -145,12 +145,17 @@ impl Desktop {
         let app = self.clone();
         std::thread::spawn(move || {
             let mut connected_once = false;
-            let mut retries = 0;
+            let mut retries: u32 = 0;
+            let started = Instant::now();
+            if app.account_peer_allowed(&peer).unwrap_or(false) {
+                app.account_relay.available(true);
+            }
             let result = loop {
                 let result = (|| -> Result<()> {
                     if let Some(saved) = app.devices.lock().unwrap().get(&peer) {
                         device = saved.clone();
                     }
+                    ensure!(app.store()?.peer(&peer)?.is_some(), "Device access expired");
                     let identity = app.identity()?;
                     ensure!(!cancelled.load(Ordering::SeqCst), "Connection cancelled");
                     let address = device.address.parse::<SocketAddr>()?;
@@ -179,9 +184,15 @@ impl Desktop {
                             Ok(socket) => socket,
                             Err(error) => {
                                 eprintln!(
-                                    "Local control retry failed: {error}. Using internet relay."
+                                    "Local control retry failed: {error}. Checking available routes."
                                 );
-                                app.account_tunnel(&peer, "control")?
+                                if app.account_peer_allowed(&peer)?
+                                    && app.account_relay.available(false)
+                                {
+                                    app.account_tunnel(&peer, "control")?
+                                } else {
+                                    return Err(error.into());
+                                }
                             }
                         }
                     };
@@ -216,6 +227,7 @@ impl Desktop {
                         None,
                         || {
                             connected_once = true;
+                            retries = 0;
                             app.stage(id, Phase::Connected, None);
                         },
                         || {
@@ -229,16 +241,16 @@ impl Desktop {
                 })();
                 match result {
                     Err(error)
-                        if connected_once
-                            && retries < 3
+                        if (connected_once || started.elapsed() < Duration::from_secs(30))
                             && is_connection_error(&error)
                             && !cancelled.load(Ordering::SeqCst) =>
                     {
-                        retries += 1;
+                        retries = retries.saturating_add(1);
                         if !app.prepare_reconnect(id) {
                             break Ok(());
                         }
-                        let wait = Duration::from_secs(1 << (retries - 1));
+                        let wait =
+                            Duration::from_secs((1u64 << retries.saturating_sub(1).min(3)).min(5));
                         eprintln!(
                             "Control connection lost: {error:#}. Reconnecting in {}s.",
                             wait.as_secs()

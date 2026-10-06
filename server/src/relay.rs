@@ -158,14 +158,24 @@ async fn upgrade(
         .max_frame_size(65536)
         .on_upgrade(move |socket| run(server, socket, endpoint, receive, role, channel)))
 }
+pub(super) async fn status(State(server): State<Arc<Server>>) -> Json<Value> {
+    Json(json!({"relay_enabled": server.config.relay_enabled}))
+}
+
 macro_rules! route {
     ($name:ident,$role:literal) => {
         pub(super) async fn $name(
             State(server): State<Arc<Server>>,
             headers: HeaderMap,
             Query(params): Query<Parameters>,
-            ws: WebSocketUpgrade,
+            ws: Result<WebSocketUpgrade, axum::extract::ws::rejection::WebSocketUpgradeRejection>,
         ) -> Result<Response, ApiError> {
+            if !server.config.relay_enabled {
+                return Ok((StatusCode::SERVICE_UNAVAILABLE, Json(json!({
+                    "code": "relay_disabled", "error": "Relay is disabled", "relay_enabled": false
+                }))).into_response());
+            }
+            let ws = ws.map_err(|_| ApiError::bad("WebSocket required"))?;
             upgrade(server, headers, params, ws, $role).await
         }
     };

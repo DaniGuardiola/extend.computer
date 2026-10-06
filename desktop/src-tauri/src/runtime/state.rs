@@ -24,6 +24,7 @@ pub struct Session {
     pub(super) phase: Phase,
     pub(super) peer: Option<String>,
     pub(super) route: Option<&'static str>,
+    pub(super) reconnecting: bool,
 }
 impl Session {
     pub(super) fn advance(&mut self, next: Phase) -> bool {
@@ -66,6 +67,7 @@ mod tests {
                 phase: Phase::Connected,
                 peer: None,
                 route: None,
+                reconnecting: false,
             };
             assert_eq!(
                 session.advance(Phase::Connecting),
@@ -81,6 +83,7 @@ mod tests {
             phase: Phase::Connecting,
             peer: None,
             route: None,
+            reconnecting: false,
         };
         assert!(s.advance(Phase::Connected));
         assert!(s.advance(Phase::Disconnecting));
@@ -96,6 +99,7 @@ mod tests {
             phase: Phase::Connecting,
             peer: None,
             route: None,
+            reconnecting: false,
         };
         assert!(!s.advance(Phase::Connected));
         assert!(s.advance(Phase::Approval));

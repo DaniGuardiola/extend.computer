@@ -41,6 +41,7 @@ export type Snapshot = {
     phase: "connecting" | "approval" | "connected" | "disconnecting";
     peer: string | null;
     route?: "local" | "internet" | null;
+    reconnecting?: boolean;
   } | null;
   receiving: boolean;
   code: string | null;

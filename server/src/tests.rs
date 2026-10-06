@@ -62,6 +62,7 @@ fn setup() -> (tempfile::TempDir, Arc<Server>, Router) {
         &dir.path().join("server.sqlite3"),
         Config {
             signup_enabled: true,
+            relay_enabled: false,
             origin: Some("http://localhost:8080".into()),
             mfa_encryption_key: Some("12".repeat(32)),
         },
@@ -712,4 +713,18 @@ async fn second_factor_gates_sessions_and_security_changes() {
             .unwrap()
             == 0
     );
+}
+
+#[tokio::test]
+async fn disabled_relay_advertises_policy_and_rejects_all_upgrade_routes() {
+    let (_dir, _server, app) = setup();
+    let (status, body) = request(&app, "GET", "/v1/relay/status", None, json!(null)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, json!({"relay_enabled": false}));
+    for action in ["connect", "tunnel", "accept"] {
+        let (status, body) = request(&app, "GET", &format!("/v1/relay/{action}?device=test"), None, json!(null)).await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(body["code"], "relay_disabled");
+        assert_eq!(body["relay_enabled"], false);
+    }
 }

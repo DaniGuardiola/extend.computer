@@ -6,9 +6,9 @@ Signing in registers the computer's existing X25519 identity. A fresh, one-use s
 
 Verified account membership authorizes connections without an additional approval prompt. The receiver still needs Allow connections enabled and OS permissions. Membership is refreshed and expires; it is not saved as manual pairing. Signing out, removing a device, changing MFA settings, or losing membership ends account access. Manual pairings remain independent.
 
-Discovery uses IPv4 sockets to match the IPv4 listeners. Nearby connections are preferred. If a local endpoint cannot be reached, the app opens an authenticated WebSocket tunnel through the configured account server. Presence and control use the same existing Noise protocol and pin the peer fingerprint; relay routing never substitutes for identity verification.
+Discovery uses IPv4 sockets to match the IPv4 listeners. Nearby connections are preferred. The relay is disabled by default. At the start of an account connection, the app checks the server’s relay capability once and caches it through retries. When disabled or unavailable, it keeps trying the latest local address without showing relay errors. An established connection recovers from network interruptions until stopped; background discovery can repair a changed address. Presence and control use the same existing Noise protocol and pin the peer fingerprint; relay routing never substitutes for identity verification.
 
-The hosted service uses an account-specific SQLite Durable Object. Self-hosting uses the equivalent Axum WebSocket routes. Both reject unverified device sessions, isolate accounts, bound simultaneous tunnels and message size, expire abandoned offers, and recheck session revocation. No private keys or decrypted input reach the account server. Direct internet NAT traversal is future work; internet traffic currently uses the relay.
+The hosted service uses an account-specific SQLite Durable Object. Self-hosting uses the equivalent Axum WebSocket routes. Both reject unverified device sessions, isolate accounts, bound simultaneous tunnels and message size, expire abandoned offers, and recheck session revocation. No private keys or decrypted input reach the account server. Direct internet NAT traversal is future work. Relay transport is retained for a future opt-in; disabled relay routes return HTTP 503 with `code: "relay_disabled"`.
 
 ## Verification
 
@@ -20,7 +20,7 @@ cargo test --manifest-path desktop/src-tauri/Cargo.toml \
   encrypted_presence_cross_account_isolation_and_revocation -- --ignored
 ```
 
-The test creates disposable accounts. Set `EXTEND_RELAY_TEST_CLEANUP` to a temporary file to record their exact IDs for cleanup. It checks wrong-key proof rejection, one-use proofs, pinned encrypted presence and actual desktop control using fake input helpers, wrong peer identity, cross-account rejection, and logout revocation. The desktop account-control regression separately verifies connections without approval and active-session termination on sign-out.
+Enable relay explicitly on the disposable server (`EXTEND_RELAY_ENABLED=true` for Axum or `RELAY_ENABLED="true"` for the Worker). The test creates disposable accounts. Set `EXTEND_RELAY_TEST_CLEANUP` to a temporary file to record their exact IDs for cleanup. It checks wrong-key proof rejection, one-use proofs, pinned encrypted presence and actual desktop control using fake input helpers, wrong peer identity, cross-account rejection, and logout revocation. The desktop account-control regression separately verifies connections without approval and active-session termination on sign-out.
 
 ---
 

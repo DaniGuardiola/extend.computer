@@ -862,6 +862,22 @@ esac
             .is_none(),
         "Account membership must never become permanent local pairing"
     );
+    // A LAN outage longer than the old three-retry budget must retain the
+    // outgoing job and recover without relay or an approval dialog.
+    let job = sender.snapshot().unwrap().session.unwrap().id;
+    receiver.stop_receiving().unwrap();
+    wait(|| receiver.inner.lock().unwrap().listener.is_none());
+    wait(|| sender.snapshot().unwrap().session.is_some_and(|s| s.reconnecting));
+    std::thread::sleep(Duration::from_secs(9));
+    let recovering = sender.snapshot().unwrap();
+    assert_eq!(recovering.session.as_ref().unwrap().id, job);
+    assert!(recovering.session.as_ref().unwrap().reconnecting);
+    assert!(recovering.error.is_none());
+    receiver.receive_at(false, port).unwrap();
+    wait(|| sender.snapshot().unwrap().session.is_some_and(|s| s.id == job && s.phase == Phase::Connected));
+    assert_eq!(sender.inner.lock().unwrap().job.as_ref().unwrap().socket.as_ref().unwrap().peer_addr().unwrap().port(), port);
+    assert!(!sender.snapshot().unwrap().session.unwrap().reconnecting);
+    assert!(receiver.approvals.current().is_none());
     sender.disconnect();
     wait(|| {
         sender.snapshot().unwrap().session.is_none()

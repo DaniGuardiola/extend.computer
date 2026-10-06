@@ -102,6 +102,6 @@ export function openSecret(
 }
 declare global {
   interface Env {
-    MFA_ENCRYPTION_KEY?: string
+    MFA_ENCRYPTION_KEY: string
   }
 }

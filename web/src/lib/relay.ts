@@ -1,4 +1,5 @@
 //! Relay only opaque Noise transport bytes; authorization stays account/device scoped.
+import { relayEnabled, relayDisabled, relayStatus } from './relay-policy'
 import { DurableObject } from 'cloudflare:workers'
 import { createHash, randomBytes } from 'node:crypto'
 
@@ -35,6 +36,8 @@ export async function relayRequest(
   env: Env,
 ): Promise<Response> {
   const url = new URL(request.url)
+  if (url.pathname === '/v1/relay/status') return relayStatus(env)
+  if (!relayEnabled(env)) return relayDisabled()
   const raw = request.headers
     .get('Authorization')
     ?.match(/^Bearer ([a-f0-9]{64})$/)?.[1]
@@ -79,6 +82,10 @@ export class AccountRelay extends DurableObject<Env> {
     }
   }
   private async valid(ws: WebSocket, force = false): Promise<boolean> {
+    if (!relayEnabled(this.env)) {
+      this.closeChannel(ws, 1001, 'Relay disabled')
+      return false
+    }
     const a = this.attachment(ws)
     const checked = this.checked.get(a.token_hash) ?? 0
     if (!force && checked > now() - 5) return true
@@ -95,6 +102,7 @@ export class AccountRelay extends DurableObject<Env> {
     return true
   }
   async fetch(request: Request): Promise<Response> {
+    if (!relayEnabled(this.env)) return relayDisabled()
     const url = new URL(request.url)
     const raw = request.headers
       .get('Authorization')

@@ -55,7 +55,9 @@ export function DeviceRow({
       ? "Disconnecting…"
       : session?.kind === "unpair"
         ? "Unpairing…"
-        : "Connecting…";
+        : session?.reconnecting
+          ? "Reconnecting…"
+          : "Connecting…";
   const status =
     availabilityStyle[active ? "online" : peer.availability] ??
     availabilityStyle.checking;

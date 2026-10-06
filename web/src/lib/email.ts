@@ -6,7 +6,9 @@ export type EmailConfig = {
 }
 
 declare global {
-  interface Env extends EmailConfig {}
+  interface Env {
+    RESEND_API_KEY?: string
+  }
 }
 
 export function emailEnabled(env: EmailConfig): boolean {

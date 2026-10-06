@@ -476,6 +476,7 @@ impl Desktop {
                 phase: Phase::Connecting,
                 peer,
                 route: None,
+                reconnecting: false,
             },
             cancelled: cancelled.clone(),
             socket: None,
@@ -512,6 +513,9 @@ impl Desktop {
             if !j.view.advance(phase) {
                 return;
             }
+            if phase == Phase::Connected {
+                j.view.reconnecting = false;
+            }
             if let Some(peer) = peer {
                 j.view.peer = Some(peer.into());
             }
@@ -526,6 +530,7 @@ impl Desktop {
         }) else {
             return false;
         };
+        job.view.reconnecting |= job.view.phase == Phase::Connected;
         if !job.view.advance(Phase::Connecting) {
             return false;
         }

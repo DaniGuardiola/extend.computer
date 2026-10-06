@@ -20,6 +20,11 @@ async fn main() -> anyhow::Result<()> {
         &database,
         Config {
             signup_enabled,
+            relay_enabled: match std::env::var("EXTEND_RELAY_ENABLED").as_deref() {
+                Ok("true") => true,
+                Ok("false") | Err(std::env::VarError::NotPresent) => false,
+                _ => anyhow::bail!("EXTEND_RELAY_ENABLED must be true or false"),
+            },
             origin: std::env::var("EXTEND_ORIGIN").ok(),
             mfa_encryption_key: std::env::var("EXTEND_MFA_ENCRYPTION_KEY")
                 .ok()

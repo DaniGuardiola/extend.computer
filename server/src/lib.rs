@@ -38,6 +38,7 @@ const MAX_SESSIONS: i64 = 100;
 #[derive(Clone, Default)]
 pub struct Config {
     pub signup_enabled: bool,
+    pub relay_enabled: bool,
     pub origin: Option<String>,
     pub mfa_encryption_key: Option<String>,
 }
@@ -153,6 +154,7 @@ pub fn router(server: Arc<Server>) -> Router {
         .merge(auth)
         .route("/healthz", get(|| async { Json(json!({"status": "ok"})) }))
         .route("/v1/server", get(server_info))
+        .route("/v1/relay/status", get(relay::status))
         .route("/v1/relay/connect", get(relay::connect))
         .route("/v1/relay/tunnel", get(relay::tunnel))
         .route("/v1/relay/accept", get(relay::accept))

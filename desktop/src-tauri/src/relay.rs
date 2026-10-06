@@ -24,6 +24,7 @@ pub struct RelayCredentials {
 pub struct Relay {
     credentials: Mutex<Option<RelayCredentials>>,
     online: AtomicBool,
+    availability: Mutex<Option<bool>>,
     connections: AtomicUsize,
 }
 struct ConnectionGuard(Arc<Relay>);
@@ -49,6 +50,7 @@ impl Relay {
                 .map(|c| (&c.server, &c.device, &c.token));
         if changed {
             self.online.store(false, Ordering::SeqCst);
+            *self.availability.lock().unwrap() = None;
         }
         *current = credentials;
     }
@@ -62,7 +64,41 @@ impl Relay {
     pub fn online(&self) -> bool {
         self.online.load(Ordering::SeqCst)
     }
+    // Cache a negative result too: discovery and LAN retries must not poll the backend.
+    // Each user-initiated account connection refreshes this once.
+    pub fn available(&self, refresh: bool) -> bool {
+        let Some(credentials) = self.credentials.lock().unwrap().clone() else {
+            return false;
+        };
+        let mut availability = self.availability.lock().unwrap();
+        if !refresh {
+            if let Some(enabled) = *availability {
+                return enabled;
+            }
+        }
+        let enabled = (|| -> Result<bool> {
+            let mut url = Url::parse(&credentials.server)?;
+            url.set_path("/v1/relay/status");
+            url.set_query(None);
+            let response = reqwest::blocking::Client::builder()
+                .timeout(Duration::from_secs(3))
+                .redirect(reqwest::redirect::Policy::none())
+                .build()?
+                .get(url)
+                .send()?
+                .error_for_status()?;
+            let response: Value = serde_json::from_reader(response.take(16 * 1024))?;
+            Ok(response["relay_enabled"] == true)
+        })()
+        .unwrap_or(false);
+        *availability = Some(enabled);
+        enabled
+    }
     pub fn tunnel(self: &Arc<Self>, peer_device: &str, kind: &str) -> Result<TcpStream> {
+        ensure!(
+            self.available(false),
+            std::io::Error::new(std::io::ErrorKind::NotConnected, "Device is not reachable")
+        );
         let guard = self.reserve()?;
         let credentials = self
             .credentials
@@ -70,11 +106,28 @@ impl Relay {
             .unwrap()
             .clone()
             .context("Sign in to connect over the internet.")?;
-        let mut ws = connect(
+        let mut ws = match connect(
             &credentials,
             "tunnel",
             &[("peer", peer_device), ("kind", kind)],
-        )?;
+        ) {
+            Ok(ws) => ws,
+            Err(error) => {
+                if relay_disabled(&error) {
+                    *self.availability.lock().unwrap() = Some(false);
+                }
+                if matches!(error.downcast_ref::<tungstenite::Error>(),
+                    Some(tungstenite::Error::Http(response)) if matches!(response.status().as_u16(), 401 | 403))
+                {
+                    bail!("Device access expired");
+                }
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::NotConnected,
+                    "Device is not reachable",
+                )
+                .into());
+            }
+        };
         ready(&mut ws)?;
         let listener = TcpListener::bind("127.0.0.1:0")?;
         let local = TcpStream::connect(listener.local_addr()?)?;
@@ -97,7 +150,7 @@ impl Relay {
                 break;
             }
             let credentials = relay.credentials.lock().unwrap().clone();
-            if let Some(credentials) = credentials {
+            if let Some(credentials) = credentials.filter(|_| relay.available(false)) {
                 let result = (|| -> Result<()> {
                     let mut ws = connect(&credentials, "connect", &[])?;
                     ready(&mut ws)?;
@@ -158,7 +211,11 @@ impl Relay {
                 })();
                 relay.online.store(false, Ordering::SeqCst);
                 if let Err(error) = result {
-                    eprintln!("Account relay disconnected: {error}");
+                    if relay_disabled(&error) {
+                        *relay.availability.lock().unwrap() = Some(false);
+                    } else {
+                        eprintln!("Account relay disconnected: {error}");
+                    }
                 }
             }
             drop(desktop);
@@ -167,6 +224,14 @@ impl Relay {
         });
     }
 }
+fn relay_disabled(error: &anyhow::Error) -> bool {
+    matches!(error.downcast_ref::<tungstenite::Error>(),
+        Some(tungstenite::Error::Http(response))
+        if response.status().as_u16() == 503
+            && response.body().as_ref().and_then(|body| serde_json::from_slice::<Value>(body).ok())
+                .is_some_and(|body| body["code"] == "relay_disabled"))
+}
+
 fn connect(
     credentials: &RelayCredentials,
     action: &str,
@@ -213,7 +278,10 @@ fn connect(
                 .max_frame_size(Some(65536)),
         ),
         None,
-    )?;
+    ).map_err(|error| match error {
+        tungstenite::HandshakeError::Failure(error) => anyhow::Error::new(error),
+        error => anyhow::anyhow!(error),
+    })?;
     match ws.get_mut() {
         MaybeTlsStream::Plain(s) => {
             s.set_read_timeout(Some(Duration::from_millis(50)))?;
@@ -320,6 +388,77 @@ mod tests {
         }
         ws.send(Message::Binary(vec![1, 2, 3].into())).unwrap();
         assert_eq!(ws.read().unwrap().into_data().as_ref(), &[4, 5]);
+        server.join().unwrap();
+    }
+    #[test]
+    fn disabled_capability_is_cached_and_tunnel_never_opens_a_socket() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let (mut tcp, _) = listener.accept().unwrap();
+            let mut request = [0; 4096];
+            let count = tcp.read(&mut request).unwrap();
+            assert!(String::from_utf8_lossy(&request[..count]).starts_with("GET /v1/relay/status "));
+            let body = r#"{"relay_enabled":false}"#;
+            write!(tcp, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+            drop(tcp);
+            listener.set_nonblocking(true).unwrap();
+            std::thread::sleep(Duration::from_millis(200));
+            assert_eq!(
+                listener.accept().unwrap_err().kind(),
+                std::io::ErrorKind::WouldBlock
+            );
+        });
+        let relay = Arc::new(Relay::default());
+        relay.configure(Some(RelayCredentials {
+            server: format!("http://{address}"),
+            device: "test".into(),
+            token: "secret".into(),
+        }));
+        assert!(!relay.available(true));
+        for _ in 0..5 {
+            assert!(!relay.available(false));
+            let error = relay.tunnel("peer", "control").unwrap_err();
+            assert!(extend_computer_agent::error::is_connection_failure(&error));
+            assert!(!error.to_string().to_lowercase().contains("relay"));
+        }
+        server.join().unwrap();
+    }
+    #[test]
+    fn disabling_relay_after_capability_check_stops_further_attempts() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            for (status, body) in [
+                ("200 OK", r#"{"relay_enabled":true}"#),
+                (
+                    "503 Service Unavailable",
+                    r#"{"code":"relay_disabled","relay_enabled":false}"#,
+                ),
+            ] {
+                let (mut tcp, _) = listener.accept().unwrap();
+                let mut request = [0; 4096];
+                tcp.read(&mut request).unwrap();
+                write!(tcp, "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+            }
+            listener.set_nonblocking(true).unwrap();
+            std::thread::sleep(Duration::from_millis(200));
+            assert_eq!(
+                listener.accept().unwrap_err().kind(),
+                std::io::ErrorKind::WouldBlock
+            );
+        });
+        let relay = Arc::new(Relay::default());
+        relay.configure(Some(RelayCredentials {
+            server: format!("http://{address}"),
+            device: "test".into(),
+            token: "secret".into(),
+        }));
+        assert!(relay.available(true));
+        let error = relay.tunnel("peer", "control").unwrap_err();
+        assert!(extend_computer_agent::error::is_connection_failure(&error));
+        assert!(!relay.available(false));
+        assert!(relay.tunnel("peer", "control").is_err());
         server.join().unwrap();
     }
     fn api(server: &str, path: &str, token: Option<&str>, value: Value) -> (u16, Value) {

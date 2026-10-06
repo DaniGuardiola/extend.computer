@@ -76,9 +76,9 @@ The desktop app treats verified same-account identities as temporary peers. Memb
 
 ## Internet connections
 
-The app first tries a local connection, then uses an authenticated WebSocket relay when the local endpoint is unreachable. The relay forwards opaque bytes from the existing pinned Noise connection; it cannot decrypt mouse, keyboard, or screen data. It accepts only verified devices in the same account. Revoked or expired credentials close active tunnels; the server rechecks them every five seconds. Configure the HTTPS reverse proxy to forward WebSocket upgrades for `/v1/relay/*`.
+Relay is disabled by default. Set `EXTEND_RELAY_ENABLED=true` to enable it on a self-hosted server. `GET /v1/relay/status` publishes `{ "relay_enabled": false }`; disabled relay attempts return HTTP 503 with `code: "relay_disabled"`. Clients cache this policy through local retries and recover established connections from temporary network interruptions. When explicitly enabled, the app can use an authenticated WebSocket relay if the local endpoint is unreachable. The relay forwards opaque bytes from the existing pinned Noise connection; it cannot decrypt mouse, keyboard, or screen data. It accepts only verified devices in the same account. Revoked or expired credentials close active tunnels; the server rechecks them every five seconds. Configure the HTTPS reverse proxy to forward WebSocket upgrades for `/v1/relay/*`.
 
-The relay allows four simultaneous tunnels per account and bounds frames to 64 KiB, traffic to 2 MiB per second and 2,000 frames per second. Pending tunnels expire after 30 seconds. Connections currently expire after one hour. Direct internet NAT traversal is not implemented; internet connections use the relay. Official hosting uses a SQLite Durable Object with WebSocket hibernation on Cloudflare's free plan, subject to its usage quotas.
+The relay allows four simultaneous tunnels per account and bounds frames to 64 KiB, traffic to 2 MiB per second and 2,000 frames per second. Pending tunnels expire after 30 seconds. Connections currently expire after one hour. Direct internet NAT traversal is not implemented. Internet connections require explicitly enabling the relay. Official hosting uses a SQLite Durable Object with WebSocket hibernation on Cloudflare's free plan, subject to its usage quotas.
 
 ## Desktop integration
 
