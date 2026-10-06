@@ -72,6 +72,13 @@ pub struct Peer {
     pub address: String,
     pub edge: String,
     pub availability: presence::Availability,
+    pub trust_source: TrustSource,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TrustSource {
+    Pairing,
+    Account,
 }
 #[derive(Clone, Serialize)]
 pub struct Notification {
@@ -303,7 +310,8 @@ impl Desktop {
         })
     }
     pub fn snapshot(&self) -> Result<Snapshot> {
-        let records = self.store()?.load()?;
+        let store = self.store()?;
+        let records = store.load()?;
         let devices = self.devices.lock().unwrap();
         let removals = self.removals.lock().unwrap();
         let removed_peers = devices
@@ -323,9 +331,14 @@ impl Desktop {
             .peers
             .into_iter()
             .filter(|(id, _)| !records.revoked.contains(id))
-            .map(|(id, _)| {
+            .map(|(id, _)| -> Result<Peer> {
                 let d = devices.get(&id);
-                Peer {
+                let trust_source = if store.is_account_peer(&id)? {
+                    TrustSource::Account
+                } else {
+                    TrustSource::Pairing
+                };
+                Ok(Peer {
                     name: d
                         .map(|d| d.name.clone())
                         .unwrap_or_else(|| format!("Device {}", &id[..8.min(id.len())])),
@@ -338,10 +351,11 @@ impl Desktop {
                         .get(&id)
                         .map(|h| h.state())
                         .unwrap_or(presence::Availability::Checking),
+                    trust_source,
                     id,
-                }
+                })
             })
-            .collect();
+            .collect::<Result<_>>()?;
         drop(devices);
         let inner = self.inner.lock().unwrap();
         if let Some(job) = &inner.job {
@@ -461,6 +475,7 @@ impl Desktop {
                 kind,
                 phase: Phase::Connecting,
                 peer,
+                route: None,
             },
             cancelled: cancelled.clone(),
             socket: None,
@@ -475,6 +490,14 @@ impl Desktop {
             "Session cancelled"
         );
         j.socket = Some(socket.try_clone()?);
+        if matches!(j.view.kind, SessionKind::Incoming | SessionKind::Outgoing) {
+            j.view.route = Some(if socket.peer_addr()?.ip().is_loopback() {
+                "internet"
+            } else {
+                "local"
+            });
+            eprintln!("Control transport: {}", j.view.route.unwrap());
+        }
         Ok(())
     }
     fn stage(&self, id: u64, phase: Phase, peer: Option<&str>) {
@@ -506,12 +529,16 @@ impl Desktop {
         if !job.view.advance(Phase::Connecting) {
             return false;
         }
+        job.view.route = None;
         if let Some(socket) = job.socket.take() {
             let _ = socket.shutdown(Shutdown::Both);
         }
         true
     }
     fn finish(&self, id: u64, result: Result<()>) {
+        if let Err(error) = &result {
+            eprintln!("Connection job {id} ended: {error:#}");
+        }
         #[cfg(any(test, debug_assertions))]
         eprintln!(
             "job {id} finished: {}",

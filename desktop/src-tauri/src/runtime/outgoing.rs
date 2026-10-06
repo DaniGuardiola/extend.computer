@@ -158,9 +158,32 @@ impl Desktop {
                         app.account_tunnel(&peer, "control")?
                     } else {
                         extend_computer_agent::low_jitter::require_ready_for_peer(address.ip())?;
-                        TcpStream::connect_timeout(&address, Duration::from_millis(700))
-                            .map_err(anyhow::Error::from)
-                            .or_else(|_| app.account_tunnel(&peer, "control"))?
+                        // A brief Wi-Fi stall should not commit the entire
+                        // session to the internet route. Retry LAN once first.
+                        let local =
+                            TcpStream::connect_timeout(&address, Duration::from_millis(700))
+                                .or_else(|error| {
+                                    eprintln!(
+                                        "Local control connection failed: {error}. Retrying LAN."
+                                    );
+                                    if cancelled.load(Ordering::SeqCst) {
+                                        return Err(error);
+                                    }
+                                    TcpStream::connect_timeout(
+                                        &address,
+                                        Duration::from_millis(1300),
+                                    )
+                                });
+                        ensure!(!cancelled.load(Ordering::SeqCst), "Connection cancelled");
+                        match local {
+                            Ok(socket) => socket,
+                            Err(error) => {
+                                eprintln!(
+                                    "Local control retry failed: {error}. Using internet relay."
+                                );
+                                app.account_tunnel(&peer, "control")?
+                            }
+                        }
                     };
                     app.set_socket(id, &socket)?;
                     let client = match Client::connect(

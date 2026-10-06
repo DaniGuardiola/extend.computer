@@ -199,6 +199,9 @@ fn connect(
         }
     }
     let socket = connection.context("Could not reach account relay")?;
+    // Input arrives as small frames. Nagle buffering here delays the encrypted
+    // bridge even though its loopback socket already has TCP_NODELAY enabled.
+    socket.set_nodelay(true)?;
     socket.set_read_timeout(Some(Duration::from_secs(8)))?;
     socket.set_write_timeout(Some(Duration::from_secs(8)))?;
     let (mut ws, _) = tungstenite::client_tls_with_config(
@@ -291,6 +294,34 @@ mod tests {
     use super::*;
     use extend_computer_agent::{identity::Identity, session::query_presence};
     use serde_json::json;
+    #[test]
+    fn relay_connection_disables_nagle_and_forwards_small_frames() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let (tcp, _) = listener.accept().unwrap();
+            let mut ws = tungstenite::accept(tcp).unwrap();
+            assert_eq!(ws.read().unwrap().into_data().as_ref(), &[1, 2, 3]);
+            ws.send(Message::Binary(vec![4, 5].into())).unwrap();
+        });
+        let mut ws = connect(
+            &RelayCredentials {
+                server: format!("http://{address}"),
+                device: "test-device".into(),
+                token: "test-token".into(),
+            },
+            "tunnel",
+            &[],
+        )
+        .unwrap();
+        match ws.get_ref() {
+            MaybeTlsStream::Plain(socket) => assert!(socket.nodelay().unwrap()),
+            _ => panic!("Expected local plaintext test transport"),
+        }
+        ws.send(Message::Binary(vec![1, 2, 3].into())).unwrap();
+        assert_eq!(ws.read().unwrap().into_data().as_ref(), &[4, 5]);
+        server.join().unwrap();
+    }
     fn api(server: &str, path: &str, token: Option<&str>, value: Value) -> (u16, Value) {
         let client = reqwest::blocking::Client::new();
         let mut request = client

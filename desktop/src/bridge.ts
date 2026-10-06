@@ -17,6 +17,7 @@ export type LocalDeviceInfo = {
 export type Device = { name: string; address: string; edge: "left" | "right" };
 export type Peer = Device & {
   id: string;
+  trust_source: "pairing" | "account";
   availability:
     "checking" | "online" | "receiving_off" | "offline" | "update_required";
 };
@@ -39,6 +40,7 @@ export type Snapshot = {
     kind: "incoming" | "outgoing" | "pair" | "unpair";
     phase: "connecting" | "approval" | "connected" | "disconnecting";
     peer: string | null;
+    route?: "local" | "internet" | null;
   } | null;
   receiving: boolean;
   code: string | null;

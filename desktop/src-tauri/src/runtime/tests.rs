@@ -761,6 +761,49 @@ fn custom_local_name_persists_and_resets_without_changing_identity() {
 }
 
 #[test]
+fn snapshot_distinguishes_account_access_from_direct_pairing() {
+    let temp = tempfile::tempdir().unwrap();
+    let app = Desktop::new(temp.path().join("app"), temp.path().join("helper")).unwrap();
+    app.set_test_identity(Identity::generate());
+    let paired = "a".repeat(64);
+    let account = "b".repeat(64);
+    let both = "c".repeat(64);
+    app.store().unwrap().remember(&paired).unwrap();
+    app.store().unwrap().remember(&both).unwrap();
+    app.sync_account_peers(
+        "server/account",
+        &[
+            serde_json::json!({"id":"account", "fingerprint":account, "key_verified":true}),
+            serde_json::json!({"id":"both", "fingerprint":both, "key_verified":true}),
+        ],
+    )
+    .unwrap();
+
+    let snapshot = app.snapshot().unwrap();
+    let sources: BTreeMap<_, _> = snapshot
+        .peers
+        .iter()
+        .map(|peer| (peer.id.clone(), peer.trust_source))
+        .collect();
+    assert_eq!(sources.len(), 3);
+    assert_eq!(sources[&paired], TrustSource::Pairing);
+    assert_eq!(sources[&account], TrustSource::Account);
+    assert_eq!(sources[&both], TrustSource::Pairing);
+    let serialized = serde_json::to_value(&snapshot).unwrap();
+    assert_eq!(serialized["peers"][0]["trust_source"], "pairing");
+    assert_eq!(serialized["peers"][1]["trust_source"], "account");
+
+    app.clear_account_peers();
+    let snapshot = app.snapshot().unwrap();
+    assert_eq!(snapshot.peers.len(), 2);
+    assert!(snapshot
+        .peers
+        .iter()
+        .all(|peer| peer.trust_source == TrustSource::Pairing));
+    assert!(!snapshot.peers.iter().any(|peer| peer.id == account));
+}
+
+#[test]
 #[cfg(unix)]
 fn account_control_connects_without_approval_and_ends_on_signout() {
     use std::os::unix::fs::PermissionsExt;

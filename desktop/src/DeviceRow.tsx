@@ -92,10 +92,12 @@ export function DeviceRow({
                   />
                 }
               >
-                Paired
+                {peer.trust_source === "account" ? "Account" : "Paired"}
               </TooltipAnchor>
               <Tooltip className="explanation-tooltip">
-                Paired directly with this device. No account required.
+                {peer.trust_source === "account"
+                  ? "Signed in to the same account."
+                  : "Paired directly with this device. No account required."}
               </Tooltip>
             </TooltipProvider>
           </div>
@@ -124,6 +126,11 @@ export function DeviceRow({
                 <Keyboard size={14} aria-hidden="true" />
                 Keyboard &amp; mouse
               </span>
+              {connected && session.route && (
+                <span>
+                  {session.route === "local" ? "Local network" : "Internet relay"}
+                </span>
+              )}
             </div>
           ) : (
             <p className="mt-1 flex min-h-7 items-center gap-1.5 text-xs text-muted">
@@ -140,7 +147,7 @@ export function DeviceRow({
                   </TooltipAnchor>
                   <Tooltip className="explanation-tooltip">
                     Open extend.computer on {peer.name} and turn on Allow
-                    connections to allow connections from paired devices.
+                    connections.
                   </Tooltip>
                 </TooltipProvider>
               ) : (
@@ -159,8 +166,7 @@ export function DeviceRow({
       </div>
       {!session && peer.availability === "update_required" && (
         <p className="px-5 pb-4 text-xs text-muted">
-          Update extend.computer on both devices to reconnect. Your pairing is
-          saved.
+          Update extend.computer on both devices to reconnect.
         </p>
       )}
       {(session || peer.availability === "online") && (
