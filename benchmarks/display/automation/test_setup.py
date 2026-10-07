@@ -1,10 +1,26 @@
-import hashlib, tempfile, unittest, zipfile
+import hashlib, subprocess, tempfile, unittest, zipfile
 from pathlib import Path
 from unittest.mock import patch
 from bootstrap import safe_zip, fetch
 from bench import select_phone, repository
 
 class SetupTests(unittest.TestCase):
+    def test_stale_ip_does_not_hide_working_mdns(self):
+        def query(argv):
+            if argv[-1]=='devices':return 'List of devices attached\n10.0.0.1:1111\tdevice\nadb-unit._adb-tls-connect._tcp\tdevice\n'
+            if argv[2]=='10.0.0.1:1111':raise subprocess.CalledProcessError(1,argv)
+            return 'same-physical-phone'
+        with patch('bench.read',side_effect=query):
+            self.assertEqual(select_phone('adb'),'adb-unit._adb-tls-connect._tcp')
+    def test_offline_transport_reconnects_once(self):
+        responses=['List of devices attached\na\toffline','reconnecting','List of devices attached\na\tdevice','same-phone']
+        with patch('bench.read',side_effect=responses) as query:
+            self.assertEqual(select_phone('adb'),'a')
+            self.assertEqual(query.call_args_list[1].args[0],['adb','reconnect','offline'])
+    def test_failed_reconnect_stops_without_looping(self):
+        with patch('bench.read',return_value='List of devices attached') as query:
+            with self.assertRaises(RuntimeError):select_phone('adb')
+            self.assertEqual(query.call_count,3)
     def test_duplicate_transports_one_phone(self):
         def query(argv):
             if argv[-1]=='devices':return 'List of devices attached\n10.0.0.1:1111\tdevice\nadb-unit._adb-tls-connect._tcp\tdevice\n'

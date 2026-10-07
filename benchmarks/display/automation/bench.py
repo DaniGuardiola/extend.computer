@@ -23,7 +23,7 @@ def repository(value,config):
     if not (path/'benchmarks/display/optical/decode.py').is_file():raise RuntimeError('Extend benchmark core missing; pass --extend-repo PATH')
     return path
 
-def select_phone(adb,explicit=None,remembered=None):
+def select_phone(adb,explicit=None,remembered=None,_recovered=False):
     listing=read([adb,'devices'])
     transports=[line.split()[0] for line in listing.splitlines()[1:] if len(line.split())>=2 and line.split()[1]=='device']
     if explicit:
@@ -33,9 +33,19 @@ def select_phone(adb,explicit=None,remembered=None):
         return explicit
     devices={}
     for transport in transports:
-        serial=read([adb,'-s',transport,'shell','getprop','ro.serialno'])
+        try:
+            serial=read([adb,'-s',transport,'shell','getprop','ro.serialno'])
+        except (OSError,subprocess.SubprocessError):
+            # A listed transport can disappear between discovery and probing.
+            # Another transport may still reach the same physical phone.
+            continue
+        if not serial:continue
         identity=hashlib.sha256((serial or transport).encode()).hexdigest()
         devices.setdefault(identity,[]).append(transport)
+    if not devices and not _recovered:
+        try:read([adb,'reconnect','offline'])
+        except (OSError,subprocess.SubprocessError):pass
+        return select_phone(adb,remembered=remembered,_recovered=True)
     if remembered:
         if remembered not in devices:raise RuntimeError('Configured phone is offline. Enable wireless debugging or pass --phone ENDPOINT')
         devices={remembered:devices[remembered]}
