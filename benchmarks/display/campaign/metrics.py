@@ -117,3 +117,27 @@ def network_delta(before,after):
             'dominant_protocol':primary['protocol'] if primary else None,'dominant_interface':primary['interface'] if primary else None,
             'stable_flow_set':set(old)=={r['flow_sha256'] for r in after['flows']},'sensor_errors':before['errors']+after['errors'],
             'limits':['Includes all selected application socket bytes, not video-only payload.','Dominant peer flow is route evidence; it does not prove every data channel uses that route.']}
+
+def classify_route(summary,evidence=None):
+    """Classify observed dominant traffic without inferring relay from a public IP."""
+    sides=[summary.get(role,{}) for role in ['source','receiver']]
+    flags=[side.get('dominant_flow_matches_peer') for side in sides]
+    result={'classification':'unknown','label':'Unknown','protocols':{role:summary.get(role,{}).get('dominant_protocol') for role in ['source','receiver']},
+            'interfaces':{role:summary.get(role,{}).get('dominant_interface') for role in ['source','receiver']},
+            'scope':'Dominant application socket traffic; not every data channel'}
+    if any(side.get('sensor_errors') for side in sides) or any(flag is None for flag in flags):
+        result['reason']='Missing or failed socket evidence on at least one host'
+    elif all(flag is True for flag in flags):
+        result.update(classification='direct_lan',label='Direct LAN',reason='Dominant flows match the opposite LAN peer on both hosts')
+    elif all(flag is False for flag in flags):
+        result.update(classification='non_lan',label='Non-LAN (relay unconfirmed)',reason='Neither dominant flow matches the LAN peer; public-address P2P is not excluded')
+        if evidence and evidence.get('kind')=='both_hosts_same_relay_endpoint':
+            matched=True
+            for role,side in zip(['source','receiver'],sides):
+                flows=side.get('flow_deltas',[])
+                primary=max(flows,key=lambda f:(f['delta']['bytes_in'] or 0)+(f['delta']['bytes_out'] or 0),default={})
+                if not primary or primary.get('flow_sha256')!=evidence.get('dominant_flow_sha256',{}).get(role):matched=False
+            if matched:result.update(classification='relay',label='Relay (confirmed)',reason='Both recorded dominant flows match separately verified sockets to the same relay endpoint',confirmation=evidence)
+    else:
+        result.update(classification='mixed',label='Mixed route evidence',reason='Source and receiver peer-match evidence disagree')
+    return result

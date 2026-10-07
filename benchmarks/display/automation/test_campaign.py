@@ -2,7 +2,7 @@ import importlib.util,json,sys,tempfile,unittest
 from pathlib import Path
 from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'campaign'))
-from metrics import optical,resources,quality,source_patch,network_delta
+from metrics import optical,resources,quality,source_patch,network_delta,classify_route
 from stages import summarize
 from compare import comparable
 from host import Session
@@ -49,6 +49,19 @@ class CampaignTests(unittest.TestCase):
         def flows(n,peer):return {'flows':[{'flow_sha256':'one','bytes_in':str(n),'bytes_out':'0','re-tx':'0','matches_peer':peer,'protocol':'udp','interface':'en0'}],'errors':[]}
         self.assertTrue(network_delta(flows(0,True),flows(2000,True))['dominant_flow_matches_peer'])
         self.assertIsNone(network_delta(flows(0,True),flows(0,True))['dominant_flow_matches_peer'])
+    def test_route_classification_requires_both_hosts(self):
+        def side(flag):return {'dominant_flow_matches_peer':flag,'sensor_errors':[]}
+        self.assertEqual(classify_route({'source':side(True),'receiver':side(True)})['classification'],'direct_lan')
+        self.assertEqual(classify_route({'source':side(False),'receiver':side(False)})['classification'],'non_lan')
+        self.assertEqual(classify_route({'source':side(True),'receiver':side(False)})['classification'],'mixed')
+        self.assertEqual(classify_route({'source':side(True)})['classification'],'unknown')
+    def test_relay_confirmation_must_match_recorded_flows(self):
+        side={'dominant_flow_matches_peer':False,'sensor_errors':[],'flow_deltas':[{'flow_sha256':'one','delta':{'bytes_in':2000,'bytes_out':0}}]}
+        summary={'source':side,'receiver':side}
+        evidence={'kind':'both_hosts_same_relay_endpoint','dominant_flow_sha256':{'source':'one','receiver':'one'}}
+        self.assertEqual(classify_route(summary,evidence)['classification'],'relay')
+        evidence['dominant_flow_sha256']['source']='other'
+        self.assertEqual(classify_route(summary,evidence)['classification'],'non_lan')
     def test_no_authentication_config_import_in_public_core(self):
         from bench import product_adapter
         with patch.dict('os.environ',{},clear=True):self.assertIsNone(product_adapter())
@@ -164,3 +177,9 @@ class CampaignOrchestrationTests(unittest.TestCase):
             self.assertIn('report.json',manifest['artifacts'])
             self.assertIn('01-static/camera/raw/video.mp4',manifest['artifacts'])
             self.assertTrue((output/'report.html').exists())
+            from routes import reclassify
+            original_video=(output/'01-static/camera/raw/video.mp4').read_bytes()
+            classified=reclassify(output)
+            self.assertTrue(all('route' in phase for phase in classified['phases']))
+            self.assertEqual((output/'01-static/camera/raw/video.mp4').read_bytes(),original_video)
+            self.assertEqual(len(list((output/'route-history').iterdir())),1)

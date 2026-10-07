@@ -6,7 +6,7 @@ sys.path.insert(0,str(HERE));sys.path.insert(0,str(HERE.parent/'automation'))
 from client import Client
 from context import host,application,sample,network,digest
 from stages import snapshot
-from metrics import resources,optical,quality,stats,source_patch,network_delta
+from metrics import resources,optical,quality,stats,source_patch,network_delta,classify_route
 from bootstrap import ROOT,build_swift
 from bench import load,save,adb_at,select_phone,phone_identity,product_adapter
 
@@ -53,12 +53,12 @@ def render(root,report):
         metrics=phase.get('optical') or {};lat=(metrics.get('screen_to_screen_transition_ms') or {}).get('median')
         source=(phase['resources']['source']['cpu_percent_one_core'] or {}).get('median');receiver=(phase['resources']['receiver']['cpu_percent_one_core'] or {}).get('median')
         def number(v):return 'unavailable' if v is None else f'{v:.2f}'
-        rows.append('<tr>'+''.join('<td>'+html.escape(str(v))+'</td>' for v in [phase['repetition'],phase['scene'],number(metrics.get('receiver_visible_hz')),number(lat),number(source),number(receiver),number(phase.get('quality',{}).get('global_optical_ssim')),phase['status']])+'</tr>')
+        rows.append('<tr>'+''.join('<td>'+html.escape(str(v))+'</td>' for v in [phase['repetition'],phase['scene'],phase.get('route',{}).get('label','Unclassified'),number(metrics.get('receiver_visible_hz')),number(lat),number(source),number(receiver),number(phase.get('quality',{}).get('global_optical_ssim')),phase['status']])+'</tr>')
     body='<html><meta charset="utf-8"><title>Display benchmark</title><style>body{font:16px system-ui;margin:40px;max-width:1100px}table{border-collapse:collapse}td,th{border:1px solid #ccc;padding:10px}pre{white-space:pre-wrap}</style>'
     status={'setup_check_passed':'Setup check passed','complete_with_declared_limits':'Benchmark completed successfully','failed':'Benchmark failed'}.get(report['status'],report['status'])
     body+='<h1>Display benchmark · '+html.escape(report['product'])+'</h1><p><strong>'+html.escape(status)+'</strong></p>'
     if report.get('failure'):body+='<p>'+html.escape(report['failure'])+'</p>'
-    body+='<table><tr><th>Repeat</th><th>Scene</th><th>Visible updates/s</th><th>Screen-to-screen median ms</th><th>Source CPU % one core</th><th>Receiver CPU % one core</th><th>Optical strip SSIM</th><th>Status</th></tr>'+''.join(rows)+'</table>'
+    body+='<table><tr><th>Repeat</th><th>Scene</th><th>Route</th><th>Visible updates/s</th><th>Screen-to-screen median ms</th><th>Source CPU % one core</th><th>Receiver CPU % one core</th><th>Optical strip SSIM</th><th>Status</th></tr>'+''.join(rows)+'</table>'
     body+='<h2>Per-scene resource, network and stage evidence</h2>'
     for phase in report['phases']:
         body+='<details><summary>'+html.escape(str(phase['repetition'])+' '+phase['scene'])+'</summary><pre>'+html.escape(json.dumps(phase,indent=2))+'</pre></details>'
@@ -206,6 +206,7 @@ def main():
                 if o and (o['terminal_receiver_stall_ms'] or 0)>1000:raise RuntimeError('Receiver stopped updating before scene completed')
                 if scene=='recovery' and (not measured.get('fault') or not measured['fault']['scope_pids']):raise RuntimeError('Recovery fault was not injected')
                 record['network_summary']={'source':network_delta(record['network']['source_start'],record['network']['source_end']),'receiver':network_delta(before_network,record['network']['receiver_end'])}
+                record['route']=classify_route(record['network_summary'])
                 cfg=record['stages']['source'].get('configuration',{})
                 codec=cfg.get('encoder_codec_fourcc')
                 if codec is not None:report['settings']['codec']={'status':'observed','fourcc':int(codec).to_bytes(4,'big').decode('ascii'),'scope':'VideoToolbox encoder created by application'}

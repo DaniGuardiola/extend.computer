@@ -81,7 +81,7 @@ def main():
         dest.write_text(json.dumps(data));dest.chmod(0o600)
         print('Benchmark source paired. Run campaign --product PRODUCT --check after connecting.')
         return
-    if len(sys.argv)>1 and sys.argv[1] in {'host','campaign','compare','launch'}:
+    if len(sys.argv)>1 and sys.argv[1] in {'host','campaign','compare','launch','classify-routes'}:
         entry=sys.argv.pop(1)
         if entry=='campaign' and Path(sys.prefix).resolve()!=(ROOT/'.venv').resolve():
             python=ROOT/'.venv/bin/python3'
@@ -90,6 +90,9 @@ def main():
         extend=repository(None,load());tools=build_swift(extend)
         import runpy
         folder=extend/'benchmarks/display/campaign';sys.path.insert(0,str(folder))
+        if entry=='classify-routes':
+            import routes
+            routes.main();return
         if entry=='host':
             import host as host_service
             host_service.main(tools/'campaign-workload',product_adapter(),ROOT/'.cache/campaign')

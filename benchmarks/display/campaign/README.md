@@ -58,6 +58,14 @@ Per-frame coordinates and tracking coverage are retained for review.
 
 Compare two completed folders using `compare LEFT RIGHT --output NEW_FOLDER`.
 
+Each scene reports its route: direct LAN when both hosts' dominant flows match
+their opposite LAN peer, non-LAN when neither matches, mixed when they disagree,
+or unknown when evidence is missing. Non-LAN alone does not prove relay use.
+Retroactively classify a stopped run with `classify-routes RUN_FOLDER`; the prior
+report is archived and original measurements remain unchanged. Optional
+`--evidence FILE` can confirm relay only when independently verified two-host
+socket hashes match that scene's recorded dominant flows.
+
 Measured: visible update cadence/gaps, paired optical transitions, synthetic
 strip quality, product CPU/memory, whole-host CPU/GPU, OS flow counters and
 available numeric frame stages. Unknown metrics stay unavailable. Recovery is a
