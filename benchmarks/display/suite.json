@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "name": "display-baseline-v2",
+  "workload_sha256": "59ddb1316bf312f323fe6586fbae79be45ad6bb09706466ab02a5c4f8d9a1be5",
+  "warmup_s": 30,
+  "settle_s": 5,
+  "measured_s": 60,
+  "scenes": [
+    "static",
+    "scroll",
+    "panel",
+    "motion"
+  ],
+  "repetitions": 3,
+  "order": "counterbalanced",
+  "required_checks": [
+    "idle_hosts",
+    "display_geometry",
+    "same_renderer",
+    "stable_route",
+    "source_cadence",
+    "build_identity"
+  ],
+  "metric_groups": [
+    "delivery",
+    "resources",
+    "network",
+    "stage_latency",
+    "physical_latency",
+    "image_quality",
+    "recovery"
+  ]
+}

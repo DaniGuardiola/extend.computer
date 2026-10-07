@@ -26,3 +26,16 @@ __pycache__/
 /desktop/src-tauri/release-info.plist
 /desktop/src-tauri/tauri.release.json
 /release-output/
+
+# Local benchmark state and private recordings.
+/benchmarks/display/automation/.cache/
+/benchmarks/display/automation/.venv/
+/benchmarks/display/automation/hosts.local.json
+/benchmarks/display/automation/runs/
+/benchmarks/display/automation/android-camera/tools/
+/benchmarks/display/automation/android-camera/classes/
+/benchmarks/display/automation/android-camera/dex/
+/benchmarks/display/automation/android-camera/*.apk
+/benchmarks/display/automation/android-camera/*.keystore
+
+/benchmarks/display/automation/android-camera/*.idsig

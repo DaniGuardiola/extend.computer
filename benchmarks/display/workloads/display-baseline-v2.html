@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Display baseline · workload v2</title>
+<style>
+  :root { color-scheme: dark; font: 14px system-ui, sans-serif; background: #111820; color: #ecf1f7; }
+  body { margin: 0; }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 18px; }
+  header b { margin-right: auto; }
+  button, select { border: 1px solid #536879; border-radius: 6px; background: #202d38; color: inherit; padding: 7px 10px; font: inherit; cursor: pointer; }
+  button:disabled { opacity: .45; cursor: default; }
+  main { display: grid; place-items: center; height: calc(100vh - 132px); min-height: 300px; }
+  canvas { display: block; background: #f4f5f6; }
+  footer { padding: 10px 18px; font-size: 12px; color: #a8bac9; }
+  #status { color: #f0f5fa; margin-bottom: 4px; }
+  #summary { white-space: pre-wrap; font: 12px ui-monospace, monospace; max-height: 260px; overflow: auto; }
+  body:fullscreen main { height: calc(100vh - 132px); }
+</style>
+<header>
+  <b>Display baseline · workload v2</b>
+  <label>Phase duration <select id="duration"><option value="30">30 seconds</option><option value="60">60 seconds</option></select></label>
+  <button id="start">Run suite</button>
+  <button id="stop" disabled>Stop</button>
+  <button id="full">Fullscreen</button>
+  <button id="flip">Input color test</button>
+  <button id="download">Save source results</button>
+</header>
+<main><canvas id="scene" aria-label="Synthetic display comparison scene"></canvas></main>
+<footer>
+  <div id="status">Ready. Move this window onto the extended display, then run the suite.</div>
+  Source callbacks describe this page only. They do not measure receiver FPS or physical display latency.
+  <div id="summary"></div>
+</footer>
+<script>
+"use strict";
+const VERSION = "display-baseline-v2";
+const WIDTH = 1024, HEIGHT = 640;
+const SCENES = ["static", "scroll", "panel", "motion"];
+const canvas = document.querySelector("canvas"), ctx = canvas.getContext("2d", {alpha: false});
+const status = document.querySelector("#status"), summary = document.querySelector("#summary");
+const results = [], flips = [];
+let running = false, cancelRequested = false, currentPhase = null, frameId = 0, flipMode = false, flipState = 0;
+let runId = null, width = WIDTH, height = HEIGHT, resizeCount = 0;
+let visibilityChanges = 0;
+document.addEventListener("visibilitychange", () => { if (running) visibilityChanges++; });
+function resize() {
+  const availableWidth = Math.max(320, innerWidth - 20);
+  const availableHeight = Math.max(240, innerHeight - 132);
+  const scale = Math.min(availableWidth / WIDTH, availableHeight / HEIGHT);
+  width = Math.round(WIDTH * scale); height = Math.round(HEIGHT * scale);
+  canvas.style.width = width + "px"; canvas.style.height = height + "px";
+  canvas.width = Math.round(width * devicePixelRatio); canvas.height = Math.round(height * devicePixelRatio);
+  if (running) resizeCount++;
+  if (!running) draw("static", 0, 0);
+}
+addEventListener("resize", resize);
+function base() {
+  ctx.setTransform(canvas.width / WIDTH, 0, 0, canvas.height / HEIGHT, 0, 0);
+  ctx.fillStyle = "#f4f5f6"; ctx.fillRect(0, 0, WIDTH, HEIGHT);
+}
+const lines = Array.from({length: 100}, (_, i) => {
+  const sample = ["The quick brown fox jumps over the lazy dog. 0123456789", "const frame = { width: 3024, height: 1900, sequence: 12345 };", "Text clarity: Il1| O0o · punctuation ,.;:!? · brackets []{}()", "Display comparison — fixed speed, fixed content, reproducible timing."][i % 4];
+  return `${String(i + 1).padStart(3, "0")}  ${sample}`;
+});
+function textPanel(x, y, w, h, offset = 0) {
+  ctx.save(); ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+  ctx.fillStyle = "#ffffff"; ctx.fillRect(x, y, w, h);
+  ctx.font = "16px ui-monospace, monospace"; ctx.textBaseline = "top";
+  for (let i = 0; i < lines.length; i++) {
+    const yy = y + 12 + i * 26 - offset;
+    if (yy > y + h || yy + 26 < y) continue;
+    if (i % 2) { ctx.fillStyle = "#edf1f4"; ctx.fillRect(x, yy - 3, w, 26); }
+    ctx.fillStyle = i % 4 === 1 ? "#14528e" : "#151b21";
+    ctx.fillText(lines[i], x + 12, yy);
+  }
+  ctx.restore(); ctx.strokeStyle = "#75838e"; ctx.lineWidth = 1; ctx.strokeRect(x, y, w, h);
+}
+function counter(id, time) {
+  ctx.fillStyle = "#101821"; ctx.fillRect(0, 576, WIDTH, 64);
+  ctx.font = "20px ui-monospace, monospace"; ctx.fillStyle = "#ffffff";
+  ctx.fillText(`SOURCE ${String(id).padStart(6, "0")}  ${time.toFixed(3)} s`, 18, 598);
+  for (let bit = 0; bit < 16; bit++) {
+    ctx.fillStyle = ((id >>> bit) & 1) ? "#ffffff" : "#000000";
+    ctx.fillRect(600 + bit * 24, 589, 20, 38);
+  }
+}
+function draw(scene, time, id) {
+  base();
+  if (scene === "static") {
+    ctx.fillStyle = "#121b24"; ctx.font = "28px system-ui, sans-serif"; ctx.fillText("Static text and detail", 28, 38);
+    for (let i = 0; i < 4; i++) {
+      ctx.font = `${12 + i * 4}px system-ui, sans-serif`;
+      ctx.fillText("Small text 0123456789 Il1 O0 []{}() — sharp edges", 28, 75 + i * 34);
+    }
+    textPanel(28, 210, 740, 330);
+    for (let i = 0; i < 100; i++) {
+      ctx.fillStyle = i % 2 ? "#ffffff" : "#000000";
+      ctx.fillRect(805 + i, 75, 1, 200);
+      ctx.fillRect(805, 300 + i, 130, 1);
+    }
+    ["#ff0000", "#00ff00", "#0000ff", "#808080"].forEach((color, i) => { ctx.fillStyle = color; ctx.fillRect(800, 435 + i * 25, 160, 25); });
+    counter(0, 0); // Static phase has no changing clock or counters.
+  } else if (scene === "scroll") {
+    textPanel(28, 24, 968, 526, (time * 180) % (26 * 70));
+    counter(id, time);
+  } else if (scene === "panel") {
+    textPanel(28, 24, 968, 526);
+    const x = 70 + ((time * 180) % 1050 < 525 ? (time * 180) % 525 : 525 - (time * 180) % 525);
+    const y = 130 + 55 * Math.sin(time * 2);
+    ctx.shadowColor = "#00000066"; ctx.shadowBlur = 12;
+    ctx.fillStyle = "#f9fafb"; ctx.fillRect(x, y, 350, 240); ctx.shadowBlur = 0;
+    ctx.fillStyle = "#24536c"; ctx.fillRect(x, y, 350, 35);
+    ctx.font = "16px system-ui, sans-serif"; ctx.fillStyle = "#ffffff"; ctx.fillText("Moving synthetic panel", x + 14, y + 8);
+    textPanel(x + 10, y + 48, 330, 182);
+    counter(id, time);
+  } else if (scene === "motion") {
+    const gradient = ctx.createLinearGradient(0, 0, WIDTH, 570);
+    gradient.addColorStop(0, "#102c68"); gradient.addColorStop(.5, "#9e386f"); gradient.addColorStop(1, "#edca70");
+    ctx.fillStyle = gradient; ctx.fillRect(0, 0, WIDTH, 576);
+    for (let row = 0; row < 12; row++) for (let col = 0; col < 20; col++) {
+      const x = (col * 58 + time * (80 + row * 7)) % (WIDTH + 60) - 30;
+      const y = row * 47 + 12 * Math.sin(time * 2 + col);
+      ctx.fillStyle = `hsl(${(col * 19 + row * 31 + time * 14) % 360} 75% 60%)`;
+      ctx.fillRect(x, y, 32, 28);
+    }
+    ctx.font = "26px system-ui, sans-serif"; ctx.fillStyle = "#ffffff";
+    ctx.fillText("Generated full-scene motion (not a video decoder test)", 24, 35);
+    counter(id, time);
+  }
+}
+function percentile(values, q) {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.max(0, Math.ceil(q * sorted.length) - 1)];
+}
+function wait(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+async function post(kind, data) {
+  try {
+    const response = await fetch("/metrics", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({kind, data})});
+    if (!response.ok) throw new Error("metrics rejected");
+  } catch (_) { summary.textContent += "\nLocal collector unavailable; use Save source results."; }
+}
+async function phase(scene, duration, measured) {
+  currentPhase = scene;
+  const started = performance.now(), startedUtc = new Date().toISOString();
+  const intervals = []; let previous = null, callbacks = 0, hidden = document.hidden;
+  const initialChanges = visibilityChanges, initialResizes = resizeCount;
+  status.textContent = `${measured ? "Measuring" : "Warm-up"}: ${scene} · ${duration}s`;
+  const environment = {viewport_width: innerWidth, viewport_height: innerHeight, canvas_pixel_width: canvas.width, canvas_pixel_height: canvas.height, device_pixel_ratio: devicePixelRatio};
+  await post("phase_start", {run_id: runId, scene, measured, started_utc: startedUtc, ...environment});
+  if (scene === "static") {
+    draw(scene, 0, 0);
+    while ((performance.now() - started) / 1000 < duration && !cancelRequested) { await wait(50); hidden ||= document.hidden; }
+  } else {
+    await new Promise(resolve => {
+      function tick(now) {
+        if (cancelRequested || now - started >= duration * 1000) { resolve(); return; }
+        if (previous !== null) intervals.push(now - previous);
+        previous = now; callbacks++; hidden ||= document.hidden;
+        draw(scene, (now - started) / 1000, ++frameId);
+        requestAnimationFrame(tick);
+      }
+      requestAnimationFrame(tick);
+    });
+  }
+  const elapsed = (performance.now() - started) / 1000;
+  const record = {run_id: runId, scene, measured, started_utc: startedUtc, elapsed_seconds: elapsed, ...environment,
+    source_callbacks: callbacks, source_callback_hz: scene === "static" ? null : callbacks / elapsed,
+    source_interval_p50_ms: percentile(intervals, .5), source_interval_p95_ms: percentile(intervals, .95),
+    source_interval_max_ms: intervals.length ? Math.max(...intervals) : null,
+    source_intervals_over_33_33_ms: intervals.filter(value => value > 33.33).length,
+    hidden_during_phase: hidden || visibilityChanges !== initialChanges,
+    resized_during_phase: resizeCount !== initialResizes, cancelled: cancelRequested};
+  if (measured) results.push(record);
+  await post("phase_end", record);
+}
+async function run(config = null) {
+  if (running) return;
+  running = true; cancelRequested = false; flipMode = false; frameId = 0;
+  runId = config?.run_id || crypto.randomUUID(); results.length = 0; summary.textContent = "";
+  document.querySelector("#start").disabled = true; document.querySelector("#stop").disabled = false;
+  document.querySelector("#duration").disabled = true;
+  const duration = config?.duration_s || Number(document.querySelector("#duration").value);
+  try {
+    await phase("motion", 30, false);
+    for (const scene of SCENES) {
+      if (cancelRequested) break;
+      await phase(scene, 5, false);
+      if (cancelRequested) break;
+      await phase(scene, duration, true);
+    }
+  } finally {
+    running = false; currentPhase = null;
+    document.querySelector("#start").disabled = false; document.querySelector("#stop").disabled = true;
+    document.querySelector("#duration").disabled = false;
+    status.textContent = cancelRequested ? "Stopped. Partial results saved." : "Finished. Source results saved locally.";
+    summary.textContent = results.map(r => `${r.scene}: ${r.source_callback_hz === null ? "static" : r.source_callback_hz.toFixed(1) + " source callbacks/s"}; source p95 ${r.source_interval_p95_ms === null ? "n/a" : r.source_interval_p95_ms.toFixed(2) + " ms"}; ${r.cancelled || r.hidden_during_phase || r.resized_during_phase ? "invalid/partial" : "complete"}`).join("\n");
+    draw("static", 0, 0);
+  }
+}
+document.querySelector("#start").onclick = () => run();
+document.querySelector("#stop").onclick = () => { cancelRequested = true; };
+document.querySelector("#full").onclick = async () => { if (document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); };
+document.querySelector("#download").onclick = () => {
+  const data = {workload_version: VERSION, source_only: true, results, input_color_events: flips};
+  const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], {type: "application/json"}));
+  const link = document.createElement("a"); link.href = url; link.download = "display-baseline-source.json"; link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+};
+document.querySelector("#flip").onclick = () => {
+  if (running) return;
+  flipMode = !flipMode;
+  status.textContent = flipMode ? "Input test: press Space to flip color. Camera timing is required for physical latency." : "Ready.";
+  draw("static", 0, 0);
+};
+addEventListener("keydown", event => {
+  if (event.code !== "Space" || !flipMode || event.repeat) return;
+  event.preventDefault(); flipState ^= 1; base();
+  ctx.fillStyle = flipState ? "#ffffff" : "#101820"; ctx.fillRect(0, 0, WIDTH, HEIGHT);
+  flips.push({source_event_ms: performance.now(), state: flipState});
+});
+// Polling uses only the local synthetic-workload server. No app control here.
+let polling = false;
+async function control() {
+  if (polling) return;
+  polling = true;
+  try {
+    const response = await fetch("/command", {cache: "no-store"});
+    const command = await response.json();
+    if (command.stop && running) cancelRequested = true;
+    if (command.run_id && !running && command.run_id !== runId) {
+      void run(command);
+    }
+  } catch (_) { /* Manual operation remains available. */ }
+  finally { polling = false; }
+}
+setInterval(control, 250);
+resize();
+</script>
+</html>
