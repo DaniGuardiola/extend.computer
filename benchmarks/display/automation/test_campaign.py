@@ -132,7 +132,29 @@ class CampaignOrchestrationTests(unittest.TestCase):
             with patch.object(campaign,'open_report') as opened,patch.object(campaign,'Client',return_value=client),patch.object(campaign,'build_swift',return_value=tools),patch.object(campaign,'application',return_value=app),patch.object(campaign,'load',return_value={}),patch.object(campaign,'save'),patch.object(campaign,'adb_at',return_value=Path('/fake/adb')),patch.object(campaign,'select_phone',return_value='test'),patch.object(campaign,'phone_identity',return_value='hash'),patch.object(campaign,'host',return_value={'model':'test'}),patch.object(campaign,'network',return_value=context['network']),patch.object(campaign,'Sampler',FakeSampler),patch.object(campaign.subprocess,'run',side_effect=command),patch.object(campaign,'source_patch',return_value=0),patch.object(campaign,'optical',return_value={'receiver_visible_hz':60,'terminal_receiver_stall_ms':0,'screen_to_screen_transition_ms':{'median':20}}),patch.object(campaign,'quality',return_value={'global_optical_ssim':1}),patch.object(campaign,'snapshot',return_value={'status':'unavailable'}),patch.object(sys,'argv',['campaign','--product','extend','--output',str(output)]):
                 with patch("builtins.print") as messages:campaign.main()
                 messages.assert_any_call("Benchmark completed successfully.",flush=True)
-            opened.assert_called_once_with(output/'report.html')
+                initial_calls=list(calls)
+                interrupted=json.loads((output/'report.json').read_text())
+                interrupted['status']='failed';interrupted['phases']=interrupted['phases'][:9]
+                campaign.write(output/'report.json',interrupted)
+                campaign.write(output/'manifest.json',{'artifacts':campaign.artifact_inventory(output)})
+                changed=json.loads(json.dumps(interrupted));changed['context']['source_display']['width']+=1
+                with self.assertRaisesRegex(RuntimeError,'geometry differs'):campaign.validate_resume(interrupted,changed,output)
+                changed=json.loads(json.dumps(interrupted));changed['context']['receiver']['application']['executable_sha256']='changed'
+                with self.assertRaisesRegex(RuntimeError,'build differs'):campaign.validate_resume(interrupted,changed,output)
+                video=output/'01-static/camera/raw/video.mp4';original=video.read_bytes();video.write_bytes(b'corrupt')
+                with self.assertRaisesRegex(RuntimeError,'integrity check failed'):campaign.validate_resume(interrupted,interrupted,output)
+                video.write_bytes(original)
+                calls.clear()
+                with patch.object(sys,'argv',['campaign','--product','extend','--resume',str(output)]),patch('builtins.print'):
+                    campaign.main()
+                self.assertEqual(calls,['baseline','warmup','static','static','scroll','panel','motion','recovery'])
+                resumed=json.loads((output/'report.json').read_text())
+                self.assertEqual(resumed['phases'][:9],interrupted['phases'])
+                self.assertEqual(resumed['resumptions'][0]['preserved_scenes'],9)
+                self.assertEqual(len(list((output/'attempts').iterdir())),6)
+                calls[:]=initial_calls
+            self.assertEqual(opened.call_count,2)
+            opened.assert_called_with(output.resolve()/'report.html')
             self.assertIn('Benchmark completed successfully',(output/'report.html').read_text())
             data=json.loads((output/'report.json').read_text());manifest=json.loads((output/'manifest.json').read_text())
             self.assertEqual(data['status'],'complete_with_declared_limits')

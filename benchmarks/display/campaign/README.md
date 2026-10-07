@@ -39,6 +39,14 @@ Successful full runs print `Benchmark completed successfully.` and exit with cod
 0. A smoke run prints `Setup check passed.`. Failed or interrupted runs exit
 nonzero and retain their report and evidence.
 
+Continue an interrupted run with `campaign --product extend --resume RUN_FOLDER`.
+Add `--check` to validate it without recording. Measured scenes are preserved
+after artifact integrity and hardware/build/geometry checks. A fresh idle baseline
+and warm-up precede only the missing scenes. Failed attempts are archived inside
+the same folder; reports disclose the separate measurement sessions. Keep the
+same camera placement and product settings. Resume inherits duration and repeats
+from the saved report. Resume does not reprocess failed footage.
+
 Results are new ignored directories under `automation/runs`, or the explicitly
 selected private runner location. Each contains report.html, report.json,
 manifest.json and original per-scene evidence. Allow about ten minutes of raw

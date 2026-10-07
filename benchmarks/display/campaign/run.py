@@ -10,7 +10,9 @@ from metrics import resources,optical,quality,stats,source_patch,network_delta
 from bootstrap import ROOT,build_swift
 from bench import load,save,adb_at,select_phone,phone_identity,product_adapter
 
-def write(path,data):path.write_text(json.dumps(data,indent=2,allow_nan=False))
+def write(path,data):
+    temporary=path.with_name(path.name+'.tmp')
+    temporary.write_text(json.dumps(data,indent=2,allow_nan=False));temporary.replace(path)
 class Sampler:
     def __init__(self,app):self.app=app;self.rows=[];self.event=threading.Event();self.thread=threading.Thread(target=self.loop,daemon=True);self.error=None
     def loop(self):
@@ -63,13 +65,52 @@ def render(root,report):
     body+='<h2>Context, baseline and evidence limits</h2><pre>'+html.escape(json.dumps({k:v for k,v in report.items() if k!='phases'},indent=2))+'</pre></html>'
     (root/'report.html').write_text(body)
 
+def validate_resume(previous,current,root):
+    if previous['product']!=current['product']:raise RuntimeError('Resume product differs')
+    if previous['status'] not in {'failed','running'}:raise RuntimeError('Only interrupted or failed campaigns can resume')
+    for key in ['renderer','seconds','repetitions','mode','workload_sha256']:
+        if previous['settings'].get(key)!=current['settings'].get(key):raise RuntimeError('Resume setting differs: '+key)
+    for role in ['source','receiver']:
+        old,new=previous['context'][role],current['context'][role]
+        for key in ['model','chip','memory_bytes','os','architecture']:
+            if old['host'].get(key)!=new['host'].get(key):raise RuntimeError('Resume hardware/OS differs: '+role+' '+key)
+        if old['application']['executable_sha256']!=new['application']['executable_sha256']:raise RuntimeError('Resume product build differs: '+role)
+        if old['host'].get('power',{}).get('source')!=new['host'].get('power',{}).get('source'):raise RuntimeError('Resume power source differs: '+role)
+    keys=['width','height','scale','pixel_width','pixel_height','refresh_hz']
+    if any(previous['context']['source_display'].get(k)!=current['context']['source_display'].get(k) for k in keys):raise RuntimeError('Resume source geometry differs')
+    def panels(report):return [{k:d.get(k) for k in keys} for d in report['context']['receiver'].get('displays',[]) if d.get('builtin')]
+    if panels(previous)!=panels(current):raise RuntimeError('Resume receiver panel differs')
+    if previous['context']['phone']!=current['context']['phone']:raise RuntimeError('Resume phone differs')
+    manifest=json.loads((root/'manifest.json').read_text())['artifacts']
+    if manifest.get('report.json')!=digest(root/'report.json'):raise RuntimeError('Resume report integrity check failed')
+    completed=set()
+    for phase in previous['phases']:
+        key=(phase['repetition'],phase['scene'])
+        if phase['status']!='measured' or key in completed:raise RuntimeError('Invalid saved scene checkpoint')
+        if key[0] not in range(1,previous['settings']['repetitions']+1) or key[1] not in {'static','scroll','panel','motion','recovery'}:raise RuntimeError('Unknown saved scene checkpoint')
+        prefix=f'{key[0]:02}-{key[1]}/'
+        artifacts={name:value for name,value in manifest.items() if name.startswith(prefix)}
+        if prefix+'source.json' not in artifacts or prefix+'camera/raw/video.mp4' not in artifacts:raise RuntimeError('Saved scene evidence missing')
+        for name,value in artifacts.items():
+            path=root/name
+            if not path.is_file() or digest(path)!=value:raise RuntimeError('Saved scene integrity check failed: '+name)
+        completed.add(key)
+    return completed
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--product',required=True,type=str);p.add_argument('--pairing',type=Path,default=ROOT/'.cache/campaign/source-pairing.json')
-    p.add_argument('--screen',default='auto');p.add_argument('--seconds',type=int,default=30);p.add_argument('--repetitions',type=int,default=3);p.add_argument('--output',type=Path)
+    p.add_argument('--screen',default='auto');p.add_argument('--seconds',type=int);p.add_argument('--repetitions',type=int);p.add_argument('--output',type=Path)
+    p.add_argument('--resume',type=Path,help='Continue a failed campaign, preserving measured scenes and old attempts')
     p.add_argument('--no-open',action='store_true',help='Do not open the HTML report automatically')
     p.add_argument('--smoke',action='store_true',help='Five-second single-scene setup check; never a comparison result');p.add_argument('--check',action='store_true');p.add_argument('--source-index',type=int,choices=[0,1],default=None)
     a=p.parse_args()
+    previous=None
+    if a.resume:
+        if a.output or a.smoke:p.error('--resume cannot be combined with --output or --smoke')
+        a.resume=a.resume.expanduser().resolve();previous=json.loads((a.resume/'report.json').read_text())
+    if a.seconds is None:a.seconds=previous['settings']['seconds'] if previous else 30
+    if a.repetitions is None:a.repetitions=previous['settings']['repetitions'] if previous else 3
     if a.smoke:a.seconds=5;a.repetitions=1
     if not 5<=a.seconds<=54 or not 1<=a.repetitions<=10:p.error('seconds must be 5..54; repetitions 1..10')
     adapter=product_adapter()
@@ -89,14 +130,14 @@ def main():
     if a.product=='extend' and any(source['application'].get(k)!=app.get(k) for k in ['version','build']):raise RuntimeError('Extend versions differ between Macs')
     helper_profiles=[h for h in source['application'].get('display_helpers',[]) if h['role']=='extend']
     print('Both hosts, source display, product builds, shared fixture and phone transport ready.',flush=True)
-    if a.check:print('Preflight only; no workload or camera recording started.');return
+    if a.check and not a.resume:print('Preflight only; no workload or camera recording started.');return
     minimum_free=2*1024**3+5*a.repetitions*(a.seconds+6)*20*1024**2
-    disk_root=(a.output.parent if a.output else Path(os.environ.get('DISPLAY_BENCH_RUNS',str(ROOT/'runs'))))
+    disk_root=(a.resume if a.resume else a.output.parent if a.output else Path(os.environ.get('DISPLAY_BENCH_RUNS',str(ROOT/'runs'))))
     while not disk_root.exists():disk_root=disk_root.parent
     if shutil.disk_usage(disk_root).free<minimum_free:raise RuntimeError(f'Insufficient free disk space; allow at least {minimum_free/1024**3:.1f} GiB for recordings and analysis')
     stamp=datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
-    root=a.output or Path(os.environ.get('DISPLAY_BENCH_RUNS',str(ROOT/'runs')))/f'{"setup-check" if a.smoke else "campaign"}-{a.product}-{stamp}-{uuid.uuid4().hex[:8]}'
-    root.mkdir(parents=True,exist_ok=False,mode=0o700)
+    root=a.resume or a.output or Path(os.environ.get('DISPLAY_BENCH_RUNS',str(ROOT/'runs')))/f'{"setup-check" if a.smoke else "campaign"}-{a.product}-{stamp}-{uuid.uuid4().hex[:8]}'
+    if not a.resume:root.mkdir(parents=True,exist_ok=False,mode=0o700)
     report={'schema_version':1,'product':a.product,'status':'running','created_utc':stamp,'context':{'source':source,'receiver':receiver,'source_display':source_display,'phone':{'model':subprocess.run([str(adb),'-s',phone,'shell','getprop','ro.product.model'],capture_output=True,text=True,check=True).stdout.strip(),'identity_sha256':config['phone_identity']}},
             'settings':{'renderer':'appkit-campaign-v1','seconds':a.seconds,'repetitions':a.repetitions,'workload_sha256':health['workload_sha256'],'mode':'extend','codec':{'status':'unavailable','reason':'No verified live codec hook supplied'},'bitrate':{'status':'unavailable','reason':'Not inferred from preferences or socket byte totals'}},'phases':[],
             'limits':['Metrics include declared observation scope.','Optical latency is screen-to-screen transition delay, not input latency; rolling-shutter row bias remains.','Optical quality includes panels and camera, not codec-only distortion.','Baseline is connected idle, not cold app-off. Recovery is a sender-process pause, not a network-link failure.']}
@@ -104,21 +145,38 @@ def main():
         report['settings']['active_display_helper']=helper_profiles[0]
         report['settings']['requested_fps']={'status':'observed_requested','fps':helper_profiles[0]['requested_fps']}
         report['settings']['bitrate']={'status':'observed_requested','bps':helper_profiles[0]['requested_bitrate_bps']}
+    completed=set();segment=root
+    if previous:
+        completed=validate_resume(previous,report,root)
+        print(f'Resume verified: {len(completed)} measured scenes retained.',flush=True)
+        if a.check:print('Preflight only; no workload or camera recording started.');return
+        segment=root/'resumptions'/f'{stamp}-{uuid.uuid4().hex[:8]}';segment.mkdir(parents=True)
+        write(segment/'previous-report.json',previous)
+        current_context=report['context'];report=previous;report['status']='running';report.pop('failure',None)
+        report.setdefault('resumptions',[]).append({'at_utc':stamp,'context':current_context,'preserved_scenes':len(completed),'segment':str(segment.relative_to(root))})
+        report['limits'].append('Campaign resumed across separate measurement sessions; fresh contexts and idle baselines retained.')
     def phase(scene,seconds):return {'id':str(uuid.uuid4()),'product':a.product,'scene':scene,'seconds':seconds,'screen':a.screen}
     try:
         print('Collecting '+('3' if a.smoke else '20')+'-second connected-idle baseline on both hosts...',flush=True)
         base=phase('baseline',3 if a.smoke else 20)
         with Sampler(app) as sampler:
             client.request('/start',base);baseline=client.wait(base['id'],base['seconds'])
-        write(root/'baseline-source.json',baseline);write(root/'baseline-receiver.json',sampler.rows)
-        report['baseline']={'definition':'Connected product, no workload; product and host process CPU, memory, sensor overhead','source':resources(baseline['rows']),'receiver':sampler.summary()}
+        write(segment/'baseline-source.json',baseline);write(segment/'baseline-receiver.json',sampler.rows)
+        baseline_summary={'definition':'Connected product, no workload; product and host process CPU, memory, sensor overhead','source':resources(baseline['rows']),'receiver':sampler.summary()}
+        if previous:report['resumptions'][-1]['baseline']=baseline_summary
+        else:report['baseline']=baseline_summary
         warm=phase('warmup',3 if a.smoke else 30);client.request('/start',warm);client.wait(warm['id'],warm['seconds'])
         for repetition in range(1,a.repetitions+1):
             # Reverse scene order each repetition to reduce ordering bias.
             scenes=['motion'] if a.smoke else ['static','scroll','panel','motion','recovery'];scenes=scenes if repetition%2 else list(reversed(scenes))
             for scene in scenes:
+                if (repetition,scene) in completed:continue
                 print(f'Repeat {repetition}/{a.repetitions}: {scene}',flush=True)
-                folder=root/f'{repetition:02}-{scene}';folder.mkdir();before_network=network(app,peer)
+                folder=root/f'{repetition:02}-{scene}'
+                if folder.exists():
+                    attempts=root/'attempts';attempts.mkdir(exist_ok=True)
+                    folder.rename(attempts/f'{folder.name}-{stamp}-{uuid.uuid4().hex[:8]}')
+                folder.mkdir();before_network=network(app,peer)
                 if not (adapter and hasattr(adapter,'focus_viewer') and adapter.focus_viewer(app,tools/'campaign-workload')):
                     viewers=[h['pid'] for h in app.get('display_helpers',[]) if h['role']=='viewer']
                     subprocess.run([str(tools/'campaign-workload'),'--activate',str(viewers[0] if len(viewers)==1 else app['main_pid'])],check=True)

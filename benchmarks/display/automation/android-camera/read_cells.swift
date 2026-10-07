@@ -91,7 +91,9 @@ while let sample=output.copyNextSampleBuffer() {
         let (r,g,b)=rgb(x,y)
         switch color {
         case 0:return r>110 && b>110 && r>g+40 && b>g+40
-        case 1:return g>110 && b>110 && g>r+20 && b>r+20 && b>g+3
+        // Cyan includes balanced green/blue. Requiring blue dominance cuts
+        // a variable edge off the marker as camera/display color shifts.
+        case 1:return g>110 && b>110 && g>r+20 && b>r+20 && abs(b-g)<80
         case 2:return r>110 && r>g+60 && r>b+45
         default:return g>110 && g>r+20 && (g>b+10 || (r>80 && b>140 && g>r+35))
         }
