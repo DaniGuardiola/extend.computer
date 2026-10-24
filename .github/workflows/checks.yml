@@ -8,7 +8,9 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: checks-${{ github.ref }}
+  # Path filters compare a push with its parent commit, so every main commit
+  # needs its own run; only superseded pull request runs are cancelled.
+  group: checks-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: true
 jobs:
   changes:
@@ -47,6 +49,7 @@ jobs:
               - 'native/*'
               - 'native/shared/**'
               - 'native/macos/**'
+              - 'native/android/engine/**'
               - 'scripts/*'
               - 'scripts/shared/**'
               - 'scripts/macos/**'
@@ -62,6 +65,7 @@ jobs:
               - '.github/workflows/release-macos.yml'
             core:
               - 'engine/**'
+              - 'native/android/engine/**'
               - '.cargo/**'
               - 'Cargo.toml'
               - 'Cargo.lock'
