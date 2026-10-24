@@ -23,3 +23,5 @@
 - [ ] Android distribution: production signing, versioned upgrade path, clean install and backup/restore checks before publishing the app.
 
 - [ ] Replace or license the website error-page media (`web/public/media/`). The 404 and error illustrations use well-known third-party memes.
+
+- [ ] Check whether display SRTP uses hardware AES in release builds. The `aes` 0.8 crate only enables ARMv8 AES instructions with `--cfg aes_armv8`, so str0m's rust-crypto SRTP may run software AES on Apple silicon and Android. Measure per-packet cost at high bitrates before changing build flags.

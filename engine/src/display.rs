@@ -39,6 +39,10 @@ fn experimental_dscp(value: Option<&str>) -> Result<Option<u32>> {
         .transpose()
 }
 
+/// Longer than any reassembly test's own deadline (see `with_test_packet_link`).
+#[cfg(test)]
+const TEST_REORDERING: Duration = Duration::from_secs(30);
+
 fn experimental_reordering(value: Option<&str>) -> Result<Duration> {
     let milliseconds = match value {
         None => 500,
@@ -717,6 +721,17 @@ impl Transport {
             Some(link),
             None,
         )
+    }
+    /// Debug-build software SRTP costs milliseconds per packet on throttled
+    /// CI cores, so a whole 400 KB test keyframe can take longer than the
+    /// 500 ms default to arrive. str0m discards a frame once its first packet
+    /// is older than the deadline, even when nothing was lost, and every
+    /// resend expires the same way. Reassembly tests use a deadline beyond
+    /// their own timeout, so any lost packet still fails them.
+    #[cfg(test)]
+    fn with_test_packet_link(codec: VideoCodec, link: Box<dyn DatagramLink>) -> Result<Self> {
+        let address = link.local_addr()?;
+        Self::configured_link(address.ip(), TEST_REORDERING, codec, Some(link), None)
     }
     fn configured_link(
         ip: IpAddr,
@@ -3235,13 +3250,13 @@ mod tests {
             let mut sender = if link_local {
                 Transport::configured_link(
                     a.ip(),
-                    Duration::from_millis(500),
+                    TEST_REORDERING,
                     codec,
                     Some(sender_link),
                     Some(b.ip()),
                 )
             } else {
-                Transport::with_packet_link(codec, sender_link)
+                Transport::with_test_packet_link(codec, sender_link)
             }
             .unwrap();
             let receiver_link = Box::new(TestPacketLink {
@@ -3254,13 +3269,13 @@ mod tests {
             let mut receiver = if link_local {
                 Transport::configured_link(
                     b.ip(),
-                    Duration::from_millis(500),
+                    TEST_REORDERING,
                     codec,
                     Some(receiver_link),
                     Some(a.ip()),
                 )
             } else {
-                Transport::with_packet_link(codec, receiver_link)
+                Transport::with_test_packet_link(codec, receiver_link)
             }
             .unwrap();
             #[cfg(target_os = "macos")]
@@ -3289,7 +3304,7 @@ mod tests {
                 vec![0, 0, 0, 1, 0x65]
             };
             bytes.extend(vec![0x88; 400_000]);
-            let deadline = Instant::now() + Duration::from_secs(5);
+            let deadline = Instant::now() + Duration::from_secs(20);
             let mut sent = false;
             loop {
                 if matches!(sender.poll().unwrap(), Some(DisplayEvent::Connected)) && !sent {

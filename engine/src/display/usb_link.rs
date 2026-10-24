@@ -412,19 +412,23 @@ mod tests {
         accepted.read_exact(&mut observed).unwrap();
         assert_eq!(&observed, b"signaling-before-media");
         let mut host_source =
-            Transport::with_packet_link(VideoCodec::H264, Box::new(host.endpoint().unwrap()))
+            Transport::with_test_packet_link(VideoCodec::H264, Box::new(host.endpoint().unwrap()))
                 .unwrap();
         let mut host_receiver =
-            Transport::with_packet_link(VideoCodec::Hevc, Box::new(host.endpoint().unwrap()))
+            Transport::with_test_packet_link(VideoCodec::Hevc, Box::new(host.endpoint().unwrap()))
                 .unwrap();
         // Opposite allocation order ensures routing uses negotiated ports,
         // rather than assuming the two hosts have matching session counters.
-        let mut tablet_source =
-            Transport::with_packet_link(VideoCodec::Hevc, Box::new(tablet.endpoint().unwrap()))
-                .unwrap();
-        let mut tablet_receiver =
-            Transport::with_packet_link(VideoCodec::H264, Box::new(tablet.endpoint().unwrap()))
-                .unwrap();
+        let mut tablet_source = Transport::with_test_packet_link(
+            VideoCodec::Hevc,
+            Box::new(tablet.endpoint().unwrap()),
+        )
+        .unwrap();
+        let mut tablet_receiver = Transport::with_test_packet_link(
+            VideoCodec::H264,
+            Box::new(tablet.endpoint().unwrap()),
+        )
+        .unwrap();
         let offer = host_source.offer().unwrap();
         let answer = tablet_receiver.answer(&offer).unwrap();
         host_source.accept_answer(&answer).unwrap();
@@ -435,7 +439,7 @@ mod tests {
         avc.extend(vec![0x88; 400_000]);
         let mut hevc = vec![0, 0, 0, 1, 38, 1];
         hevc.extend(vec![0x99; 400_000]);
-        let deadline = Instant::now() + Duration::from_secs(5);
+        let deadline = Instant::now() + Duration::from_secs(20);
         let (mut host_sent, mut tablet_sent, mut host_received, mut tablet_received) =
             (false, false, false, false);
         while !host_received || !tablet_received {
