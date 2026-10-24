@@ -1,6 +1,30 @@
 <?xml version="1.0" encoding="utf-8" standalone="yes"?><!-- sparkle-sign-warning:
 IMPORTANT: This file was signed by Sparkle. Any modifications to this file requires re-signing this file with generate_appcast or sign_update! The signed signature will be embedded at the end of this file.
---><rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0"><channel><title>extend.computer updates</title><item><title>extend.computer 0.2.1</title><sparkle:version>5</sparkle:version><sparkle:shortVersionString>0.2.1</sparkle:shortVersionString><sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion><description>&lt;h3&gt;Patch Changes&lt;/h3&gt;
+--><rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0"><channel><title>extend.computer updates</title><item><title>extend.computer 0.3.0</title><sparkle:version>9</sparkle:version><sparkle:shortVersionString>0.3.0</sparkle:shortVersionString><sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion><description>&lt;h3&gt;Minor Changes&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;a href="https://github.com/DaniGuardiola/extend.computer/commit/3b1df1762d65ed629ab5192d00247eb1507a8b66"&gt;&lt;code&gt;3b1df17&lt;/code&gt;&lt;/a&gt; Thanks &lt;a href="https://github.com/DaniGuardiola"&gt;@DaniGuardiola&lt;/a&gt;! - Add experimental macOS display extension and screen mirroring over the local network. Authenticate paired and account devices before exchanging WebRTC setup, encode and decode video with native hardware codecs, present with Metal, and release display resources when the connection ends. Use Retina capture, bounded frame queues, keyframe recovery, and adaptive bitrate to reduce latency and keep text sharp.&lt;/p&gt;
+&lt;p&gt;Service already-due WebRTC pacer timeouts in bounded batches so the application loop does not add a sleep to every video packet. This prevents large LAN frames from timing out during reassembly while preserving future pacing deadlines and regular input processing.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;a href="https://github.com/DaniGuardiola/extend.computer/commit/3b1df1762d65ed629ab5192d00247eb1507a8b66"&gt;&lt;code&gt;3b1df17&lt;/code&gt;&lt;/a&gt; Thanks &lt;a href="https://github.com/DaniGuardiola"&gt;@DaniGuardiola&lt;/a&gt;! - Connect two Macs over a USB cable. When macOS exposes USB networking for the cable, the app prefers it for paired devices, binds traffic to the cable interface so a VPN cannot redirect it, and falls back to the local network when the cable is unavailable.&lt;/p&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3&gt;Patch Changes&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;a href="https://github.com/DaniGuardiola/extend.computer/commit/3b1df1762d65ed629ab5192d00247eb1507a8b66"&gt;&lt;code&gt;3b1df17&lt;/code&gt;&lt;/a&gt; Thanks &lt;a href="https://github.com/DaniGuardiola"&gt;@DaniGuardiola&lt;/a&gt;! - Refresh the device list: show device icons from the reported hardware type, explain how each device is trusted, show connection errors in the device card, and keep long names readable with tooltips. Change stream size, frame rate limit and video quality from an active display connection&amp;#x27;s Display settings, and remember the choices for the next connection.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;a href="https://github.com/DaniGuardiola/extend.computer/commit/3b1df1762d65ed629ab5192d00247eb1507a8b66"&gt;&lt;code&gt;3b1df17&lt;/code&gt;&lt;/a&gt; Thanks &lt;a href="https://github.com/DaniGuardiola"&gt;@DaniGuardiola&lt;/a&gt;! - Find nearby paired and account devices faster by checking local routes in parallel and verifying device identity before updating the connection address. Refresh local routes when connecting and recovering from interruptions, and close stalled or cancelled checks.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;a href="https://github.com/DaniGuardiola/extend.computer/commit/9023d58fb7056b6aaa265a3831f36efd8f86bb9e"&gt;&lt;code&gt;9023d58&lt;/code&gt;&lt;/a&gt; Thanks &lt;a href="https://github.com/DaniGuardiola"&gt;@DaniGuardiola&lt;/a&gt;! - Paired devices and verified devices in the same account connect without an extra control approval prompt. Allow connections and the required OS permissions still need to be enabled on the receiving device.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;a href="https://github.com/DaniGuardiola/extend.computer/commit/0fde805cb4c76d82f754cf4f2141db78f550d39b"&gt;&lt;code&gt;0fde805&lt;/code&gt;&lt;/a&gt; Thanks &lt;a href="https://github.com/DaniGuardiola"&gt;@DaniGuardiola&lt;/a&gt;! - Show &amp;quot;USB only&amp;quot; next to Allow connections when Wi-Fi optimization is off, so it is clear why devices on the local network can&amp;#x27;t connect. Show a readable message instead of socket details when display video can&amp;#x27;t be sent.&lt;/p&gt;
+&lt;/li&gt;
+&lt;/ul&gt;</description><enclosure url="https://github.com/DaniGuardiola/extend.computer/releases/download/v0.3.0/extend.computer-0.3.0-universal.dmg" length="23534307" type="application/octet-stream" sparkle:edSignature="ui6GZw765UD4UdWVx7GSZErdfLHJH1ClXLTYphVgDx5BgHK5I44kY5IVduV4Mk6WdAeDSiLyQZsPJzeQPAaeCQ=="></enclosure></item><item><title>extend.computer 0.2.1</title><sparkle:version>5</sparkle:version><sparkle:shortVersionString>0.2.1</sparkle:shortVersionString><sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion><description>&lt;h3&gt;Patch Changes&lt;/h3&gt;
 &lt;ul&gt;
 &lt;li&gt;
 &lt;p&gt;&lt;a href="https://github.com/DaniGuardiola/extend.computer/commit/c9e43df398c9e382581829bf4f8dd590bdab9754"&gt;&lt;code&gt;c9e43df&lt;/code&gt;&lt;/a&gt; Thanks &lt;a href="https://github.com/DaniGuardiola"&gt;@DaniGuardiola&lt;/a&gt;! - Bring the desktop app to the foreground after browser sign-in. Close the browser tab when permitted, with a branded success page as a fallback.&lt;/p&gt;
@@ -16,6 +40,6 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
 &lt;li&gt;Pair Macs and share keyboard and mouse control over encrypted connections.&lt;/li&gt;
 &lt;li&gt;Manage accounts, device permissions, and local device settings.&lt;/li&gt;
 &lt;/ul&gt;</description><enclosure url="https://github.com/DaniGuardiola/extend.computer/releases/download/v0.1.0/extend.computer-0.1.0-universal.dmg" length="14141761" type="application/octet-stream" sparkle:edSignature="V4zFxK/Wkh2G2T0kNva1sHB34VuTcfCU36iA9LGGsgVllSIrelT9+cNo1pB1Hzi5IPYJ5C0dEwYGQQ3IxgAaAQ=="></enclosure></item></channel></rss><!-- sparkle-signatures:
-edSignature: EyvicaVMCi46+SlYHYjzJgWoemPK4AiVSmS4ENT9iCnUKBCzi3t2ZJ0CirS0b1Ii4m3cP7KVLBcHirdLyJTAAA==
-length: 3755
+edSignature: UX2jaYwqyMOrvW96TpzY5gVm2viGx22pA0vpcbSFRbzl9kCRUTpSXRuku6Cigay7hDsy7pCtMphFyeeXJU0tCw==
+length: 8143
 -->
