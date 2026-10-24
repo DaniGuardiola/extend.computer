@@ -1,0 +1,10 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="computer.extend.android.testime">
+  <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="36"/>
+  <application android:label="Extend test IME" android:testOnly="true" android:allowBackup="false">
+    <service android:name=".UnicodeIme" android:exported="true" android:permission="android.permission.BIND_INPUT_METHOD">
+      <intent-filter><action android:name="android.view.InputMethod"/></intent-filter>
+      <meta-data android:name="android.view.im" android:resource="@xml/input_method"/>
+    </service>
+    <receiver android:name=".CommandReceiver" android:exported="true" android:permission="android.permission.DUMP"/>
+  </application>
+</manifest>

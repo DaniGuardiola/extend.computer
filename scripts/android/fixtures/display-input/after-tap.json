@@ -1,0 +1,244 @@
+{
+  "coordinate_system": "global_point: CoreGraphics logical top-left; local_point: view logical top-left",
+  "event_limit": 1024,
+  "event_source": "native-window-events",
+  "events": [
+    {
+      "actual_display_id": 43,
+      "button": 0,
+      "click_count": 0,
+      "cocoa_global_point": {
+        "x": 2060.25,
+        "y": 738.25
+      },
+      "expected_display_id": 43,
+      "global_point": {
+        "x": 2060.25,
+        "y": 378.75
+      },
+      "kind": "move",
+      "local_point": {
+        "x": 332.25,
+        "y": 348.75
+      },
+      "momentum_phase": 0,
+      "observed_uptime_ns": 1814775276183500,
+      "phase": 0,
+      "role": "target",
+      "scroll": {
+        "dx": 0,
+        "dy": 0,
+        "precise": false
+      },
+      "sequence": 47,
+      "timestamp_ns": 1814775270340583,
+      "window_number": 115986,
+      "zone": 1
+    },
+    {
+      "actual_display_id": 43,
+      "button": 0,
+      "click_count": 0,
+      "cocoa_global_point": {
+        "x": 2060.25,
+        "y": 738.25
+      },
+      "expected_display_id": 43,
+      "global_point": {
+        "x": 2060.25,
+        "y": 378.75
+      },
+      "kind": "move",
+      "local_point": {
+        "x": 332.25,
+        "y": 348.75
+      },
+      "momentum_phase": 0,
+      "observed_uptime_ns": 1814775276259333,
+      "phase": 0,
+      "role": "target",
+      "scroll": {
+        "dx": 0,
+        "dy": 0,
+        "precise": false
+      },
+      "sequence": 48,
+      "timestamp_ns": 1814775270340583,
+      "window_number": 115986,
+      "zone": 1
+    },
+    {
+      "actual_display_id": 43,
+      "button": 0,
+      "click_count": 1,
+      "cocoa_global_point": {
+        "x": 2060.25,
+        "y": 738.25
+      },
+      "expected_display_id": 43,
+      "global_point": {
+        "x": 2060.25,
+        "y": 378.75
+      },
+      "kind": "down",
+      "local_point": {
+        "x": 332.25,
+        "y": 348.75
+      },
+      "momentum_phase": 0,
+      "observed_uptime_ns": 1814775298239916,
+      "phase": 0,
+      "role": "target",
+      "scroll": {
+        "dx": 0,
+        "dy": 0,
+        "precise": false
+      },
+      "sequence": 49,
+      "timestamp_ns": 1814775271062625,
+      "window_number": 115986,
+      "zone": 1
+    },
+    {
+      "actual_display_id": 43,
+      "button": 0,
+      "click_count": 0,
+      "cocoa_global_point": {
+        "x": 2060.25,
+        "y": 738.25
+      },
+      "expected_display_id": 43,
+      "global_point": {
+        "x": 2060.25,
+        "y": 378.75
+      },
+      "kind": "drag",
+      "local_point": {
+        "x": 332.25,
+        "y": 348.75
+      },
+      "momentum_phase": 0,
+      "observed_uptime_ns": 1814775331490666,
+      "phase": 0,
+      "role": "target",
+      "scroll": {
+        "dx": 0,
+        "dy": 0,
+        "precise": false
+      },
+      "sequence": 50,
+      "timestamp_ns": 1814775297986541,
+      "window_number": 115986,
+      "zone": 1
+    },
+    {
+      "actual_display_id": 43,
+      "button": 0,
+      "click_count": 1,
+      "cocoa_global_point": {
+        "x": 2060.25,
+        "y": 738.25
+      },
+      "expected_display_id": 43,
+      "global_point": {
+        "x": 2060.25,
+        "y": 378.75
+      },
+      "kind": "up",
+      "local_point": {
+        "x": 332.25,
+        "y": 348.75
+      },
+      "momentum_phase": 0,
+      "observed_uptime_ns": 1814775331540000,
+      "phase": 0,
+      "role": "target",
+      "scroll": {
+        "dx": 0,
+        "dy": 0,
+        "precise": false
+      },
+      "sequence": 51,
+      "timestamp_ns": 1814775298011083,
+      "window_number": 115986,
+      "zone": 1
+    }
+  ],
+  "events_dropped": 0,
+  "main_display_id": 1,
+  "sequence": 51,
+  "status": "observing",
+  "target_display_id": 43,
+  "windows": [
+    {
+      "role": "target",
+      "actual_display_id": 43,
+      "expected_display_id": 43,
+      "window_number": 115986,
+      "source_content_bounds": {
+        "height": 1170,
+        "width": 1920,
+        "x": 1728,
+        "y": 30
+      },
+      "source_display_bounds": {
+        "height": 1200,
+        "width": 1920,
+        "x": 1728,
+        "y": 0
+      },
+      "zones": [
+        {
+          "global_center": {
+            "x": 2060,
+            "y": 378.5
+          },
+          "label": "1 \u00b7 Tap",
+          "local_bounds": {
+            "height": 505,
+            "width": 616,
+            "x": 24,
+            "y": 96
+          },
+          "local_center": {
+            "x": 332,
+            "y": 348.5
+          },
+          "number": 1,
+          "source_normalized": {
+            "x": 0.17291666666666666,
+            "y": 0.3154166666666667
+          }
+        }
+      ],
+      "counters": {
+        "move": 2,
+        "down": 1,
+        "drag": 1,
+        "up": 1
+      }
+    },
+    {
+      "role": "main-guard",
+      "actual_display_id": 1,
+      "expected_display_id": 1,
+      "window_number": 115987,
+      "source_content_bounds": {
+        "height": 720,
+        "width": 1000,
+        "x": 364,
+        "y": 215
+      },
+      "source_display_bounds": {
+        "height": 1117,
+        "width": 1728,
+        "x": 0,
+        "y": 0
+      },
+      "zones": [],
+      "counters": {
+        "move": 46
+      }
+    }
+  ]
+}

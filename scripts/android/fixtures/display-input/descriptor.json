@@ -1,0 +1,24 @@
+{
+  "configuration_id": 0,
+  "display_id": 43,
+  "bounds": {
+    "height": 1200,
+    "width": 1920,
+    "x": 1728,
+    "y": 0
+  },
+  "canvas": {
+    "width": 1920,
+    "height": 1200
+  },
+  "raster": {
+    "width": 1920,
+    "height": 1200
+  },
+  "content": {
+    "x": 0,
+    "y": 0,
+    "width": 1920,
+    "height": 1200
+  }
+}

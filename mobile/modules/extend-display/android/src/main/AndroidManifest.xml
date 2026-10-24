@@ -1,0 +1,22 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <uses-feature android:name="android.hardware.usb.accessory" android:required="false"/>
+  <uses-permission android:name="android.permission.INTERNET"/>
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE"/>
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"/>
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+  <application>
+    <activity android:name="computer.extend.android.UsbAccessoryActivity" android:exported="true" android:launchMode="singleTop" android:theme="@android:style/Theme.Translucent.NoTitleBar">
+      <intent-filter><action android:name="android.hardware.usb.action.USB_ACCESSORY_ATTACHED"/><category android:name="android.intent.category.DEFAULT"/></intent-filter>
+      <meta-data android:name="android.hardware.usb.action.USB_ACCESSORY_ATTACHED" android:resource="@xml/extend_usb_accessory"/>
+    </activity>
+    <service android:name="computer.extend.android.UsbAccessoryService" android:exported="false" android:foregroundServiceType="connectedDevice"/>
+    <activity android:name="computer.extend.android.ScreenSharingActivity" android:exported="false" android:theme="@android:style/Theme.Translucent.NoTitleBar"/>
+    <service android:name="computer.extend.android.ScreenSharingService" android:exported="false" android:foregroundServiceType="mediaProjection"/>
+    <service android:name="computer.extend.android.ReceivingService" android:exported="false" android:foregroundServiceType="connectedDevice"/>
+    <service android:name="computer.extend.android.InputReceivingService" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE" android:exported="true" android:label="@string/extend_input_label">
+      <intent-filter><action android:name="android.accessibilityservice.AccessibilityService"/></intent-filter>
+      <meta-data android:name="android.accessibilityservice" android:resource="@xml/extend_input_service"/>
+    </service>
+  </application>
+</manifest>

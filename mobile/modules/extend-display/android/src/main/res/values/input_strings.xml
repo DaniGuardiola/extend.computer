@@ -1,0 +1,4 @@
+<resources>
+  <string name="extend_input_label">extend.computer input</string>
+  <string name="extend_input_description">Allow paired devices to control this Android screen and type into focused fields while Stay available and Receive keyboard and mouse are enabled. Turn either off to stop control. Accessibility content is not recorded or transmitted.</string>
+</resources>

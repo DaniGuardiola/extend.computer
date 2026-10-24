@@ -1,0 +1,25 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'computer.extend.android'
+version = '0.0.0'
+
+android {
+  namespace 'computer.extend.android.display'
+  sourceSets.main.java.srcDir('../../../../native/android/src')
+  defaultConfig {
+    minSdkVersion 29
+    versionCode 1
+    versionName '0.0.0'
+  }
+}
+
+def buildSharedEngine = tasks.register('buildSharedEngine', Exec) {
+  environment 'ANDROID_HOME', android.sdkDirectory.absolutePath
+  // Respect the exact ABI selection used for React Native packaging.
+  environment 'EXTEND_ANDROID_ARCHITECTURES', providers.gradleProperty('reactNativeArchitectures').getOrElse('arm64-v8a,x86_64')
+  commandLine 'sh', new File(projectDir, '../../../scripts/build-engine.sh').absolutePath
+}
+tasks.named('preBuild').configure { dependsOn buildSharedEngine }

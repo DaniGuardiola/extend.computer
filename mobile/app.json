@@ -1,0 +1,41 @@
+{
+  "expo": {
+    "name": "extend.computer",
+    "slug": "extend-computer",
+    "version": "0.0.0",
+    "orientation": "default",
+    "userInterfaceStyle": "automatic",
+    "scheme": "extend-computer",
+    "android": {
+      "package": "computer.extend.android.development",
+      "permissions": [
+        "INTERNET",
+        "ACCESS_WIFI_STATE",
+        "CHANGE_WIFI_MULTICAST_STATE"
+      ],
+      "predictiveBackGestureEnabled": true,
+      "allowBackup": true
+    },
+    "plugins": [
+      "expo-router",
+      "./plugins/with-account-network",
+      "./plugins/with-standalone-debuggable",
+      "./plugins/with-identity-backup",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 29,
+            "buildArchs": [
+              "arm64-v8a",
+              "x86_64"
+            ]
+          }
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
