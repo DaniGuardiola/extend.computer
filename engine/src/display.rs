@@ -1534,10 +1534,13 @@ impl Transport {
                         }
                     }
                 }
-                return Err(error).with_context(|| {
+                let local = self
+                    .socket
+                    .local_addr()
+                    .map_or_else(|_| "an unbound socket".into(), |address| address.to_string());
+                return Err(crate::wire::TransportFailure(error)).with_context(|| {
                     format!(
-                        "Display datagram send from {:?} to {destination} ({} bytes)",
-                        self.socket.local_addr(),
+                        "Display datagram send from {local} to {destination} ({} bytes)",
                         bytes.len()
                     )
                 });

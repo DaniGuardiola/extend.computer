@@ -352,7 +352,7 @@ export default function Devices() {
               ) : status.state === "receiving_off" ? (
                 <Text className="px-5 pb-4 text-sm leading-6 text-muted">
                   Open extend.computer on {device.name} and turn on Allow
-                  connections.
+                  connections. Over Wi-Fi, also check its Permissions.
                 </Text>
               ) : status.state !== "checking" ? (
                 <View className="gap-2 px-5 pb-3">

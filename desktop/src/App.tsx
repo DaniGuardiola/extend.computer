@@ -61,6 +61,7 @@ export function App() {
   };
   const [busy, setBusy] = useState(false);
   const [receivingBusy, setReceivingBusy] = useState(false);
+  const usbOnly = !!data?.receiving && !data.permissions.wifi;
   const connectionRoute = (peer?: string): "local" | "usb" =>
     data?.peers.some(
       (candidate) =>
@@ -488,6 +489,8 @@ export function App() {
           </button>
         </div>
       )}
+      {/* A USB cable keeps receiving available without Wi-Fi optimization,
+          but local-network peers then see this device as not accepting. */}
       <footer className="flex h-14 shrink-0 items-center gap-4 border-t border-line text-xs text-muted">
         <button
           className={`button -ms-3.5 ${settings ? "bg-line text-ink" : "quiet"}`}
@@ -506,15 +509,21 @@ export function App() {
           aria-disabled={!data || busy || receivingBusy}
           aria-busy={receivingBusy}
           disabled={!data || busy}
-          explanation="Allow devices to connect to and control this device."
+          explanation={
+            usbOnly
+              ? "Only devices on a USB cable can connect. Allow Wi-Fi optimization in Settings to accept connections over the local network."
+              : "Allow devices to connect to and control this device."
+          }
           className="button quiet -me-3.5 ms-auto"
           onClick={toggleReceiving}
         >
           <span
             aria-hidden="true"
-            className={`size-1.5 shrink-0 rounded-full ${data?.receiving ? "bg-emerald-500" : "bg-muted/50"}`}
+            className={`size-1.5 shrink-0 rounded-full ${usbOnly ? "bg-status-attention" : data?.receiving ? "bg-emerald-500" : "bg-muted/50"}`}
           />
-          <span className="min-w-20 text-start">Allow connections</span>
+          <span className="min-w-20 text-start">
+            Allow connections{usbOnly && " · USB only"}
+          </span>
           <span
             aria-hidden="true"
             className={`flex h-4 w-7 shrink-0 items-center rounded-full p-0.5 motion-safe:transition-colors ${data?.receiving ? "bg-emerald-600" : "bg-muted/35"}`}

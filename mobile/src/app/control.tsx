@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocalSearchParams } from "expo-router";
-import { AppState, Pressable, Text, View } from "react-native";
+import { AppState, KeyboardAvoidingView, Pressable, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Keyboard, MousePointer2 } from "lucide-react-native";
 import { display, NativeControl, type ControlStatus, type NativeInputActions } from "../../modules/extend-display";
@@ -47,7 +47,9 @@ export default function Control() {
   }
   return <SafeAreaView className="flex-1 bg-canvas">
     <Header title={name || "Keyboard & mouse"} back />
-    <View className="mx-auto w-full max-w-5xl flex-1 gap-4 px-5 pb-5">
+    {/* Edge-to-edge Android does not resize the window for the IME, so keep
+        the editing shortcuts above the remote keyboard explicitly. */}
+    <KeyboardAvoidingView behavior="padding" className="mx-auto w-full max-w-5xl flex-1 gap-4 px-5 pb-5">
       <Text accessibilityLiveRegion="polite" className="text-sm text-muted">
         {connected ? "Controlling the main screen" : status.state === "connecting" ? "Connecting…" : "Control stopped"}
       </Text>
@@ -72,6 +74,6 @@ export default function Control() {
       {connected && keyboard && status.shortcutPolicy ? <EditingShortcuts token={status.shortcutToken}
         onAction={async action => !!(status.shortcutToken && inputView.current &&
           await inputView.current.editingShortcut(status.shortcutToken, action))} /> : null}
-    </View>
+    </KeyboardAvoidingView>
   </SafeAreaView>;
 }
