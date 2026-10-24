@@ -2,3 +2,9 @@
 members = ["engine", "native/android/engine"]
 exclude = ["desktop/src-tauri", "server"]
 resolver = "2"
+
+# Dependencies (notably software AES in the SRTP stack) are far too slow
+# unoptimized for media tests to meet the transport's real 500 ms reorder
+# deadline on CI runners. Workspace crates stay unoptimized for debugging.
+[profile.dev.package."*"]
+opt-level = 3

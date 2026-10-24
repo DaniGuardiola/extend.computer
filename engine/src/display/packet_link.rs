@@ -322,7 +322,7 @@ mod tests {
                 let Some(frame) = source.take_outgoing().unwrap() else {
                     break;
                 };
-                assert!(!frame.windows(64).any(|window| window == [0x88; 64]));
+                assert!(!super::super::contains_test_plaintext(&frame));
                 for fragment in frame.chunks(7) {
                     assert_eq!(destination.receive_bytes(fragment).unwrap(), fragment.len());
                 }
@@ -333,8 +333,8 @@ mod tests {
             let b = "192.0.2.2:48180".parse().unwrap();
             let (a_link, mut a_driver) = channel(a, b).unwrap();
             let (b_link, mut b_driver) = channel(b, a).unwrap();
-            let mut sender = Transport::with_test_packet_link(codec, Box::new(a_link)).unwrap();
-            let mut receiver = Transport::with_test_packet_link(codec, Box::new(b_link)).unwrap();
+            let mut sender = Transport::with_packet_link(codec, Box::new(a_link)).unwrap();
+            let mut receiver = Transport::with_packet_link(codec, Box::new(b_link)).unwrap();
             let offer = sender.offer().unwrap();
             let answer = receiver.answer(&offer).unwrap();
             sender.accept_answer(&answer).unwrap();
@@ -343,7 +343,7 @@ mod tests {
                 _ => vec![0, 0, 0, 1, 0x65],
             };
             expected.extend(vec![0x88; 400_000]);
-            let deadline = Instant::now() + Duration::from_secs(20);
+            let deadline = Instant::now() + Duration::from_secs(5);
             let mut sent = false;
             loop {
                 transfer(&mut a_driver, &mut b_driver);
