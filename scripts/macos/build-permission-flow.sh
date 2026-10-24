@@ -30,6 +30,25 @@ PACKAGE="$ROOT/native/macos/Permissions"
 BUILD="$PACKAGE/.build/$ARCH"
 DEST="$ROOT/desktop/src-tauri/permission-resources"
 mkdir -p "$BUILD" "$DEST"
+# The vendored SwiftUI flow needs full Xcode for its macros. Skip rebuilding
+# when the existing outputs came from identical inputs, so development builds
+# work with only the Command Line Tools installed.
+STAMP="$DEST/.inputs.sha256"
+inputs=$(
+  cd "$ROOT"
+  {
+    printf '%s %s\n' "$ARCH" "${APPLE_SIGNING_IDENTITY:--}"
+    find scripts/macos/build-permission-flow.sh native/macos/Permissions/Sources \
+      native/macos/Permissions/Vendor/PermissionFlow native/macos/LowJitter/Service \
+      -type f -print0 | LC_ALL=C sort -z | xargs -0 shasum -a 256
+  } | shasum -a 256 | cut -d ' ' -f 1
+)
+if [ -f "$STAMP" ] && [ "$(cat "$STAMP")" = "$inputs" ] &&
+  [ -f "$DEST/libExtendComputerPermissions.dylib" ] && [ -f "$DEST/libPermissionFlow.dylib" ] &&
+  [ -f "$DEST/libSystemSettingsKit.dylib" ]; then
+  exit 0
+fi
+rm -f "$STAMP"
 SDK=${SDKROOT:-$(/usr/bin/xcrun --sdk macosx --show-sdk-path)}
 build_module() {
   MODULE=$1
@@ -59,3 +78,4 @@ build_module ExtendComputerPermissions "$PACKAGE"/Sources/ExtendComputerPermissi
 /usr/bin/ditto "$PACKAGE/Vendor/PermissionFlow/Sources/PermissionFlow/Resources" "$DEST/PermissionFlow_PermissionFlow.bundle"
 cp "$PACKAGE/Vendor/PermissionFlow/LICENSE" "$DEST/PermissionFlow-LICENSE"
 for library in "$DEST"/*.dylib; do /usr/bin/codesign --force --sign "${APPLE_SIGNING_IDENTITY:--}" --options runtime "$library"; done
+printf '%s\n' "$inputs" > "$STAMP"
