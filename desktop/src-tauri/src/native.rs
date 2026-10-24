@@ -16,6 +16,9 @@ pub struct Permissions {
     pub wifi_pending: bool,
     pub wifi_installing: bool,
     pub wifi_setup_failed: bool,
+    /// Cable checks skip the Wi-Fi broker, so their Wi-Fi fields carry no answer.
+    #[serde(skip)]
+    pub wifi_skipped: bool,
 }
 impl Permissions {
     pub fn can_receive(&self) -> bool {
@@ -103,6 +106,7 @@ fn permissions_from_status(
         wifi_pending: wifi_status == 2,
         wifi_installing: wifi_status == 4,
         wifi_setup_failed: wifi_status == -1 || (!usb && wifi_status == 1 && !wifi_ready),
+        wifi_skipped: usb,
     }
 }
 
@@ -120,6 +124,7 @@ mod tests {
             assert!(permissions.available && permissions.listen);
             assert_eq!(permissions.post, post);
             assert!(!permissions.wifi && !permissions.wifi_setup_failed);
+            assert!(permissions.wifi_skipped);
             assert!(!permissions.can_receive());
         }
     }

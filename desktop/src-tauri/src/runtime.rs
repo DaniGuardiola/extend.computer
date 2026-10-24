@@ -538,7 +538,16 @@ impl Desktop {
             // Callers must not authorize a fresh receive from an obsolete success.
             return Ok(self.inner.lock().unwrap().permissions.clone());
         }
-        let value = result.as_ref().cloned().unwrap_or_default();
+        let mut value = result.as_ref().cloned().unwrap_or_default();
+        if value.wifi_skipped {
+            // A cable-only check has no Wi-Fi answer. Keep the last real one so
+            // the UI and local-network presence don't flip to "not ready".
+            let previous = self.inner.lock().unwrap().permissions.clone();
+            value.wifi = previous.wifi;
+            value.wifi_pending = previous.wifi_pending;
+            value.wifi_installing = previous.wifi_installing;
+            value.wifi_setup_failed = previous.wifi_setup_failed;
+        }
         let can_receive = self.receiving_permissions(&value);
         let cancel = {
             let mut inner = self.inner.lock().unwrap();

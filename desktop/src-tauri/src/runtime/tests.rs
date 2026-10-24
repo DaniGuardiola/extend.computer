@@ -1096,6 +1096,40 @@ fn background_cable_permission_checks_preserve_native_denials_and_network_gates(
 }
 
 #[test]
+fn cable_only_permission_check_keeps_the_last_wifi_answer() {
+    let temp = tempfile::tempdir().unwrap();
+    let app = Desktop::new(temp.path().join("app"), temp.path().join("helper")).unwrap();
+    let verified = Permissions {
+        available: true,
+        post: true,
+        wifi: true,
+        ..Default::default()
+    };
+    app.apply_permissions(app.begin_permission_check(), Ok(verified))
+        .unwrap();
+    let cable_only = Permissions {
+        available: true,
+        post: true,
+        wifi_skipped: true,
+        ..Default::default()
+    };
+    let returned = app
+        .apply_permissions(app.begin_permission_check(), Ok(cable_only))
+        .unwrap();
+    assert!(!returned.wifi, "callers still see what their own check did");
+    let stored = app.inner.lock().unwrap().permissions.clone();
+    assert!(stored.wifi && stored.can_receive());
+    let revoked = Permissions {
+        available: true,
+        post: true,
+        ..Default::default()
+    };
+    app.apply_permissions(app.begin_permission_check(), Ok(revoked))
+        .unwrap();
+    assert!(!app.inner.lock().unwrap().permissions.wifi);
+}
+
+#[test]
 fn background_idle_permission_result_cannot_pause_a_new_session() {
     let temp = tempfile::tempdir().unwrap();
     let app = Desktop::new(temp.path().join("app"), temp.path().join("helper")).unwrap();
