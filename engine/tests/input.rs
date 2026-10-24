@@ -18,9 +18,13 @@ struct Observed {
 }
 struct Sink {
     allow: bool,
+    text: bool,
     state: Arc<Mutex<Observed>>,
 }
 impl CursorSink for Sink {
+    fn supports_text_input(&self) -> bool {
+        self.text
+    }
     fn start_cursor(&mut self, _: &str) -> anyhow::Result<bool> {
         Ok(true)
     }
@@ -40,6 +44,14 @@ impl CursorSink for Sink {
 }
 fn scenario(
     allow: bool,
+    action: impl FnOnce(&mut Client, &TrustStore, &str),
+    success: bool,
+) -> Vec<InputEvent> {
+    scenario_with_adapter(allow, true, action, success)
+}
+fn scenario_with_adapter(
+    allow: bool,
+    text: bool,
     action: impl FnOnce(&mut Client, &TrustStore, &str),
     success: bool,
 ) -> Vec<InputEvent> {
@@ -63,7 +75,7 @@ fn scenario(
             &store,
             &mut window,
             |_, _| Decision::Remember,
-            &mut Sink { allow, state },
+            &mut Sink { allow, text, state },
         )
         .is_ok()
     });
@@ -214,4 +226,64 @@ fn input_validation_rejects_invalid_fields() {
     ] {
         assert!(event.validate().is_err());
     }
+}
+
+#[test]
+fn committed_unicode_is_bounded_and_crosses_authenticated_input() {
+    for value in ["Aaé", "e\u{301}", "🙂", "👩‍💻", "中文"] {
+        let text = InputEvent::Text {
+            value: value.into(),
+        };
+        text.validate().unwrap();
+        let encoded = serde_json::to_vec(&text).unwrap();
+        assert_eq!(
+            serde_json::from_slice::<InputEvent>(&encoded).unwrap(),
+            text
+        );
+    }
+    for value in [
+        "".to_string(),
+        "x\0".into(),
+        "x".repeat(65),
+        "🙂".repeat(65),
+    ] {
+        assert!(InputEvent::Text { value }.validate().is_err());
+    }
+    assert!(serde_json::from_str::<InputEvent>(r#"{"kind":"text","value":"\ud800"}"#).is_err());
+    let text = InputEvent::Text {
+        value: "é🙂中文".into(),
+    };
+    let expected = text.clone();
+    let events = scenario(
+        true,
+        |c, _, _| {
+            c.request_input().unwrap();
+            assert!(c.supports_text_input());
+            c.queue_input(text).unwrap();
+            c.probe().unwrap();
+        },
+        true,
+    );
+    assert_eq!(events, vec![expected]);
+}
+
+#[test]
+fn text_encoding_without_receiving_adapter_keeps_physical_input_usable() {
+    let events = scenario_with_adapter(
+        true,
+        false,
+        |client, _, _| {
+            client.request_input().unwrap();
+            assert!(!client.supports_text_input());
+            assert!(client
+                .queue_input(InputEvent::Text {
+                    value: "é🙂".into()
+                })
+                .is_err());
+            client.queue_input(InputEvent::Release).unwrap();
+            client.probe().unwrap();
+        },
+        true,
+    );
+    assert_eq!(events, vec![InputEvent::Release]);
 }

@@ -5,6 +5,7 @@ use extend_computer_agent::{
     low_jitter::ManagedCursor,
     session::{self, CursorSink, Decision, DisplaySize},
 };
+#[cfg(test)]
 use std::net::TcpListener;
 
 #[derive(Debug)]
@@ -19,6 +20,46 @@ impl std::fmt::Display for ReceivingPermissionRequired {
 impl std::error::Error for ReceivingPermissionRequired {}
 
 impl Desktop {
+    pub(super) fn serve_usb_control(
+        self: &Arc<Self>,
+        socket: TcpStream,
+        route: &usb::Route,
+    ) -> Result<()> {
+        self.serve_pinned_control(socket, &route.peer, || route.current(self))
+    }
+    fn serve_pinned_control(
+        self: &Arc<Self>,
+        socket: TcpStream,
+        peer: &str,
+        current: impl Fn() -> bool,
+    ) -> Result<()> {
+        ensure!(current(), "USB connection was cancelled");
+        ensure!(
+            self.inner.lock().unwrap().receiving_enabled,
+            "Incoming connections are disabled"
+        );
+        let (id, cancelled) = self.reserve(SessionKind::Incoming, Some(peer.to_owned()))?;
+        let result = (|| {
+            self.set_socket_route(id, &socket, Some("usb"))?;
+            ensure!(current(), "USB connection was cancelled");
+            let mut sink = GuiSink {
+                inner: NativeSink::new(Some(self.helper.clone())),
+                app: self.clone(),
+                job: id,
+                cancelled,
+                usb: true,
+            };
+            session::serve_connection_with_cursor_pinned(
+                socket,
+                self.identity()?.as_ref(),
+                &self.store()?,
+                peer,
+                &mut sink,
+            )
+        })();
+        self.finish(id, result);
+        Ok(())
+    }
     pub fn receive(self: &Arc<Self>, pairing: bool) -> Result<()> {
         self.receive_at(pairing, 48177)
     }
@@ -37,8 +78,9 @@ impl Desktop {
             "extend.computer is closing."
         );
         if !pairing {
-            let permissions = self.refresh_permissions()?;
-            if !permissions.can_receive() {
+            let permissions =
+                self.refresh_permissions_for_route(self.usb_network_receiving_available())?;
+            if !self.receiving_permissions(&permissions) {
                 return Err(ReceivingPermissionRequired.into());
             }
         }
@@ -68,7 +110,7 @@ impl Desktop {
             }
             return Ok(());
         }
-        let listener = TcpListener::bind(("0.0.0.0", port)).context(
+        let mut listener = wired::Listeners::bind(port).context(
             "extend.computer's receiving port is in use. Close the other extend.computer receiver and try again.",
         )?;
         listener.set_nonblocking(true)?;
@@ -111,19 +153,26 @@ impl Desktop {
                         let result = (|| -> Result<()> {
                             // macOS can inherit O_NONBLOCK from the listener. The encrypted engine uses deadline-bounded blocking reads.
                             socket.set_nonblocking(false)?;
+                            extend_computer_agent::local_network::bind_stream_to_local_interface(
+                                &socket,
+                            )?;
+                            let cable = wired::socket_route(&socket) == Some("usb");
                             app.set_socket(id, &socket)?;
                             let code = app.inner.lock().unwrap().code.take();
                             let expires = code.as_ref().map(|c| c.expires);
                             let mut window = code.map(|c| c.window);
-                            let mut sink = ManagedCursor::required(
-                                GuiSink {
-                                    inner: NativeSink::new(Some(app.helper.clone())),
-                                    app: app.clone(),
-                                    job: id,
-                                    cancelled: cancelled.clone(),
-                                },
-                                address.ip(),
-                            );
+                            let sink = GuiSink {
+                                inner: NativeSink::new(Some(app.helper.clone())),
+                                app: app.clone(),
+                                job: id,
+                                cancelled: cancelled.clone(),
+                                usb: cable,
+                            };
+                            let mut sink = if cable {
+                                ManagedCursor::new(sink, address.ip(), false)
+                            } else {
+                                ManagedCursor::required(sink, address.ip())
+                            };
                             let store = app.store()?;
                             let served = session::serve_connection_with_verification(
                                 socket,
@@ -205,8 +254,16 @@ impl Desktop {
                         std::thread::sleep(Duration::from_millis(50))
                     }
                     Err(e) => {
-                        app.inner.lock().unwrap().error =
-                            Some(format!("Could not receive a connection: {e}"));
+                        let mut inner = app.inner.lock().unwrap();
+                        if inner
+                            .listener
+                            .as_ref()
+                            .is_some_and(|current| Arc::ptr_eq(current, &stop))
+                        {
+                            inner.receiving_paused(format!(
+                                "Incoming connections paused. The receiving listener failed: {e}. Retry Allow connections."
+                            ));
+                        }
                         break;
                     }
                 }
@@ -258,8 +315,15 @@ struct GuiSink {
     app: Arc<Desktop>,
     job: u64,
     cancelled: Arc<AtomicBool>,
+    usb: bool,
 }
 impl CursorSink for GuiSink {
+    fn shortcut_policy(&self) -> Option<extend_computer_agent::input::ShortcutPolicy> {
+        self.inner.shortcut_policy()
+    }
+    fn supports_text_input(&self) -> bool {
+        self.inner.supports_text_input()
+    }
     fn device_name(&self) -> Option<String> {
         Some(self.app.local_name())
     }
@@ -274,8 +338,14 @@ impl CursorSink for GuiSink {
         Ok(false)
     }
     fn start_control(&mut self, peer: &str) -> Result<bool> {
-        let permissions = self.app.refresh_permissions()?;
-        if !self.app.inner.lock().unwrap().receiving_enabled || !permissions.can_receive() {
+        let permissions = self.app.refresh_permissions_for_route(self.usb)?;
+        if !self.app.inner.lock().unwrap().receiving_enabled
+            || !(if self.usb {
+                permissions.available && permissions.post
+            } else {
+                permissions.can_receive()
+            })
+        {
             return Ok(false);
         }
         if self.app.store()?.peer(peer)?.is_none() || self.app.cancelled(self.job, &self.cancelled)
@@ -301,5 +371,93 @@ impl CursorSink for GuiSink {
     }
     fn finish(&mut self) {
         self.inner.finish();
+    }
+}
+
+#[cfg(all(test, unix))]
+mod usb_tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+    #[test]
+    fn pinned_usb_control_uses_native_ready_without_wifi_or_lan_metadata() {
+        for wrong_peer in [false, true] {
+            let files = tempfile::tempdir().unwrap();
+            let helper = files.path().join("helper");
+            std::fs::write(&helper, r#"#!/bin/sh
+case "$1" in
+status) echo 'listen=true post=true wifi=false';;
+inject-control) echo 'READY 100 100 input-text-v1'; while IFS= read -r line; do echo "$line" >> "$(dirname "$0")/events"; echo OK; done;;
+*) exit 1;;
+esac
+"#).unwrap();
+            std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o700)).unwrap();
+            let app = Desktop::new(files.path().join("receiver"), helper).unwrap();
+            app.set_test_identity(Identity::generate());
+            let expected = Identity::generate();
+            let other = Identity::generate();
+            let identity = app.identity().unwrap();
+            app.store()
+                .unwrap()
+                .remember(&expected.fingerprint())
+                .unwrap();
+            app.store().unwrap().remember(&other.fingerprint()).unwrap();
+            app.inner.lock().unwrap().receiving_enabled = true;
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let socket = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+            let accepted = listener.accept().unwrap().0;
+            let receiver = app.clone();
+            let peer = expected.fingerprint();
+            let worker =
+                std::thread::spawn(move || receiver.serve_pinned_control(accepted, &peer, || true));
+            let sender = if wrong_peer { &other } else { &expected };
+            let trust = TrustStore::open(files.path().join("sender-trust")).unwrap();
+            trust.remember(&identity.fingerprint()).unwrap();
+            let client = extend_computer_agent::session::Client::connect(
+                socket,
+                sender,
+                &trust,
+                None,
+                Some(&identity.fingerprint()),
+                |_, _| Decision::Once,
+            );
+            if wrong_peer {
+                assert!(client.is_err());
+            } else {
+                let mut client = client.unwrap();
+                assert_eq!(client.request_control().unwrap().width, 100.);
+                assert!(client.supports_text_input());
+                client
+                    .queue_input(extend_computer_agent::input::InputEvent::Text {
+                        value: "Café 👩‍💻".into(),
+                    })
+                    .unwrap();
+                client.probe().unwrap();
+                drop(client); // EOF exercises native helper teardown after actual READY.
+            }
+            worker.join().unwrap().unwrap();
+            assert!(app.inner.lock().unwrap().job.is_none());
+            assert!(app.devices.lock().unwrap().is_empty());
+            assert!(app
+                .store()
+                .unwrap()
+                .peer(&expected.fingerprint())
+                .unwrap()
+                .is_some());
+            assert!(app
+                .store()
+                .unwrap()
+                .peer(&other.fingerprint())
+                .unwrap()
+                .is_some());
+            if wrong_peer {
+                assert!(!files.path().join("events").exists());
+            } else {
+                assert!(app.inner.lock().unwrap().permissions.post);
+                assert!(!app.inner.lock().unwrap().permissions.wifi);
+                assert!(std::fs::read_to_string(files.path().join("events"))
+                    .unwrap()
+                    .contains("Café 👩‍💻"));
+            }
+        }
     }
 }

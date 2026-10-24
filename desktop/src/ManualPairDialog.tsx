@@ -62,7 +62,10 @@ export function ManualPairDialog({
             </p>
           ))}
           <div className="flex items-center justify-between">
-            <button className="button quiet" onClick={() => setMode("join")}>
+            <button
+              className="button quiet -ms-3.5"
+              onClick={() => setMode("join")}
+            >
               <ArrowLeft size={14} />
               Back
             </button>
@@ -128,7 +131,7 @@ export function ManualPairDialog({
           <div className="flex items-center justify-between pt-2">
             <button
               type="button"
-              className="button quiet"
+              className="button quiet -ms-3.5"
               disabled={busy}
               onClick={() => void showCode()}
             >

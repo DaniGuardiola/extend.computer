@@ -25,6 +25,8 @@ pub struct Session {
     pub(super) peer: Option<String>,
     pub(super) route: Option<&'static str>,
     pub(super) reconnecting: bool,
+    pub(super) display: Option<extend_computer_agent::session::display::Mode>,
+    pub(super) display_config: Option<extend_computer_agent::session::display::Config>,
 }
 impl Session {
     pub(super) fn advance(&mut self, next: Phase) -> bool {
@@ -68,6 +70,8 @@ mod tests {
                 peer: None,
                 route: None,
                 reconnecting: false,
+                display: None,
+                display_config: None,
             };
             assert_eq!(
                 session.advance(Phase::Connecting),
@@ -84,6 +88,8 @@ mod tests {
             peer: None,
             route: None,
             reconnecting: false,
+            display: None,
+            display_config: None,
         };
         assert!(s.advance(Phase::Connected));
         assert!(s.advance(Phase::Disconnecting));
@@ -100,6 +106,8 @@ mod tests {
             peer: None,
             route: None,
             reconnecting: false,
+            display: None,
+            display_config: None,
         };
         assert!(!s.advance(Phase::Connected));
         assert!(s.advance(Phase::Approval));

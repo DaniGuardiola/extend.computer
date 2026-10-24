@@ -30,7 +30,10 @@ impl Desktop {
         if self.store()?.peer(peer)?.is_none() {
             return Ok(());
         }
-        let socket = TcpStream::connect_timeout(&device.address.parse()?, Duration::from_secs(2))?;
+        let socket = extend_computer_agent::local_network::connect_timeout(
+            &device.address.parse()?,
+            Duration::from_secs(2),
+        )?;
         if let Some(job) = job {
             self.set_socket(job, &socket)?;
         }
@@ -49,7 +52,9 @@ pub(super) fn load_local_name(root: &std::path::Path) -> Result<Option<String>> 
         Ok(bytes) => {
             ensure!(bytes.len() <= 1024, "Device name is too long.");
             let name: Option<String> = serde_json::from_slice(&bytes)?;
-            if let Some(name) = &name { extend_computer_agent::session::validate_device_name(name)?; }
+            if let Some(name) = &name {
+                extend_computer_agent::session::validate_device_name(name)?;
+            }
             Ok(name)
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
@@ -58,12 +63,18 @@ pub(super) fn load_local_name(root: &std::path::Path) -> Result<Option<String>> 
 }
 impl Desktop {
     pub(super) fn local_name(&self) -> String {
-        self.local_name_override.lock().unwrap().clone().unwrap_or_else(peers::local_name)
+        self.local_name_override
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap_or_else(peers::local_name)
     }
     pub fn set_local_device_name(&self, name: String) -> Result<()> {
         use std::io::Write;
         let name = name.trim();
-        let next = if name.is_empty() { None } else {
+        let next = if name.is_empty() {
+            None
+        } else {
             extend_computer_agent::session::validate_device_name(name)?;
             Some(name.to_owned())
         };

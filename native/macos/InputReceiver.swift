@@ -5,8 +5,10 @@ import Darwin
 private final class InputReceiver {
     let source: CGEventSource
     let persistent: Bool
-    let bounds = CGDisplayBounds(CGMainDisplayID())
-    let display = CGMainDisplayID()
+    let bounds: CGRect
+    let display: CGDirectDisplayID
+    var binding: DisplayInputBinding?
+    let parent = getppid()
     let loop = CFRunLoopGetCurrent()
     var point = CGEvent(source: nil)?.location ?? .zero
     var state = InputState()
@@ -16,10 +18,15 @@ private final class InputReceiver {
     var stopped = false
     var eventNumber: Int64 = 1
     var buttonNumbers = [Int: Int64]()
-    init(persistent: Bool) {
+    init(persistent: Bool, target: DisplayInputTarget? = nil) {
         self.persistent = persistent
+        let selectedDisplay = target?.display_id ?? CGMainDisplayID()
+        self.display = selectedDisplay
+        self.bounds = target?.bounds.cgRect ?? CGDisplayBounds(selectedDisplay)
+        self.binding = target.map { DisplayInputBinding(target: $0) }
         guard let source = CGEventSource(stateID: .privateState) else { fail("Cannot create input event source.") }
         self.source = source
+        if target != nil { point = CGPoint(x: bounds.minX, y: bounds.minY) }
         source.localEventsSuppressionInterval = 0
         source.userData = 0x504f5254
     }
@@ -40,6 +47,12 @@ private final class InputReceiver {
     func perform(_ actions: [InputAction]) {
         for action in actions {
             switch action {
+            case .text(let value):
+                // Final text only; physical shortcuts continue through .key.
+                for down in [true, false] {
+                    let event = CommittedTextEvent.make(source: source, value: value, down: down)
+                    post(event, mask: 0)
+                }
             case .key(let code, let down, let repeating, let mask):
                 let event = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(code), keyDown: down)
                 if InputState.modifierCodes.contains(code) { event?.type = .flagsChanged }
@@ -56,6 +69,7 @@ private final class InputReceiver {
                 if !down { buttonNumbers.removeValue(forKey: button) }
             case .scroll(let dx, let dy, let mask):
                 let event = CGEvent(scrollWheelEvent2Source: source, units: .pixel, wheelCount: 2, wheel1: Int32(dy), wheel2: Int32(dx), wheel3: 0)
+                if binding != nil { event?.location = point }
                 post(event, mask: mask)
             }
         }
@@ -68,10 +82,42 @@ private final class InputReceiver {
         output("STOP")
         CFRunLoopStop(loop)
     }
+    func targetValid() -> Bool {
+        CGDisplayIsActive(display) != 0 && CGDisplayBounds(display) == bounds
+            && (binding != nil || CGMainDisplayID() == display)
+    }
+    func move(to position: CGPoint) {
+        point = position
+        let button = state.buttons.sorted().first
+        let type: CGEventType = button == 0 ? .leftMouseDragged : button == 1 ? .rightMouseDragged : button == 2 ? .otherMouseDragged : .mouseMoved
+        let event = CGEvent(mouseEventSource: source, mouseType: type, mouseCursorPosition: point,
+                            mouseButton: CGMouseButton(rawValue: UInt32(button ?? 0))!)
+        if let button { event?.setIntegerValueField(.mouseEventNumber, value: buttonNumbers[button] ?? 0) }
+        post(event, mask: state.modifiers)
+    }
     func receive(_ line: String) {
         guard !stopped else { return }
-        guard CGMainDisplayID() == display, CGDisplayBounds(display) == bounds else { stop(); return }
+        guard targetValid() else { stop(); return }
         do {
+            if var scoped = binding {
+                guard CGPreflightPostEventAccess() else { stop(); return }
+                let command = try DisplayInputEnvelope.decode(Data(line.utf8))
+                let position = try scoped.accept(command)
+                binding = scoped
+                // Button/scroll packets include their target for validation.
+                // Repeating an unchanged target while a button is held would
+                // manufacture a drag event for an ordinary tap.
+                if let position, command.event.kind == "move" || position != point {
+                    move(to: position)
+                }
+                guard !stopped else { return }
+                if let packet = command.event.packet { perform(try state.apply(packet)) }
+                if !stopped {
+                    lastInput = ProcessInfo.processInfo.systemUptime
+                    output("APPLIED {\"session\":\"\(scoped.target.session)\",\"epoch\":\(scoped.target.epoch),\"revision\":\(scoped.target.revision),\"sequence\":\(command.sequence)}")
+                }
+                return
+            }
             if line == "ALIVE" { }
             else if line.hasPrefix("{") {
                 let packet = try JSONDecoder().decode(InputPacket.self, from: Data(line.utf8))
@@ -93,9 +139,14 @@ private final class InputReceiver {
     }
 }
 
-func runInputReceiver(persistent: Bool = false) {
+func runInputReceiver(persistent: Bool = false, target: DisplayInputTarget? = nil) {
     guard CGPreflightPostEventAccess() else { fail("Enable Accessibility for extend.computer Cursor, then restart.") }
-    let receiver = InputReceiver(persistent: persistent)
+    if let target {
+        guard CGDisplayIsActive(target.display_id) != 0, CGDisplayBounds(target.display_id) == target.bounds.cgRect else {
+            fail("Captured display is inactive or its geometry changed.")
+        }
+    }
+    let receiver = InputReceiver(persistent: persistent, target: target)
     // Shutdown must run on the main loop before launchd terminates this helper.
     let signals = [SIGTERM, SIGINT].map { number -> DispatchSourceSignal in
         signal(number, SIG_IGN)
@@ -104,11 +155,43 @@ func runInputReceiver(persistent: Bool = false) {
     }
     let timer = CFRunLoopTimerCreateWithHandler(kCFAllocatorDefault, CFAbsoluteTimeGetCurrent() + 0.1, 0.1, 0, 0) { _ in
         let now = ProcessInfo.processInfo.systemUptime
-        if now - receiver.lastInput > 2 || (!receiver.persistent && now - receiver.started >= 30) { receiver.stop() }
+        if now - receiver.lastInput > 2 || (!receiver.persistent && now - receiver.started >= 30)
+            || (target != nil && (!receiver.targetValid() || getppid() != receiver.parent)) { receiver.stop() }
     }!
     CFRunLoopAddTimer(receiver.loop, timer, .commonModes)
     DispatchQueue.global().async {
-        while let line = readLine() {
+        var pending = Data()
+        func nextLine() throws -> String? {
+            guard target != nil else { return readLine() }
+            while true {
+                if let newline = pending.firstIndex(of: 10) {
+                    let count = pending.distance(from: pending.startIndex, to: newline)
+                    guard count <= 1024, let line = String(data: pending.prefix(count), encoding: .utf8) else {
+                        throw NSError(domain: "DisplayInputLine", code: 1)
+                    }
+                    pending.removeFirst(count + 1)
+                    return line
+                }
+                guard pending.count <= 1024 else { throw NSError(domain: "DisplayInputSize", code: 1) }
+                // FileHandle.read(upToCount:) can wait to fill its requested
+                // size on a pipe. A single command must be handled immediately,
+                // without waiting for another command to satisfy that read.
+                var bytes = [UInt8](repeating: 0, count: 256)
+                let count = bytes.withUnsafeMutableBytes { buffer in
+                    Darwin.read(STDIN_FILENO, buffer.baseAddress, buffer.count)
+                }
+                if count < 0 {
+                    if errno == EINTR { continue }
+                    throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+                }
+                guard count > 0 else {
+                    guard pending.isEmpty else { throw NSError(domain: "DisplayInputTruncated", code: 1) }
+                    return nil
+                }
+                pending.append(contentsOf: bytes.prefix(count))
+            }
+        }
+        while let line = try? nextLine() {
             let applied = DispatchSemaphore(value: 0)
             CFRunLoopPerformBlock(receiver.loop, CFRunLoopMode.commonModes.rawValue) {
                 receiver.receive(line); applied.signal()
@@ -119,7 +202,14 @@ func runInputReceiver(persistent: Bool = false) {
         CFRunLoopPerformBlock(receiver.loop, CFRunLoopMode.commonModes.rawValue) { receiver.stop() }
         CFRunLoopWakeUp(receiver.loop)
     }
-    output("READY \(receiver.bounds.width) \(receiver.bounds.height)")
+    if let target {
+        let encoded = try! JSONEncoder().encode(target)
+        var value = try! JSONSerialization.jsonObject(with: encoded) as! [String: Any]
+        value["text_supported"] = true
+        value["shortcut_policy"] = "command"
+        let ready = try! JSONSerialization.data(withJSONObject: value)
+        output("READY " + String(data: ready, encoding: .utf8)!)
+    } else { output("READY \(receiver.bounds.width) \(receiver.bounds.height) input-text-v1 input-shortcuts-command-v1") }
     withExtendedLifetime(signals) { CFRunLoopRun() }
     receiver.stop()
     CFRunLoopTimerInvalidate(timer)

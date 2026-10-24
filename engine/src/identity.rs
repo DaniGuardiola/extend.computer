@@ -16,7 +16,9 @@ impl Identity {
         Self::from_secret(bytes)
     }
 
-    pub(crate) fn from_secret(bytes: [u8; 32]) -> Self {
+    /// Import a seed loaded by a trusted platform secret-storage adapter.
+    /// The caller must clear any temporary copies after this call.
+    pub fn from_secret(bytes: [u8; 32]) -> Self {
         let public = PublicKey::from(&StaticSecret::from(bytes)).to_bytes();
         Self {
             secret: Zeroizing::new(bytes),

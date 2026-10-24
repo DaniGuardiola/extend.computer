@@ -44,8 +44,12 @@ pub fn read_frame(reader: &mut impl Read) -> Result<Vec<u8>> {
 }
 
 pub fn write_frame(writer: &mut impl Write, bytes: &[u8]) -> Result<()> {
+    write_frame_limited(writer, bytes, MAX_FRAME)
+}
+
+fn write_frame_limited(writer: &mut impl Write, bytes: &[u8], limit: usize) -> Result<()> {
     ensure!(
-        !bytes.is_empty() && bytes.len() <= MAX_FRAME,
+        !bytes.is_empty() && bytes.len() <= limit,
         "invalid frame length"
     );
     writer
@@ -76,6 +80,24 @@ pub fn read_exact_until(stream: &mut TcpStream, bytes: &mut [u8], deadline: Inst
             }
             Ok(n) => filled += n,
             Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                ) =>
+            {
+                // A kernel timeout can return before the absolute deadline.
+                // Keep the bytes already read and finish this same frame rather
+                // than abandoning framing/Noise state after a transient EAGAIN.
+                if Instant::now() >= deadline {
+                    return Err(TransportFailure(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        "read deadline exceeded",
+                    ))
+                    .into());
+                }
+                std::thread::sleep(Duration::from_millis(1));
+            }
             Err(e) => return Err(TransportFailure(e).into()),
         }
     }
@@ -83,10 +105,18 @@ pub fn read_exact_until(stream: &mut TcpStream, bytes: &mut [u8], deadline: Inst
 }
 
 pub fn read_frame_until(stream: &mut TcpStream, deadline: Instant) -> Result<Vec<u8>> {
+    read_frame_until_limited(stream, deadline, MAX_FRAME)
+}
+
+fn read_frame_until_limited(
+    stream: &mut TcpStream,
+    deadline: Instant,
+    limit: usize,
+) -> Result<Vec<u8>> {
     let mut size = [0; 2];
     read_exact_until(stream, &mut size, deadline)?;
     let size = u16::from_be_bytes(size) as usize;
-    ensure!(size > 0 && size <= MAX_FRAME, "invalid frame length");
+    ensure!(size > 0 && size <= limit, "invalid frame length");
     let mut bytes = vec![0; size];
     read_exact_until(stream, &mut bytes, deadline)?;
     Ok(bytes)
@@ -96,8 +126,10 @@ pub struct Channel {
     stream: TcpStream,
     noise: TransportState,
     read_budget: Duration,
+    frame_limit: usize,
     protocol: u16,
     capabilities: Vec<String>,
+    remote_device_info: Option<crate::device_info::DeviceInfo>,
 }
 
 impl Channel {
@@ -106,31 +138,55 @@ impl Channel {
             stream,
             noise,
             read_budget: Duration::from_secs(10),
+            frame_limit: MAX_FRAME,
             protocol: 0,
             capabilities: Vec::new(),
+            remote_device_info: None,
         }
     }
     pub(crate) fn set_protocol(&mut self, protocol: u16, capabilities: Vec<String>) {
         self.protocol = protocol;
         self.capabilities = capabilities;
     }
+    pub(crate) fn set_remote_device_info(&mut self, info: Option<crate::device_info::DeviceInfo>) {
+        self.remote_device_info = info;
+    }
+    /// Remote presentation metadata from the authenticated compatibility exchange.
+    pub fn remote_device_info(&self) -> Option<&crate::device_info::DeviceInfo> {
+        self.remote_device_info.as_ref()
+    }
     pub fn require_capability(&self, capability: &str) -> Result<()> {
         ensure!(
-            self.protocol > 0 && self.capabilities.iter().any(|c| c == capability),
+            self.supports_capability(capability),
             crate::error::EngineError::FeatureUnavailable
         );
         Ok(())
     }
+    /// Only capabilities agreed inside the authenticated compatibility exchange.
+    pub fn supports_capability(&self, capability: &str) -> bool {
+        self.protocol > 0 && self.capabilities.iter().any(|c| c == capability)
+    }
+    /// SDP with media and data channels needs a larger authenticated envelope.
+    pub(crate) fn display_signaling(&mut self) {
+        self.frame_limit = 32 * 1024;
+    }
     pub fn send<T: Serialize>(&mut self, message: &T) -> Result<()> {
         let plaintext = serde_json::to_vec(message)?;
-        ensure!(plaintext.len() + 16 <= MAX_FRAME, "message too large");
-        let mut ciphertext = [0; MAX_FRAME];
+        ensure!(
+            plaintext.len() + 16 <= self.frame_limit,
+            "message too large"
+        );
+        let mut ciphertext = vec![0; self.frame_limit];
         let len = self.noise.write_message(&plaintext, &mut ciphertext)?;
-        write_frame(&mut self.stream, &ciphertext[..len])
+        write_frame_limited(&mut self.stream, &ciphertext[..len], self.frame_limit)
     }
     pub fn receive<T: DeserializeOwned>(&mut self) -> Result<T> {
-        let ciphertext = read_frame_until(&mut self.stream, Instant::now() + self.read_budget)?;
-        let mut plaintext = [0; MAX_FRAME];
+        let ciphertext = read_frame_until_limited(
+            &mut self.stream,
+            Instant::now() + self.read_budget,
+            self.frame_limit,
+        )?;
+        let mut plaintext = vec![0; self.frame_limit];
         let len = self
             .noise
             .read_message(&ciphertext, &mut plaintext)
@@ -144,5 +200,43 @@ impl Channel {
     pub fn active_timeout(&mut self) -> Result<()> {
         self.read_budget = Duration::from_secs(10);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn early_would_block_preserves_partial_frame_until_absolute_deadline() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let mut writer = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let mut reader = listener.accept().unwrap().0;
+        reader.set_nonblocking(true).unwrap();
+        let server = std::thread::spawn(move || {
+            let mut bytes = [0; 4];
+            read_exact_until(
+                &mut reader,
+                &mut bytes,
+                Instant::now() + Duration::from_millis(500),
+            )
+            .unwrap();
+            bytes
+        });
+        writer.write_all(&[1, 2]).unwrap();
+        std::thread::sleep(Duration::from_millis(40));
+        writer.write_all(&[3, 4]).unwrap();
+        assert_eq!(server.join().unwrap(), [1, 2, 3, 4]);
+    }
+    #[test]
+    fn repeated_would_block_does_not_extend_absolute_deadline() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let _writer = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let mut reader = listener.accept().unwrap().0;
+        reader.set_nonblocking(true).unwrap();
+        let start = Instant::now();
+        assert!(
+            read_exact_until(&mut reader, &mut [0; 4], start + Duration::from_millis(40)).is_err()
+        );
+        assert!(start.elapsed() < Duration::from_millis(200));
     }
 }

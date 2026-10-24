@@ -8,7 +8,7 @@ cp native/macos/CursorHelper.swift target/main.swift
 # Build both architectures explicitly: uname reports x86_64 under Rosetta.
 for arch in arm64 x86_64; do
     xcrun clang -isysroot "$sdk" -target "$arch-apple-macosx13.0" -c native/macos/CursorCompatibility.c -o "target/CursorCompatibility-$arch.o"
-    xcrun swiftc -sdk "$sdk" -import-objc-header native/macos/CursorCompatibility.h "target/CursorCompatibility-$arch.o" -target "$arch-apple-macosx13.0" native/macos/InputModel.swift native/macos/InputCapture.swift native/macos/InputReceiver.swift native/macos/EdgeLayout.swift native/macos/EdgeCapture.swift target/main.swift -o "target/ExtendComputerCursor-$arch"
+    xcrun swiftc -sdk "$sdk" -import-objc-header native/macos/CursorCompatibility.h "target/CursorCompatibility-$arch.o" -target "$arch-apple-macosx13.0" native/macos/InputModel.swift native/macos/DisplayInputModel.swift native/macos/InputCapture.swift native/macos/InputReceiver.swift native/macos/EdgeLayout.swift native/macos/EdgeCapture.swift target/main.swift -o "target/ExtendComputerCursor-$arch"
 done
 xcrun lipo -create target/ExtendComputerCursor-arm64 target/ExtendComputerCursor-x86_64 -output "$app/Contents/MacOS/ExtendComputerCursor"
 cat > "$app/Contents/Info.plist" <<'PLIST'

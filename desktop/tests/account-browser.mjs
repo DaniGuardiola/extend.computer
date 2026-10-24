@@ -92,7 +92,10 @@ const page = await context.newPage();
 const errors = [];
 page.on("pageerror", (e) => errors.push(e.message));
 await page.goto(process.env.EXTEND_DESKTOP_TEST_URL ?? "http://localhost:1425");
-await page.getByRole("button", { name: "Log in", exact: true }).click();
+await page
+  .getByRole("main")
+  .getByRole("button", { name: "Log in", exact: true })
+  .click();
 const dialog = page.getByRole("dialog", { name: "Log in", exact: true });
 await dialog.getByRole("button", { name: /Create account on website/ }).click();
 assert.equal(
@@ -110,14 +113,22 @@ await dialog
   .getByRole("textbox", { name: "Authenticator or recovery code", exact: true })
   .fill("123456");
 await dialog.getByRole("button", { name: "Verify code", exact: true }).click();
-await page.getByText("test@example.invalid", { exact: true }).waitFor();
+await page
+  .getByRole("dialog", { name: "Your account", exact: true })
+  .getByText("test@example.invalid", { exact: true })
+  .waitFor();
 await page.screenshot({ path: "/tmp/extend-desktop-account.png" });
 await page.getByRole("button", { name: "Close", exact: true }).click();
 await page
   .getByRole("heading", { name: "Account devices", exact: true })
   .waitFor();
 await page.getByText("Other Mac", { exact: true }).waitFor();
-await page.getByRole("button", { name: "Account", exact: true }).click();
+await page
+  .getByRole("button", {
+    name: "Account for test@example.invalid",
+    exact: true,
+  })
+  .click();
 await page.getByRole("button", { name: /Manage account & security/ }).click();
 assert.equal(
   await page.evaluate(() => window.__accountSmoke.calls.at(-1).page),

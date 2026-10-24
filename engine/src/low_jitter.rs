@@ -3,6 +3,9 @@ use crate::session::CursorSink;
 use anyhow::{Context, Result};
 use std::net::IpAddr;
 
+#[cfg(target_os = "macos")]
+pub use crate::platform::low_jitter::{ready_result, ReadinessError, ReadinessFailure};
+
 pub use crate::platform::low_jitter::{
     configure_app_helper, ready, require_ready_for_peer, required_for_peer, start_for_peer,
     start_required, Lease,
@@ -67,6 +70,12 @@ impl<S> ManagedCursor<S> {
     }
 }
 impl<S: CursorSink> CursorSink for ManagedCursor<S> {
+    fn shortcut_policy(&self) -> Option<crate::input::ShortcutPolicy> {
+        self.inner.shortcut_policy()
+    }
+    fn supports_text_input(&self) -> bool {
+        self.inner.supports_text_input()
+    }
     fn device_name(&self) -> Option<String> {
         self.inner.device_name()
     }
@@ -119,5 +128,72 @@ impl<S: CursorSink> CursorSink for ManagedCursor<S> {
         // Release held input before waiting for privileged lease cleanup.
         self.inner.finish();
         self.lease.take();
+    }
+}
+
+#[cfg(all(test, unix))]
+mod text_adapter_tests {
+    use super::*;
+    use crate::{cursor::NativeSink, input::InputEvent};
+    use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn managed_native_text_tracks_actual_helper_readiness_and_finish() {
+        for supported in [false, true] {
+            for required in [false, true] {
+                for control in [false, true] {
+                    let temp = tempfile::tempdir().unwrap();
+                    let path = temp.path().join("helper");
+                    std::fs::write(&path, format!(
+                        "#!/bin/sh\nprintf '%s\\n' 'READY 1920 1080{}'\nwhile IFS= read -r line; do printf '%s\\n' OK; done\n",
+                        if supported { " input-text-v1 input-shortcuts-command-v1" } else { "" },
+                    )).unwrap();
+                    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700))
+                        .unwrap();
+                    let inner = NativeSink::new(Some(path));
+                    let peer = "127.0.0.1".parse().unwrap();
+                    let mut sink = if required {
+                        ManagedCursor::required(inner, peer)
+                    } else {
+                        ManagedCursor::new(inner, peer, false)
+                    };
+                    assert!(!sink.supports_text_input());
+                    assert_eq!(sink.shortcut_policy(), None);
+                    // Exercise the actual required decorator and subprocess READY contract
+                    // without acquiring a privileged network lease in a host unit test.
+                    if required {
+                        if control {
+                            sink.inner.start_control("peer").unwrap();
+                        } else {
+                            sink.inner.start_input("peer").unwrap();
+                        }
+                    } else if control {
+                        sink.start_control("peer").unwrap();
+                    } else {
+                        sink.start_input("peer").unwrap();
+                    }
+                    assert_eq!(sink.supports_text_input(), supported);
+                    assert_eq!(
+                        sink.shortcut_policy(),
+                        if supported {
+                            Some(crate::input::ShortcutPolicy::Command)
+                        } else {
+                            None
+                        }
+                    );
+                    assert_eq!(
+                        sink.input(&InputEvent::Text {
+                            value: "e\u{301}👩‍💻中文".into()
+                        })
+                        .is_ok(),
+                        supported
+                    );
+                    sink.input(&InputEvent::Release).unwrap();
+                    sink.finish();
+                    assert!(!sink.supports_text_input());
+                    assert_eq!(sink.shortcut_policy(), None);
+                }
+            }
+        }
     }
 }

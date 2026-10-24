@@ -31,15 +31,19 @@ impl Desktop {
         let app = self.clone();
         std::thread::spawn(move || {
             let result = (|| -> Result<()> {
-                extend_computer_agent::low_jitter::require_ready_for_peer(
-                    device.address.parse::<SocketAddr>()?.ip(),
-                )?;
                 let identity = app.identity()?;
                 ensure!(!cancelled.load(Ordering::SeqCst), "Pairing cancelled");
-                let socket =
-                    TcpStream::connect_timeout(&device.address.parse()?, Duration::from_secs(5))
-                        .context(errors::PairingStartError)?;
+                let socket = extend_computer_agent::local_network::connect_timeout(
+                    &device.address.parse()?,
+                    Duration::from_secs(5),
+                )
+                .context(errors::PairingStartError)?;
                 app.set_socket(id, &socket)?;
+                if wired::socket_route(&socket) != Some("usb") {
+                    extend_computer_agent::low_jitter::require_ready_for_peer(
+                        socket.peer_addr()?.ip(),
+                    )?;
+                }
                 let mut verification_started = false;
                 let peer = extend_computer_agent::session::pair_visually(
                     socket,
@@ -97,16 +101,18 @@ impl Desktop {
         let app = self.clone();
         std::thread::spawn(move || {
             let result = (|| -> Result<()> {
-                extend_computer_agent::low_jitter::require_ready_for_peer(
-                    device.address.parse::<SocketAddr>()?.ip(),
-                )?;
                 let identity = app.identity()?;
                 ensure!(!cancelled.load(Ordering::SeqCst), "Pairing cancelled");
                 let address = device.address.parse()?;
-                let socket = TcpStream::connect_timeout(&address, Duration::from_secs(5)).context(
+                let socket = extend_computer_agent::local_network::connect_timeout(&address, Duration::from_secs(5)).context(
                     "Could not reach this device. Open extend.computer there and show its pairing code.",
                 )?;
                 app.set_socket(id, &socket)?;
+                if wired::socket_route(&socket) != Some("usb") {
+                    extend_computer_agent::low_jitter::require_ready_for_peer(
+                        socket.peer_addr()?.ip(),
+                    )?;
+                }
                 let client = Client::connect(
                     socket,
                     &identity,
@@ -130,7 +136,14 @@ impl Desktop {
         if let Some(saved) = self.devices.lock().unwrap().get(&peer) {
             device.address = saved.address.clone();
         }
-        self.save_device(&peer, device.clone())?;
+        ensure!(
+            !self.usb_connecting.load(Ordering::Acquire),
+            "USB connection is still starting"
+        );
+        let usb_route = self.selected_usb_route(&peer);
+        if usb_route.is_none() {
+            self.save_device(&peer, device.clone())?;
+        }
         self.refresh_permissions()?;
         let permissions = self.inner.lock().unwrap().permissions.clone();
         ensure!(
@@ -158,45 +171,70 @@ impl Desktop {
                     ensure!(app.store()?.peer(&peer)?.is_some(), "Device access expired");
                     let identity = app.identity()?;
                     ensure!(!cancelled.load(Ordering::SeqCst), "Connection cancelled");
-                    let address = device.address.parse::<SocketAddr>()?;
-                    let socket = if address.ip().is_unspecified() {
-                        app.account_tunnel(&peer, "control")?
+                    if usb_route.is_none() {
+                        app.refresh_local_route(&peer, &device, &identity)?;
+                    }
+                    if let Some(saved) = app.devices.lock().unwrap().get(&peer) {
+                        device = saved.clone();
+                    }
+                    ensure!(!cancelled.load(Ordering::SeqCst), "Connection cancelled");
+                    let socket = if let Some(route) = &usb_route {
+                        route.open(
+                            &app,
+                            extend_computer_agent::display::usb_stream::UsbService::Control,
+                            &cancelled,
+                        )?
                     } else {
-                        extend_computer_agent::low_jitter::require_ready_for_peer(address.ip())?;
-                        // A brief Wi-Fi stall should not commit the entire
-                        // session to the internet route. Retry LAN once first.
-                        let local =
-                            TcpStream::connect_timeout(&address, Duration::from_millis(700))
-                                .or_else(|error| {
-                                    eprintln!(
-                                        "Local control connection failed: {error}. Retrying LAN."
-                                    );
-                                    if cancelled.load(Ordering::SeqCst) {
-                                        return Err(error);
-                                    }
-                                    TcpStream::connect_timeout(
-                                        &address,
-                                        Duration::from_millis(1300),
-                                    )
-                                });
-                        ensure!(!cancelled.load(Ordering::SeqCst), "Connection cancelled");
-                        match local {
-                            Ok(socket) => socket,
-                            Err(error) => {
+                        let address = device.address.parse::<SocketAddr>()?;
+                        if address.ip().is_unspecified() {
+                            app.account_tunnel(&peer, "control")?
+                        } else {
+                            // A brief Wi-Fi stall should not commit the entire
+                            // session to the internet route. Retry LAN once first.
+                            let local = extend_computer_agent::local_network::connect_timeout(
+                                &address,
+                                Duration::from_millis(700),
+                            )
+                            .or_else(|error| {
                                 eprintln!(
+                                    "Local control connection failed: {error}. Retrying LAN."
+                                );
+                                if cancelled.load(Ordering::SeqCst) {
+                                    return Err(error);
+                                }
+                                extend_computer_agent::local_network::connect_timeout(
+                                    &address,
+                                    Duration::from_millis(1300),
+                                )
+                            });
+                            ensure!(!cancelled.load(Ordering::SeqCst), "Connection cancelled");
+                            match local {
+                                Ok(socket) => socket,
+                                Err(error) => {
+                                    eprintln!(
                                     "Local control retry failed: {error}. Checking available routes."
                                 );
-                                if app.account_peer_allowed(&peer)?
-                                    && app.account_relay.available(false)
-                                {
-                                    app.account_tunnel(&peer, "control")?
-                                } else {
-                                    return Err(error.into());
+                                    if app.account_peer_allowed(&peer)?
+                                        && app.account_relay.available(false)
+                                    {
+                                        app.account_tunnel(&peer, "control")?
+                                    } else {
+                                        return Err(error.into());
+                                    }
                                 }
                             }
                         }
                     };
+                    let cable = wired::socket_route(&socket) == Some("usb");
                     app.set_socket(id, &socket)?;
+                    if usb_route.is_none() && !cable {
+                        extend_computer_agent::low_jitter::require_ready_for_peer(
+                            socket.peer_addr()?.ip(),
+                        )?;
+                    }
+                    if usb_route.is_some() {
+                        app.set_display_route(id, "usb");
+                    }
                     let client = match Client::connect(
                         socket,
                         &identity,
@@ -221,7 +259,7 @@ impl Desktop {
                     extend_computer_agent::control::send_session_with_ready(
                         client,
                         &app.helper,
-                        true,
+                        usb_route.is_none() && !cable,
                         &device.edge,
                         0.,
                         None,
@@ -243,7 +281,8 @@ impl Desktop {
                     Err(error)
                         if (connected_once || started.elapsed() < Duration::from_secs(30))
                             && is_connection_error(&error)
-                            && !cancelled.load(Ordering::SeqCst) =>
+                            && !cancelled.load(Ordering::SeqCst)
+                            && usb_route.as_ref().is_none_or(|route| route.current(&app)) =>
                     {
                         retries = retries.saturating_add(1);
                         if !app.prepare_reconnect(id) {

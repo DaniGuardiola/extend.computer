@@ -279,7 +279,8 @@ fn connect(
                 .max_frame_size(Some(65536)),
         ),
         None,
-    ).map_err(|error| match error {
+    )
+    .map_err(|error| match error {
         tungstenite::HandshakeError::Failure(error) => anyhow::Error::new(error),
         error => anyhow::anyhow!(error),
     })?;
@@ -438,9 +439,18 @@ mod tests {
                 ),
             ] {
                 let (mut tcp, _) = listener.accept().unwrap();
-                let mut request = [0; 4096];
-                tcp.read(&mut request).unwrap();
-                let policy = if status.starts_with("503") { "X-Extend-Relay-Enabled: false\r\n" } else { "" };
+                let mut request = Vec::new();
+                while !request.ends_with(b"\r\n\r\n") {
+                    let mut byte = [0];
+                    tcp.read_exact(&mut byte).unwrap();
+                    request.push(byte[0]);
+                    assert!(request.len() <= 4096);
+                }
+                let policy = if status.starts_with("503") {
+                    "X-Extend-Relay-Enabled: false\r\n"
+                } else {
+                    ""
+                };
                 // Deliberately split headers from body: WebSocket rejection may
                 // arrive before the JSON payload has been read.
                 write!(tcp, "HTTP/1.1 {status}\r\n{policy}Content-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len()).unwrap();
@@ -552,12 +562,26 @@ mod tests {
     #[ignore = "Requires isolated local account server; performs real encrypted relay and revocation checks"]
     fn encrypted_presence_cross_account_isolation_and_revocation() {
         let server = std::env::var("EXTEND_RELAY_TEST_URL").expect("EXTEND_RELAY_TEST_URL");
-        let fixtures = std::env::var("EXTEND_RELAY_TEST_SESSIONS_FILE").ok().map(|path| serde_json::from_slice::<Vec<Value>>(&std::fs::read(path).unwrap()).unwrap());
-        assert!(server.starts_with("http://localhost:") || (server == "https://extend.computer" && fixtures.is_some()));
+        let fixtures = std::env::var("EXTEND_RELAY_TEST_SESSIONS_FILE")
+            .ok()
+            .map(|path| {
+                serde_json::from_slice::<Vec<Value>>(&std::fs::read(path).unwrap()).unwrap()
+            });
+        assert!(
+            server.starts_with("http://localhost:")
+                || (server == "https://extend.computer" && fixtures.is_some())
+        );
         let unique = hex::encode(rand::random::<[u8; 16]>());
         let password = "isolated-relay-test-password";
-        let (status, signup) = if let Some(fixtures) = &fixtures { (201, fixtures[0].clone()) } else {
-            api(&server, "/auth/signup", None, json!({"email":format!("relay-{unique}@example.invalid"),"password":password}))
+        let (status, signup) = if let Some(fixtures) = &fixtures {
+            (201, fixtures[0].clone())
+        } else {
+            api(
+                &server,
+                "/auth/signup",
+                None,
+                json!({"email":format!("relay-{unique}@example.invalid"),"password":password}),
+            )
         };
         assert_eq!(status, 201, "{signup}");
         let account = signup["token"].as_str().unwrap();
@@ -603,30 +627,63 @@ mod tests {
         #[cfg(unix)]
         let control_sender = {
             use std::os::unix::fs::PermissionsExt;
-            std::fs::write(&desktop.helper, r#"#!/bin/sh
+            std::fs::write(
+                &desktop.helper,
+                r#"#!/bin/sh
 case "$1" in
 status) echo 'listen=true post=true wifi=true';;
 inject-control) echo 'READY 1728 1117'; while IFS= read -r line; do echo OK; done;;
 capture-control-*) echo 'READY 1512 982'; while IFS= read -r line; do :; done;;
 *) exit 1;;
 esac
-"#).unwrap();
-            std::fs::set_permissions(&desktop.helper, std::fs::Permissions::from_mode(0o700)).unwrap();
+"#,
+            )
+            .unwrap();
+            std::fs::set_permissions(&desktop.helper, std::fs::Permissions::from_mode(0o700))
+                .unwrap();
             let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-            let port = listener.local_addr().unwrap().port(); drop(listener);
+            let port = listener.local_addr().unwrap().port();
+            drop(listener);
             desktop.receive_test_port(port).unwrap();
-            let app = crate::runtime::Desktop::new(receiver_temp.path().join("sender"), desktop.helper.clone()).unwrap();
+            let app = crate::runtime::Desktop::new(
+                receiver_temp.path().join("sender"),
+                desktop.helper.clone(),
+            )
+            .unwrap();
             app.set_test_identity(sender);
             app.sync_account_peers("test-account", &[json!({"id":second.device,"fingerprint":receiver_fp,"name":"receiver","key_verified":true})]).unwrap();
             app.account_relay.configure(Some(first.clone()));
-            app.connect(receiver_fp.clone(), crate::peers::Device { name:"Receiver".into(), address:"0.0.0.0:48177".into(), edge:"left".into() }).unwrap();
-            let deadline=Instant::now()+Duration::from_secs(15);
-            while !app.snapshot().unwrap().session.is_some_and(|session|serde_json::to_value(session).unwrap()["phase"]=="connected") { assert!(Instant::now()<deadline,"Internet control never connected");std::thread::sleep(Duration::from_millis(50)); }
+            app.connect(
+                receiver_fp.clone(),
+                crate::peers::Device {
+                    name: "Receiver".into(),
+                    address: "0.0.0.0:48177".into(),
+                    edge: "left".into(),
+                },
+            )
+            .unwrap();
+            let deadline = Instant::now() + Duration::from_secs(15);
+            while !app.snapshot().unwrap().session.is_some_and(|session| {
+                serde_json::to_value(session).unwrap()["phase"] == "connected"
+            }) {
+                assert!(
+                    Instant::now() < deadline,
+                    "Internet control never connected"
+                );
+                std::thread::sleep(Duration::from_millis(50));
+            }
             assert!(desktop.approvals.current().is_none());
             app
         };
-        let (status, other) = if let Some(fixtures) = &fixtures { (201, fixtures[1].clone()) } else {
-            api(&server, "/auth/signup", None, json!({"email":format!("relay-other-{unique}@example.invalid"),"password":password}))
+        let (status, other) = if let Some(fixtures) = &fixtures {
+            (201, fixtures[1].clone())
+        } else {
+            api(
+                &server,
+                "/auth/signup",
+                None,
+                json!({"email":format!("relay-other-{unique}@example.invalid"),"password":password}),
+            )
         };
         assert_eq!(status, 201);
         if let Ok(path) = std::env::var("EXTEND_RELAY_TEST_CLEANUP") {
@@ -658,9 +715,16 @@ esac
             std::thread::sleep(Duration::from_millis(100));
         }
         let _ = api(&server, "/auth/logout", other["token"].as_str(), json!({}));
-        #[cfg(unix)] {
-            let deadline=Instant::now()+Duration::from_secs(10);
-            while desktop.snapshot().unwrap().session.is_some() { assert!(Instant::now()<deadline,"Revoked internet control stayed active");std::thread::sleep(Duration::from_millis(50)); }
+        #[cfg(unix)]
+        {
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while desktop.snapshot().unwrap().session.is_some() {
+                assert!(
+                    Instant::now() < deadline,
+                    "Revoked internet control stayed active"
+                );
+                std::thread::sleep(Duration::from_millis(50));
+            }
             control_sender.shutdown();
         }
         desktop.shutdown();

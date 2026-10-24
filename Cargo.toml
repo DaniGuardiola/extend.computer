@@ -1,4 +1,4 @@
 [workspace]
-members = ["engine"]
+members = ["engine", "native/android/engine"]
 exclude = ["desktop/src-tauri", "server"]
 resolver = "2"

@@ -1,7 +1,8 @@
 import Foundation
+import CoreGraphics
 
 // Modifier bits are portable: shift, control, alt, meta. Key codes are explicitly
-// Mac virtual codes in this first adapter; no Unicode text or clipboard is sent.
+// Physical Mac virtual codes and separately negotiated committed Unicode text. No clipboard is used.
 struct InputPacket: Codable {
     var kind: String
     var button: Int? = nil
@@ -12,6 +13,7 @@ struct InputPacket: Codable {
     var code: Int? = nil
     var `repeat`: Bool? = nil
     var mask: Int? = nil
+    var value: String? = nil
 
     func validate() throws {
         var valid = false
@@ -20,6 +22,7 @@ struct InputPacket: Codable {
         case "scroll": valid = (-4096...4096).contains(dx ?? 99999) && (-4096...4096).contains(dy ?? 99999)
         case "mac_key": valid = (0..<128).contains(code ?? -1) && ![54,55,56,57,58,59,60,61,62,63].contains(code ?? -1) && down != nil && self.repeat != nil && (self.repeat != true || down == true)
         case "modifiers": valid = (0..<16).contains(mask ?? -1)
+        case "text": valid = value.map { !$0.isEmpty && $0.utf8.count <= 256 && $0.unicodeScalars.count <= 64 && !$0.unicodeScalars.contains(where: { $0.value < 32 || (127...159).contains($0.value) }) } ?? false
         case "release": valid = true
         default: break
         }
@@ -28,6 +31,7 @@ struct InputPacket: Codable {
 }
 
 enum InputAction: Equatable {
+    case text(String)
     case key(Int, Bool, Bool, Int)
     case button(Int, Bool, Int, Int)
     case scroll(Int, Int, Int)
@@ -58,6 +62,9 @@ struct InputState {
             return [.button(button, down, packet.clicks!, modifiers)]
         case "scroll": return [.scroll(packet.dx!, packet.dy!, modifiers)]
         case "modifiers": return updateModifiers(packet.mask!)
+        case "text":
+            guard keys.isEmpty && modifiers == 0 else { throw NSError(domain: "ExtendComputerInput", code: 2) }
+            return [.text(packet.value!)]
         case "release": return release()
         default: return []
         }
@@ -80,5 +87,15 @@ struct InputState {
         keys.removeAll(); buttons.removeAll()
         actions += updateModifiers(0)
         return actions
+    }
+}
+
+// Factory is testable without posting input or acquiring permissions.
+enum CommittedTextEvent {
+    static func make(source: CGEventSource?, value: String, down: Bool) -> CGEvent? {
+        let event = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: down)
+        let units = Array(value.utf16)
+        units.withUnsafeBufferPointer { event?.keyboardSetUnicodeString(stringLength: units.count, unicodeString: $0.baseAddress) }
+        return event
     }
 }

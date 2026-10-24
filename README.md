@@ -3,7 +3,7 @@
 [extend.computer](https://extend.computer) connects devices so they can share input and displays. Its product scope covers input sharing, display extension, screen mirroring, and remote desktop across desktop and mobile platforms. A shared Rust engine powers connection and trust management, with platform adapters for device capabilities.
 
 > [!NOTE]
-> Current support: keyboard and mouse sharing between macOS devices. Display extension, mirroring, remote desktop display streaming, and adapters for other platforms are not supported yet. See [sharing modes](docs/architecture/sharing-modes.md) and [platform support](docs/architecture/platforms.md).
+> Current support: keyboard and mouse sharing between macOS devices, plus experimental display extension and mirroring over the local network or a Mac-to-Mac USB cable. Remote desktop and other platforms are not supported yet. See [sharing modes](docs/architecture/sharing-modes.md) and [platform support](docs/architecture/platforms.md).
 
 Implemented foundations include encrypted local pairing, pinned device identities, account-connected devices, local-network connections with internet relay fallback, native permission guidance, and transport recovery.
 

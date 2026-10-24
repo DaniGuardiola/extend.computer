@@ -3,6 +3,27 @@ import Foundation
 @main struct InputTests {
     static func require(_ value: Bool) { precondition(value) }
     static func main() throws {
+        for value in ["Aaé", "e\u{301}", "🙂", "👩‍💻", "中文", String(repeating: "🙂", count: 64)] {
+            let packet = InputPacket(kind: "text", value: value)
+            var textState = InputState()
+            require(try textState.apply(packet) == [.text(value)])
+            for down in [true, false] {
+                let event = CommittedTextEvent.make(source: nil, value: value, down: down)!
+                var count = 0
+                event.keyboardGetUnicodeString(maxStringLength: 0, actualStringLength: &count, unicodeString: nil)
+                var units = [UniChar](repeating: 0, count: count)
+                event.keyboardGetUnicodeString(maxStringLength: count, actualStringLength: &count, unicodeString: &units)
+                require(String(decoding: units, as: UTF16.self) == value)
+            }
+        }
+        for value in ["", "x\u{0}", String(repeating: "x", count: 65), String(repeating: "🙂", count: 65)] {
+            do { try InputPacket(kind: "text", value: value).validate(); fatalError("invalid text accepted") } catch { }
+        }
+        var heldText = InputState()
+        _ = try heldText.apply(InputPacket(kind: "modifiers", mask: 1))
+        do { _ = try heldText.apply(InputPacket(kind: "text", value: "é")); fatalError("text with held modifier accepted") } catch { }
+        _ = heldText.release()
+        require(try heldText.apply(InputPacket(kind: "text", value: "é")) == [.text("é")])
         var state = InputState()
         let button = InputPacket(kind: "button", button: 0, down: true, clicks: 1)
         require(try state.apply(button) == [.button(0, true, 1, 0)])

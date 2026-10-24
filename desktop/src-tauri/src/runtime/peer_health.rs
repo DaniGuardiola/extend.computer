@@ -10,6 +10,7 @@ impl Desktop {
                     .ok()
             });
             let mut candidates = BTreeMap::<String, Vec<SocketAddr>>::new();
+            let mut cable_candidates = Vec::<SocketAddr>::new();
             let mut tried_identity = false;
             let mut next_check = Instant::now();
             loop {
@@ -54,6 +55,12 @@ impl Desktop {
                 if app.closing.load(Ordering::SeqCst) {
                     break;
                 }
+                *app.discovered_presence.lock().unwrap() = cable_candidates
+                    .iter()
+                    .chain(candidates.values().flatten())
+                    .copied()
+                    .take(32)
+                    .collect();
                 if Instant::now() < next_check {
                     continue;
                 }
@@ -64,6 +71,13 @@ impl Desktop {
                 if records.peers.is_empty() {
                     continue;
                 }
+                cable_candidates = wired::neighbor_candidates(48178);
+                *app.discovered_presence.lock().unwrap() = cable_candidates
+                    .iter()
+                    .chain(candidates.values().flatten())
+                    .copied()
+                    .take(32)
+                    .collect();
                 let cached = app.identity.lock().unwrap().clone();
                 let identity = if let Some(identity) = cached {
                     identity
@@ -77,8 +91,22 @@ impl Desktop {
                     };
                     identity
                 };
-                let devices = app.devices.lock().unwrap().clone();
-                let addresses: Vec<_> = candidates.values().flatten().copied().collect();
+                let mut devices = app.devices.lock().unwrap().clone();
+                for peer in records.peers.keys() {
+                    if app.selected_usb_route(peer).is_some() {
+                        devices.entry(peer.clone()).or_insert_with(|| Device {
+                            name: format!("Device {}", &peer[..8]),
+                            address: String::new(),
+                            edge: "left".into(),
+                        });
+                    }
+                }
+                let addresses: Vec<_> = cable_candidates
+                    .iter()
+                    .chain(candidates.values().flatten())
+                    .copied()
+                    .take(32)
+                    .collect();
                 for (peer, device) in devices {
                     if app.closing.load(Ordering::SeqCst) {
                         break;
@@ -107,7 +135,10 @@ impl Desktop {
             }
             inner.next
         };
-        let socket = TcpStream::connect_timeout(&device.address.parse()?, Duration::from_secs(2))?;
+        let socket = extend_computer_agent::local_network::connect_timeout(
+            &device.address.parse()?,
+            Duration::from_secs(2),
+        )?;
         if !extend_computer_agent::session::pairing_status(socket, identity, peer)? {
             self.apply_peer_unpaired(peer, epoch)?;
         } else {

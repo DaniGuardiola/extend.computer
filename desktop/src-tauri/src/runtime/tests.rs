@@ -618,6 +618,75 @@ fn receiving_requires_accessibility_and_wifi_but_pairing_does_not() {
 }
 
 #[test]
+#[cfg(unix)]
+fn receiving_pause_preserves_check_failure_vs_authoritative_denial() {
+    use std::os::unix::fs::PermissionsExt;
+    for (script, failed_check, reason) in [
+        (
+            "#!/bin/sh\nexit 9\n",
+            true,
+            "Could not verify macOS permissions: Could not check macOS permissions.",
+        ),
+        (
+            "#!/bin/sh\necho 'listen=true post=false wifi=true'\n",
+            false,
+            "Accessibility is not ready",
+        ),
+        (
+            "#!/bin/sh\necho 'listen=true post=true wifi=false'\n",
+            false,
+            "Wi-Fi optimization is not ready",
+        ),
+    ] {
+        let temp = tempfile::tempdir().unwrap();
+        let helper = temp.path().join("helper");
+        let ready = "#!/bin/sh\necho 'listen=true post=true wifi=true'\n";
+        std::fs::write(&helper, ready).unwrap();
+        std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let app = Desktop::new(temp.path().join("app"), helper.clone()).unwrap();
+        *app.identity.lock().unwrap() = Some(Arc::new(Identity::generate()));
+        app.receive_at(false, 0).unwrap();
+        let (id, cancelled) = app.reserve(SessionKind::Incoming, None).unwrap();
+        app.inner.lock().unwrap().job.as_mut().unwrap().view.phase = Phase::Connected;
+        std::fs::write(&helper, script).unwrap();
+        assert_eq!(app.refresh_permissions().is_err(), failed_check);
+        assert!(cancelled.load(Ordering::SeqCst));
+        assert_eq!(
+            app.snapshot().unwrap().session.unwrap().phase,
+            Phase::Disconnecting
+        );
+        let snapshot = app.snapshot().unwrap();
+        assert!(!snapshot.receiving);
+        let notification = snapshot.notification.unwrap();
+        assert!(
+            notification.message.contains(reason),
+            "{}",
+            notification.message
+        );
+        assert_eq!(
+            snapshot.error.as_deref(),
+            Some(notification.message.as_str())
+        );
+        assert!(preferences::load(&app.root).unwrap());
+        assert!(*app.receiving_preference.lock().unwrap());
+        assert_eq!(snapshot.permissions.available, !failed_check);
+        // Recovery does not silently resume or erase the retained cause.
+        std::fs::write(&helper, ready).unwrap();
+        app.refresh_permissions().unwrap();
+        app.clear_message();
+        let recovered = app.snapshot().unwrap();
+        assert!(!recovered.receiving);
+        assert_eq!(
+            recovered.notification.unwrap().message,
+            notification.message
+        );
+        app.finish(id, Ok(()));
+        app.shutdown();
+        wait(|| app.inner.lock().unwrap().listener.is_none());
+    }
+}
+
+#[test]
 fn local_device_details_expose_only_public_metadata_without_enabling_receiving() {
     let temp = tempfile::tempdir().unwrap();
     let desktop = Desktop::new(temp.path().join("device"), temp.path().join("helper")).unwrap();
@@ -867,15 +936,42 @@ esac
     let job = sender.snapshot().unwrap().session.unwrap().id;
     receiver.stop_receiving().unwrap();
     wait(|| receiver.inner.lock().unwrap().listener.is_none());
-    wait(|| sender.snapshot().unwrap().session.is_some_and(|s| s.reconnecting));
+    wait(|| {
+        sender
+            .snapshot()
+            .unwrap()
+            .session
+            .is_some_and(|s| s.reconnecting)
+    });
     std::thread::sleep(Duration::from_secs(9));
     let recovering = sender.snapshot().unwrap();
     assert_eq!(recovering.session.as_ref().unwrap().id, job);
     assert!(recovering.session.as_ref().unwrap().reconnecting);
     assert!(recovering.error.is_none());
     receiver.receive_at(false, port).unwrap();
-    wait(|| sender.snapshot().unwrap().session.is_some_and(|s| s.id == job && s.phase == Phase::Connected));
-    assert_eq!(sender.inner.lock().unwrap().job.as_ref().unwrap().socket.as_ref().unwrap().peer_addr().unwrap().port(), port);
+    wait(|| {
+        sender
+            .snapshot()
+            .unwrap()
+            .session
+            .is_some_and(|s| s.id == job && s.phase == Phase::Connected)
+    });
+    assert_eq!(
+        sender
+            .inner
+            .lock()
+            .unwrap()
+            .job
+            .as_ref()
+            .unwrap()
+            .socket
+            .as_ref()
+            .unwrap()
+            .peer_addr()
+            .unwrap()
+            .port(),
+        port
+    );
     assert!(!sender.snapshot().unwrap().session.unwrap().reconnecting);
     assert!(receiver.approvals.current().is_none());
     sender.disconnect();
@@ -926,4 +1022,118 @@ fn installation_reservation_blocks_new_sessions_and_can_be_canceled() {
     app.cancel_update();
     assert!(app.reserve(SessionKind::Pair, None).is_ok());
     app.shutdown();
+}
+
+#[test]
+fn late_permission_probe_cannot_override_newer_revocation_or_restore_receiving() {
+    let temp = tempfile::tempdir().unwrap();
+    let app = Desktop::new(temp.path().join("app"), temp.path().join("helper")).unwrap();
+    app.inner.lock().unwrap().receiving_enabled = true;
+    let older = app.begin_permission_check();
+    let newer = app.begin_permission_check();
+    let granted = || Permissions {
+        available: true,
+        post: true,
+        wifi: true,
+        ..Default::default()
+    };
+    let denied = Permissions {
+        available: true,
+        post: false,
+        wifi: true,
+        ..Default::default()
+    };
+    app.apply_permissions(newer, Ok(denied)).unwrap();
+    assert!(!app.inner.lock().unwrap().receiving_enabled);
+    assert!(!app.apply_permissions(older, Ok(granted())).unwrap().post);
+    assert!(!app.inner.lock().unwrap().permissions.post);
+    assert!(!app.inner.lock().unwrap().receiving_enabled);
+    let next = app.begin_permission_check();
+    app.apply_permissions(next, Ok(granted())).unwrap();
+    assert!(app.inner.lock().unwrap().permissions.post);
+    assert!(!app.inner.lock().unwrap().receiving_enabled);
+}
+
+#[test]
+fn retired_display_permission_result_cannot_pause_replacement_session() {
+    let temp = tempfile::tempdir().unwrap();
+    let app = Desktop::new(temp.path().join("app"), temp.path().join("helper")).unwrap();
+    app.inner.lock().unwrap().receiving_enabled = true;
+    let (current, _) = app.reserve(SessionKind::Outgoing, None).unwrap();
+    let ticket = app.begin_permission_check();
+    app.apply_permissions_for_session(ticket, Ok(Permissions::default()), Some(current + 1))
+        .unwrap();
+    assert!(app.inner.lock().unwrap().receiving_enabled);
+    let ticket = app.begin_permission_check();
+    app.apply_permissions_for_session(ticket, Ok(Permissions::default()), Some(current))
+        .unwrap();
+    assert!(!app.inner.lock().unwrap().receiving_enabled);
+}
+
+#[test]
+#[cfg(unix)]
+fn background_cable_permission_checks_preserve_native_denials_and_network_gates() {
+    use std::os::unix::fs::PermissionsExt;
+    let temp = tempfile::tempdir().unwrap();
+    let helper = temp.path().join("helper");
+    let status = temp.path().join("status");
+    std::fs::write(&helper, "#!/bin/sh\ncat \"$(dirname \"$0\")/status\"\n").unwrap();
+    std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o700)).unwrap();
+    std::fs::write(&status, "listen=false post=true wifi=false\n").unwrap();
+    let app = Desktop::new(temp.path().join("app"), helper.clone()).unwrap();
+    app.test_usb_network.store(true, Ordering::Release);
+    app.inner.lock().unwrap().receiving_enabled = true;
+    let value = app.refresh_background_permissions().unwrap();
+    assert!(value.available && value.post && !value.wifi);
+    assert!(app.inner.lock().unwrap().receiving_enabled);
+    assert!(
+        !value.can_receive(),
+        "Wi-Fi callers must still check their own gate"
+    );
+    std::fs::write(&status, "listen=false post=false wifi=false\n").unwrap();
+    app.refresh_background_permissions().unwrap();
+    assert!(!app.inner.lock().unwrap().receiving_enabled);
+}
+
+#[test]
+fn background_idle_permission_result_cannot_pause_a_new_session() {
+    let temp = tempfile::tempdir().unwrap();
+    let app = Desktop::new(temp.path().join("app"), temp.path().join("helper")).unwrap();
+    app.inner.lock().unwrap().receiving_enabled = true;
+    let ticket = app.begin_permission_check();
+    let _ = app.reserve(SessionKind::Outgoing, None).unwrap();
+    app.apply_permissions_scoped(ticket, Ok(Permissions::default()), None, true)
+        .unwrap();
+    assert!(app.inner.lock().unwrap().receiving_enabled);
+}
+
+#[test]
+#[cfg(unix)]
+fn startup_receiving_retries_a_superseded_permission_result() {
+    use std::os::unix::fs::PermissionsExt;
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("app");
+    let helper = temp.path().join("helper");
+    let started = temp.path().join("started");
+    std::fs::write(&helper, "#!/bin/sh\necho ready > \"$(dirname \"$0\")/started\"\nsleep .05\necho 'listen=false post=true wifi=false'\n").unwrap();
+    std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let app = Desktop::new(root.clone(), helper).unwrap();
+    preferences::save(&root, true).unwrap();
+    *app.receiving_preference.lock().unwrap() = true;
+    *app.identity.lock().unwrap() = Some(Arc::new(Identity::generate()));
+    app.test_usb_network.store(true, Ordering::Release);
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    drop(listener);
+    let restored = app.clone();
+    let thread = std::thread::spawn(move || restored.restore_receiving_at(port));
+    wait(|| started.exists());
+    let _newer_ui_probe = app.begin_permission_check();
+    thread.join().unwrap();
+    assert!(
+        app.snapshot().unwrap().receiving,
+        "A retired startup result must not lose the saved On choice"
+    );
+    app.shutdown();
+    wait(|| app.inner.lock().unwrap().listener.is_none());
 }

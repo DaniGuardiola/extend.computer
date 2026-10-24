@@ -17,7 +17,7 @@ Identity verification, trust decisions, account membership, encrypted session au
 | --- | --- | --- |
 | Identity storage | Protect device keys using the platform's credential facilities | macOS Keychain; separate development file identity |
 | Input | Capture and inject supported events; map physical keys and modifiers | macOS native helpers |
-| Displays | Expose supported capture, virtual-display, and presentation capabilities | Not supported yet |
+| Displays | Expose supported capture, virtual-display, and presentation capabilities | Experimental macOS LAN streaming: ScreenCaptureKit, VideoToolbox, Metal, and a runtime virtual-display adapter |
 | Permissions | Determine effective access and guide users through OS approval | macOS permission bridge |
 | Network optimization | Apply supported optimizations and restore resources on exit | macOS Wi-Fi/AWDL broker |
 | Distribution | Package, sign, install, and update applications | macOS Developer ID and Sparkle pipeline |

@@ -72,9 +72,11 @@ impl Desktop {
         peers::save(&self.root, &next)?;
         *devices = next;
         drop(devices);
+        let _ = self.clear_peer_device_info(peer);
         self.clear_removal(peer)
     }
     pub fn received_unpair(&self, peer: &str) -> Result<()> {
+        self.disconnect_usb_peer(peer);
         if let Some(name) = self.record_removal(peer, REMOTE_UNPAIR_MESSAGE)? {
             self.notify(format!("{name} is no longer paired."));
         }
@@ -85,6 +87,7 @@ impl Desktop {
         let device = self.devices.lock().unwrap().get(peer).cloned();
         let result = (|| -> Result<()> {
             self.store()?.complete_unpair(peer)?;
+            self.disconnect_usb_peer(peer);
             self.remove_device_metadata(peer)?;
             if let Some(device) = &device {
                 self.notify(format!("Unpaired from {}.", device.name));
@@ -104,7 +107,7 @@ impl Desktop {
             let peer = peer.to_owned();
             std::thread::spawn(move || {
                 let _ = (|| -> Result<()> {
-                    let socket = TcpStream::connect_timeout(
+                    let socket = extend_computer_agent::local_network::connect_timeout(
                         &device.address.parse()?,
                         Duration::from_secs(2),
                     )?;

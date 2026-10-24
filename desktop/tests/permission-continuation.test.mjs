@@ -36,3 +36,26 @@ test("new intent replaces the previous target", () => {
   assert.equal(pending.takeReady(allowed).peer, "peer-b");
   assert.equal(pending.takeReady(allowed), null);
 });
+
+test("USB continuation still requires native input access and its current target", () => {
+  const pending = new PermissionContinuation();
+  pending.waitFor(share);
+  const cable = (action) => action.kind === "share" && action.peer === "peer-a" ? "usb" : "local";
+  const noWifi = { ...allowed, wifi: false };
+  for (const key of ["available", "post", "listen"])
+    assert.equal(pending.takeReady({ ...noWifi, [key]: false }, cable), null);
+  assert.equal(pending.takeReady(noWifi, () => "local"), null);
+  assert.deepEqual(pending.takeReady(noWifi, cable), share);
+  assert.equal(pending.takeReady(noWifi, cable), null);
+  pending.waitFor({ ...share, peer: "peer-b" });
+  assert.equal(pending.takeReady(noWifi, cable), null);
+});
+
+test("USB receiving needs accessibility but no capture or Wi-Fi broker", () => {
+  const pending = new PermissionContinuation();
+  pending.waitFor({ kind: "receive" });
+  const receiving = { ...allowed, listen: false, wifi: false };
+  assert.equal(pending.takeReady({ ...receiving, post: false }, () => "usb"), null);
+  assert.equal(pending.takeReady(receiving, () => "local"), null);
+  assert.deepEqual(pending.takeReady(receiving, () => "usb"), { kind: "receive" });
+});

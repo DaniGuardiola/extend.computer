@@ -21,6 +21,7 @@ The macOS CI whitelist includes shared engine and build inputs plus the explicit
 - `runtime/incoming.rs`: receiver lifecycle and native input readiness checks.
 - `runtime/unpair.rs`: local access removal, pinned peer notification, and persistent explicit retry.
 - `runtime/outgoing.rs`: initiated pairing, code normalization, and pinned control connections.
+- `runtime/display.rs`: paired/account display connections, authenticated WebRTC setup, adaptive video bitrate, and native helper lifecycle.
 - `runtime/state.rs`: typed session kinds/phases and allowed transitions, serialized with stable IPC strings.
 - `runtime/errors.rs`: user-facing translation of typed engine errors and transport failures.
 - `runtime/tests.rs`: encrypted pairing/control lifecycle tests with a fake native input helper.
@@ -29,9 +30,13 @@ The macOS CI whitelist includes shared engine and build inputs plus the explicit
 
 `accounts.rs` owns account sessions and browser sign-in; `relay.rs` bridges account WebSockets to the existing encrypted engine. `runtime/presence.rs` checks peer reachability and availability independently of control sessions. See [accounts and routing](accounts-and-routing.md).
 
+`engine/src/device_info.rs` reports presentation-only platform and hardware kind through an optional encrypted Hello field. macOS uses hardware model identifiers and internal battery detection; the Android JNI adapter uses configured application screen dimensions to distinguish phones and tablets. Pinned, trusted presence replies populate `runtime/device_info.rs`'s separate `peer-device-info.json` cache, so offline icons retain their type without changing saved names or connection settings. `desktop/src/DeviceIcon.tsx` renders desktop, laptop, tablet, and phone icons; peers without hardware metadata keep a generic platform icon. These fields never determine authorization or capabilities, and older peers remain compatible.
+
 ## macOS
 
 `native/macos/` holds the Swift input adapter and small C compatibility boundary. `Permissions/` contains the PermissionFlow bridge and MIT-licensed upstream modules. `LowJitter/` contains the app-owned Wi-Fi optimization broker, service registration support, and standalone development tools.
+
+`Display/` contains virtual-display creation, ScreenCaptureKit capture, VideoToolbox H.264 encoding/decoding, and Metal presentation. The virtual-display bridge uses runtime-checked private macOS APIs; capture, codecs, and rendering use public APIs. `engine/src/display.rs` owns the WebRTC transport; `engine/src/session/display.rs` authenticates its setup against pairing or account trust before media resources start.
 
 The warp-suppression adjustment, background cursor visibility fallback, session AWDL leases, and blocking accepted sockets each address observed failures. Do not remove them as cosmetic compatibility code without reproducing their original cases. Diagnostic notes live in the milestone documents.
 

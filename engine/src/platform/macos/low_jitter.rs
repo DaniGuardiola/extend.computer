@@ -152,9 +152,112 @@ pub fn required_for_peer(peer: IpAddr) -> Result<bool> {
 }
 
 /// Read-only, authenticated service probe. File existence is not readiness.
+#[derive(Debug)]
+pub enum ReadinessFailure {
+    Spawn(String),
+    Timeout,
+    Exit(Option<i32>),
+    Broker(BrokerFailure),
+    Output(String),
+    Protocol,
+}
+/// Allowlisted local diagnostics; never retain arbitrary broker stderr.
+#[derive(Debug, PartialEq, Eq)]
+pub enum BrokerFailure {
+    ConnectionInvalidated,
+    ConnectionInterrupted,
+    ProxyError,
+    Timeout,
+    Configuration,
+    SigningIdentity,
+    Other,
+}
+fn broker_failure(stderr: &str) -> Option<BrokerFailure> {
+    match stderr.trim() {
+        "readiness_failure=connection_invalidated" => Some(BrokerFailure::ConnectionInvalidated),
+        "readiness_failure=connection_interrupted" => Some(BrokerFailure::ConnectionInterrupted),
+        "readiness_failure=proxy_error" => Some(BrokerFailure::ProxyError),
+        "readiness_failure=timeout" => Some(BrokerFailure::Timeout),
+        "readiness_failure=configuration" => Some(BrokerFailure::Configuration),
+        "readiness_failure=signing_identity" => Some(BrokerFailure::SigningIdentity),
+        "readiness_failure=other" => Some(BrokerFailure::Other),
+        _ => None,
+    }
+}
+#[derive(Debug)]
+pub struct ReadinessError {
+    pub failure: ReadinessFailure,
+    pub elapsed: Duration,
+}
+
+/// Preserve the reason and local duration; never classify a failed probe as
+/// an authoritative OS permission denial. The outer deadline covers the
+/// broker's five-second XPC deadline plus startup and bounded process cleanup.
+pub fn ready_result() -> std::result::Result<(), ReadinessError> {
+    probe_readiness(helper_path(), Duration::from_secs(6))
+}
+fn probe_readiness(path: &Path, timeout: Duration) -> std::result::Result<(), ReadinessError> {
+    let started = Instant::now();
+    let error = |failure| ReadinessError {
+        failure,
+        elapsed: started.elapsed(),
+    };
+    let mut child = Command::new(path)
+        .arg("status")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| error(ReadinessFailure::Spawn(e.to_string())))?;
+    let stderr = child.stderr.take().unwrap();
+    let (stderr_tx, stderr_rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let mut value = String::new();
+        let result = stderr.take(512).read_to_string(&mut value).map(|_| value);
+        let _ = stderr_tx.send(result);
+    });
+    let stdout = child.stdout.take().unwrap();
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let mut value = String::new();
+        let result = stdout.take(16384).read_to_string(&mut value).map(|_| value);
+        let _ = tx.send(result);
+    });
+    let result = rx.recv_timeout(timeout);
+    let until = Instant::now() + Duration::from_millis(100);
+    while Instant::now() < until && matches!(child.try_wait(), Ok(None)) {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let status = match child.try_wait() {
+        Ok(Some(status)) => Some(status),
+        _ => {
+            let _ = child.kill();
+            child.wait().ok()
+        }
+    };
+    let value = match result {
+        Err(mpsc::RecvTimeoutError::Timeout) => return Err(error(ReadinessFailure::Timeout)),
+        Err(e) => return Err(error(ReadinessFailure::Output(e.to_string()))),
+        Ok(Err(e)) => return Err(error(ReadinessFailure::Output(e.to_string()))),
+        Ok(Ok(value)) => value,
+    };
+    if !status.is_some_and(|s| s.success()) {
+        // Child already exited/killed. This short bounded drain does not extend
+        // the broker request deadline by another full probe timeout.
+        if let Ok(Ok(stderr)) = stderr_rx.recv_timeout(Duration::from_millis(100)) {
+            if let Some(category) = broker_failure(&stderr) {
+                return Err(error(ReadinessFailure::Broker(category)));
+            }
+        }
+        return Err(error(ReadinessFailure::Exit(status.and_then(|s| s.code()))));
+    }
+    if !value.starts_with("protocol=2 ") {
+        return Err(error(ReadinessFailure::Protocol));
+    }
+    Ok(())
+}
 pub fn ready() -> bool {
-    output(helper_path().to_str().unwrap_or(""), &["status"])
-        .is_ok_and(|status| status.starts_with("protocol=2 "))
+    ready_result().is_ok()
 }
 
 pub fn require_ready_for_peer(peer: IpAddr) -> Result<()> {
@@ -262,5 +365,84 @@ mod tests {
         );
         std::fs::write(&script, "#!/bin/sh\nprintf 'DENIED\\n'\n").unwrap();
         assert!(Lease::launch(&script).is_err());
+    }
+}
+
+#[cfg(test)]
+mod readiness_tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+    fn helper(script: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("status");
+        std::fs::write(&path, script).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+        (dir, path)
+    }
+    #[test]
+    fn readiness_reports_only_allowlisted_broker_failures() {
+        for (category, expected) in [
+            (
+                "connection_invalidated",
+                BrokerFailure::ConnectionInvalidated,
+            ),
+            (
+                "connection_interrupted",
+                BrokerFailure::ConnectionInterrupted,
+            ),
+            ("proxy_error", BrokerFailure::ProxyError),
+            ("timeout", BrokerFailure::Timeout),
+            ("configuration", BrokerFailure::Configuration),
+            ("signing_identity", BrokerFailure::SigningIdentity),
+            ("other", BrokerFailure::Other),
+        ] {
+            let (_dir, path) = helper(&format!(
+                "#!/bin/sh\necho readiness_failure={category} >&2\nexit 1\n"
+            ));
+            assert!(
+                matches!(probe_readiness(&path, Duration::from_secs(1)).unwrap_err().failure,
+                ReadinessFailure::Broker(actual) if actual == expected)
+            );
+        }
+        for stderr in [
+            "secret/path",
+            "readiness_failure=proxy_error\nprivate/path",
+            "readiness_failure=unknown",
+        ] {
+            assert_eq!(broker_failure(stderr), None);
+        }
+        // Diagnostic text cannot override a successful but incompatible reply.
+        let (_dir, path) =
+            helper("#!/bin/sh\necho readiness_failure=proxy_error >&2\necho protocol=1\n");
+        assert!(matches!(
+            probe_readiness(&path, Duration::from_secs(1))
+                .unwrap_err()
+                .failure,
+            ReadinessFailure::Protocol
+        ));
+    }
+    #[test]
+    fn readiness_retains_exit_protocol_and_timeout_causes() {
+        let (_dir, path) = helper("#!/bin/sh\nexit 9\n");
+        assert!(matches!(
+            probe_readiness(&path, Duration::from_secs(1))
+                .unwrap_err()
+                .failure,
+            ReadinessFailure::Exit(Some(9))
+        ));
+        let (_dir, path) = helper("#!/bin/sh\necho protocol=1\n");
+        assert!(matches!(
+            probe_readiness(&path, Duration::from_secs(1))
+                .unwrap_err()
+                .failure,
+            ReadinessFailure::Protocol
+        ));
+        let (_dir, path) = helper("#!/bin/sh\nexec sleep 1\n");
+        let error = probe_readiness(&path, Duration::from_millis(20)).unwrap_err();
+        assert!(matches!(error.failure, ReadinessFailure::Timeout));
+        assert!(error.elapsed < Duration::from_secs(1));
+        let (_dir, path) =
+            helper("#!/bin/sh\necho 'protocol=2 leases=0 restoration_pending=false'\n");
+        probe_readiness(&path, Duration::from_secs(1)).unwrap();
     }
 }

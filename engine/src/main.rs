@@ -125,7 +125,10 @@ fn connect(address: &str) -> Result<TcpStream> {
     let addresses = address.to_socket_addrs().context("resolve endpoint")?;
     let mut last_error = None;
     for address in addresses {
-        match TcpStream::connect_timeout(&address, Duration::from_secs(5)) {
+        match extend_computer_agent::local_network::connect_timeout(
+            &address,
+            Duration::from_secs(5),
+        ) {
             Ok(stream) => return Ok(stream),
             Err(error) => last_error = Some(error),
         }
@@ -188,6 +191,7 @@ fn main() -> Result<()> {
             cursor_helper,
         } => {
             let listener = TcpListener::bind(&bind)?;
+            extend_computer_agent::local_network::bind_listener_to_local_interface(&listener)?;
             ensure!(
                 listener.local_addr()?.is_ipv4(),
                 "prototype listener requires IPv4"
@@ -217,6 +221,7 @@ fn main() -> Result<()> {
             }
             for stream in listener.incoming() {
                 let stream = stream?;
+                extend_computer_agent::local_network::bind_stream_to_local_interface(&stream)?;
                 let mut cursor = extend_computer_agent::low_jitter::ManagedCursor::new(
                     extend_computer_agent::cursor::NativeSink::new(cursor_helper.clone()),
                     stream.peer_addr()?.ip(),

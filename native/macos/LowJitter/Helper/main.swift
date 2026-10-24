@@ -48,7 +48,7 @@ struct Configuration: Decodable {
         #endif
     }
 }
-enum HelperError: Error { case configuration, unavailable, rejected(String), usage }
+enum HelperError: Error { case configuration, unavailable, connectionInvalidated, connectionInterrupted, proxyError, rejected(String), usage }
 
 final class SessionEndpoint: NSObject, LowJitterProtocol {
     let owner = UUID()
@@ -169,17 +169,67 @@ func serve() throws -> Never {
     withExtendedLifetime((delegate, listener, timer, signals)) { dispatchMain() }
 }
 
-// Small synchronous wrapper for this development CLI. Real session integration
-// must hold the connection for the entire authorized session and renew its lease.
-func request<T>(_ operation: (@escaping (T) -> Void) -> Void) throws -> T {
-    let ready = DispatchSemaphore(value: 0)
-    let lock = NSLock()
-    var result: T?
-    operation { value in lock.lock(); result = value; lock.unlock(); ready.signal() }
-    guard ready.wait(timeout: .now() + 5) == .success else { throw HelperError.unavailable }
-    lock.lock(); defer { lock.unlock() }
-    return result!
+// BEGIN XPC_REQUEST_DIAGNOSTIC
+// Fixed categories only. A failed connection wakes the current request and
+// rejects later ones; replies after failure cannot overwrite the first result.
+final class XPCFailureChannel {
+    private let lock = NSLock()
+    private var failure: HelperError?
+    private var waiting: (UUID, (HelperError) -> Void)?
+    func subscribe(_ id: UUID, _ callback: @escaping (HelperError) -> Void) {
+        lock.lock()
+        let failed = failure
+        if failed == nil { waiting = (id, callback) }
+        lock.unlock()
+        if let failed { callback(failed) }
+    }
+    func unsubscribe(_ id: UUID) {
+        lock.lock(); defer { lock.unlock() }
+        if waiting?.0 == id { waiting = nil }
+    }
+    func fail(_ error: HelperError) {
+        lock.lock()
+        guard failure == nil else { lock.unlock(); return }
+        failure = error
+        let callback = waiting?.1
+        waiting = nil
+        lock.unlock()
+        callback?(error)
+    }
 }
+final class XPCRequestResult<T> {
+    let ready = DispatchSemaphore(value: 0)
+    private let lock = NSLock()
+    private var result: Result<T, HelperError>?
+    func complete(_ value: Result<T, HelperError>) {
+        lock.lock()
+        guard result == nil else { lock.unlock(); return }
+        result = value
+        lock.unlock()
+        ready.signal()
+    }
+    func completed() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return result != nil
+    }
+    func value() throws -> T {
+        lock.lock(); defer { lock.unlock() }
+        return try result!.get()
+    }
+}
+func request<T>(_ failures: XPCFailureChannel, timeout: TimeInterval = 5,
+                _ operation: (@escaping (T) -> Void) -> Void) throws -> T {
+    let result = XPCRequestResult<T>()
+    let id = UUID()
+    failures.subscribe(id) { result.complete(.failure($0)) }
+    defer { failures.unsubscribe(id) }
+    if !result.completed() { operation { result.complete(.success($0)) } }
+    if result.ready.wait(timeout: .now() + timeout) != .success {
+        result.complete(.failure(.unavailable))
+    }
+    return try result.value()
+}
+// END XPC_REQUEST_DIAGNOSTIC
 
 func client(hold: Bool, pipeBound: Bool = false, persistent: Bool = false) throws {
     let config = try Configuration.load()
@@ -191,15 +241,18 @@ func client(hold: Bool, pipeBound: Bool = false, persistent: Bool = false) throw
     let connection = NSXPCConnection(machServiceName: serviceName, options: .privileged)
     connection.setCodeSigningRequirement(config.requirement)
     connection.remoteObjectInterface = NSXPCInterface(with: LowJitterProtocol.self)
+    let failures = XPCFailureChannel()
+    connection.invalidationHandler = { failures.fail(.connectionInvalidated) }
+    connection.interruptionHandler = { failures.fail(.connectionInterrupted) }
     connection.resume()
     defer { connection.invalidate() }
-    let proxy = connection.remoteObjectProxyWithErrorHandler { _ in } as! LowJitterProtocol
+    let proxy = connection.remoteObjectProxyWithErrorHandler { _ in failures.fail(.proxyError) } as! LowJitterProtocol
     if !hold {
-        let status: (Int, Bool) = try request { done in proxy.status { done(($0, $1)) } }
+        let status: (Int, Bool) = try request(failures) { done in proxy.status { done(($0, $1)) } }
         print("protocol=2 leases=\(status.0) restoration_pending=\(status.1)")
         return
     }
-    let response: (String?, String?) = try request { done in proxy.begin { done(($0, $1)) } }
+    let response: (String?, String?) = try request(failures) { done in proxy.begin { done(($0, $1)) } }
     guard let token = response.0, response.1 == nil else { throw HelperError.rejected(response.1 ?? "Missing lease") }
     if pipeBound { print("READY"); fflush(stdout) }
     else { print("AWDL lease active for 30 seconds; disconnect or expiry restores prior state.") }
@@ -218,10 +271,10 @@ func client(hold: Bool, pipeBound: Bool = false, persistent: Bool = false) throw
         } else {
             Thread.sleep(forTimeInterval: 2)
         }
-        let error: String? = try request { done in proxy.renew(token, reply: done) }
+        let error: String? = try request(failures) { done in proxy.renew(token, reply: done) }
         if let error { throw HelperError.rejected(error) }
     }
-    let error: String? = try request { done in proxy.end(token, reply: done) }
+    let error: String? = try request(failures) { done in proxy.end(token, reply: done) }
     if let error { throw HelperError.rejected(error) }
     if !pipeBound { print("Lease ended; restoration completed if extend.computer paused AWDL.") }
 }
@@ -238,6 +291,22 @@ do {
     default: throw HelperError.usage
     }
 } catch {
-    FileHandle.standardError.write(Data("extend.computer low-jitter helper: \(error)\n".utf8))
+    if CommandLine.arguments.dropFirst().first == "status" {
+        let category: String
+        switch error {
+        case HelperError.connectionInvalidated: category = "connection_invalidated"
+        case HelperError.connectionInterrupted: category = "connection_interrupted"
+        case HelperError.proxyError: category = "proxy_error"
+        case HelperError.unavailable: category = "timeout"
+        case HelperError.configuration: category = "configuration"
+        #if APP_SERVICE
+        case is ServiceIdentity.Failure: category = "signing_identity"
+        #endif
+        default: category = "other"
+        }
+        FileHandle.standardError.write(Data("readiness_failure=\(category)\n".utf8))
+    } else {
+        FileHandle.standardError.write(Data("extend.computer low-jitter helper: \(error)\n".utf8))
+    }
     exit(1)
 }

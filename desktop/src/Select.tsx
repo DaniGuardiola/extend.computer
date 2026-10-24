@@ -40,6 +40,12 @@ export function Select({
         gutter={5}
         sameWidth
         className="select-popover"
+        hideOnInteractOutside={
+          import.meta.env.MODE === "ui-review"
+            ? (event) =>
+                (event.target as Node | null)?.ownerDocument === document
+            : undefined
+        }
       >
         {options.map((o) => (
           <Ariakit.SelectItem

@@ -4,6 +4,7 @@
   --color-selected: #ffffff;
   --color-success: #247547;
   --color-attention: #805400;
+  --color-status-attention: #d18b0f;
   --color-danger: #b42332;
   --color-canvas: #e9ece4;
   --color-ink: #232b23;
@@ -88,6 +89,15 @@
   .icon-button {
     @apply flex size-8 items-center justify-center rounded-full hover:bg-line/60 focus-visible:bg-line/60;
   }
+  @media (hover: hover) and (pointer: fine) {
+    .device-card .device-settings {
+      opacity: 0;
+    }
+    .device-card:hover .device-settings,
+    .device-card:focus-within .device-settings {
+      opacity: 1;
+    }
+  }
   .dialog {
     @apply fixed left-1/2 top-1/2 z-50 max-h-[90vh] w-[calc(100%-40px)] max-w-[480px] -translate-x-1/2 -translate-y-1/2 overflow-y-auto overscroll-contain rounded-2xl border border-line bg-surface p-7 shadow-xl;
   }
@@ -111,6 +121,10 @@
   }
   .explanation-tooltip {
     @apply pointer-events-none z-[150] max-w-64 rounded-lg bg-ink px-3 py-2 text-xs leading-5 text-canvas shadow-lg;
+    overflow-wrap: anywhere;
+  }
+  .name-tooltip {
+    pointer-events: auto;
   }
 }
 
@@ -137,6 +151,7 @@
   --color-selected: #53604d;
   --color-success: #81c995;
   --color-attention: #ddb66c;
+  --color-status-attention: #fe9a00;
   --color-danger: #ff929b;
   --color-ink: #e2e7df;
   --color-muted: #a0a99c;
@@ -148,6 +163,25 @@
 
 :root[data-theme="dark"] .brand-logo {
   filter: brightness(0) invert(1);
+}
+
+@media (max-width: 640px) {
+  .app-header {
+    position: relative;
+  }
+  .app-brand {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+    pointer-events: none;
+  }
+  .app-brand-logo {
+    display: none;
+  }
+  .app-account-label {
+    @apply sr-only;
+  }
 }
 
 @layer components {
@@ -178,6 +212,10 @@
 }
 
 @layer components {
+  .device-error {
+    @apply border-t border-danger/20 bg-danger/5 px-5 py-3 text-xs leading-5 text-danger;
+    overflow-wrap: anywhere;
+  }
   .device-connected {
     border-color: color-mix(
       in srgb,
@@ -192,6 +230,10 @@
     box-shadow: 0 0 0 1px
       color-mix(in srgb, var(--color-success) 12%, transparent);
   }
+}
+
+.device-card-error {
+  border-color: color-mix(in srgb, var(--color-danger) 35%, var(--color-line));
 }
 
 @media (prefers-reduced-motion: no-preference) {

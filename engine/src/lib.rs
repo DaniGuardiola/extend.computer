@@ -3,11 +3,16 @@ compile_error!("dev-identity is forbidden in release builds");
 
 pub mod account_trust;
 pub mod cursor;
+pub mod device_info;
 pub mod discovery;
+pub mod display;
 pub mod identity;
+pub mod local_network;
 pub mod low_jitter;
 pub mod pairing;
 mod platform;
+#[cfg(feature = "account-relay")]
+pub mod relay;
 pub mod session;
 pub mod timing;
 pub mod trust;

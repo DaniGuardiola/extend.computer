@@ -16,16 +16,23 @@ use std::{
     },
     time::{Duration, Instant},
 };
+mod device_info;
 mod device_names;
+mod display;
 mod errors;
 mod incoming;
 mod outgoing;
 mod peer_health;
 mod preferences;
 mod presence;
+mod routes;
 #[cfg(test)]
 mod tests;
 mod unpair;
+mod usb;
+#[cfg(any(test, debug_assertions, feature = "display-benchmark"))]
+mod usb_control_test;
+mod wired;
 pub(crate) use errors::friendly_error;
 use errors::is_connection_error;
 mod state;
@@ -36,6 +43,7 @@ struct Job {
     view: Session,
     cancelled: Arc<AtomicBool>,
     socket: Option<TcpStream>,
+    display_updates: Option<std::sync::mpsc::Sender<display::SettingsUpdate>>,
 }
 struct PairCode {
     window: PairingWindow,
@@ -65,6 +73,18 @@ struct Inner {
     notification: Option<Notification>,
     notification_sequence: u64,
 }
+impl Inner {
+    fn receiving_paused(&mut self, message: String) {
+        eprintln!("Receiving paused: {message}");
+        self.receiving_enabled = false;
+        self.error = Some(message.clone());
+        self.notification_sequence += 1;
+        self.notification = Some(Notification {
+            id: self.notification_sequence,
+            message,
+        });
+    }
+}
 #[derive(Serialize)]
 pub struct Peer {
     pub id: String,
@@ -72,7 +92,10 @@ pub struct Peer {
     pub address: String,
     pub edge: String,
     pub availability: presence::Availability,
+    pub route: Option<&'static str>,
     pub trust_source: TrustSource,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub device_info: Option<extend_computer_agent::device_info::DeviceInfo>,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -126,11 +149,20 @@ pub struct Desktop {
     receiving_preference: Mutex<bool>,
     local_name_override: Mutex<Option<String>>,
     devices: Mutex<BTreeMap<String, Device>>,
+    device_info: Mutex<BTreeMap<String, extend_computer_agent::device_info::DeviceInfo>>,
     health: Mutex<BTreeMap<String, presence::Health>>,
     presence_addresses: Mutex<BTreeMap<String, SocketAddr>>,
+    discovered_presence: Mutex<Vec<SocketAddr>>,
     inner: Mutex<Inner>,
     removals: Mutex<BTreeMap<String, String>>,
+    #[cfg(target_os = "macos")]
+    usb: Mutex<Option<usb::Connection>>,
+    usb_connecting: AtomicBool,
+    #[cfg(test)]
+    test_usb_network: AtomicBool,
+    usb_epoch: std::sync::atomic::AtomicU64,
     closing: AtomicBool,
+    permission_checks: Mutex<u64>,
     update_pending: AtomicBool,
     pub approvals: Approvals,
 }
@@ -168,6 +200,7 @@ impl Desktop {
             account_trust: Default::default(),
             receiving_preference: Mutex::new(preferences::load(&root)?),
             local_name_override: Mutex::new(device_names::load_local_name(&root)?),
+            device_info: Mutex::new(device_info::load(&root)),
             root,
             discovery_id: Identity::generate().fingerprint(),
             helper,
@@ -175,9 +208,17 @@ impl Desktop {
             devices: Mutex::new(devices),
             health: Mutex::new(BTreeMap::new()),
             presence_addresses: Mutex::new(BTreeMap::new()),
+            discovered_presence: Mutex::new(Vec::new()),
             approvals: Approvals::default(),
             removals: Mutex::new(removals),
+            #[cfg(target_os = "macos")]
+            usb: Mutex::new(None),
+            usb_connecting: AtomicBool::new(false),
+            #[cfg(test)]
+            test_usb_network: AtomicBool::new(false),
+            usb_epoch: std::sync::atomic::AtomicU64::new(0),
             closing: AtomicBool::new(false),
+            permission_checks: Mutex::new(0),
             update_pending: AtomicBool::new(false),
             inner: Mutex::new(Inner {
                 next: 0,
@@ -338,20 +379,39 @@ impl Desktop {
                 } else {
                     TrustSource::Pairing
                 };
+                let usb = self.selected_usb_route(&id);
+                let health = self.health.lock().unwrap();
+                let status = health.get(&id);
+                let mut availability = status
+                    .map(|h| h.state())
+                    .unwrap_or(presence::Availability::Checking);
+                let usb_verified = status.and_then(|h| h.route()) == Some("usb");
+                drop(health);
+                let route = if let Some(usb) = usb {
+                    if !usb.current(self) {
+                        availability = presence::Availability::Offline;
+                        None
+                    } else if !usb_verified {
+                        availability = presence::Availability::Checking;
+                        None
+                    } else {
+                        Some("usb")
+                    }
+                } else {
+                    // macOS USB networking uses authenticated presence without
+                    // selecting an Android bulk connection.
+                    usb_verified.then_some("usb")
+                };
                 Ok(Peer {
                     name: d
                         .map(|d| d.name.clone())
                         .unwrap_or_else(|| format!("Device {}", &id[..8.min(id.len())])),
                     address: d.map(|d| d.address.clone()).unwrap_or_default(),
                     edge: d.map(|d| d.edge.clone()).unwrap_or_else(|| "left".into()),
-                    availability: self
-                        .health
-                        .lock()
-                        .unwrap()
-                        .get(&id)
-                        .map(|h| h.state())
-                        .unwrap_or(presence::Availability::Checking),
+                    availability,
+                    route,
                     trust_source,
+                    device_info: self.device_info.lock().unwrap().get(&id).cloned(),
                     id,
                 })
             })
@@ -416,27 +476,148 @@ impl Desktop {
         })
     }
     pub fn refresh_permissions(&self) -> Result<Permissions> {
-        let result = native::permissions(&self.helper);
+        let ticket = self.begin_permission_check();
+        self.apply_permissions(ticket, native::permissions(&self.helper))
+    }
+    fn refresh_permissions_for_route(&self, usb: bool) -> Result<Permissions> {
+        if !usb {
+            return self.refresh_permissions();
+        }
+        let ticket = self.begin_permission_check();
+        self.apply_permissions(ticket, native::permissions_for_route(&self.helper, usb))
+    }
+    fn usb_session(&self, id: u64) -> bool {
+        self.inner.lock().unwrap().job.as_ref().is_some_and(|job| {
+            job.view.id == id
+                && job.view.route == Some("usb")
+                && !job.cancelled.load(Ordering::SeqCst)
+        })
+    }
+    /// A cable session, or an idle active NCM interface, needs native permission
+    /// checks without a Wi-Fi broker round trip. Network callers still probe
+    /// Wi-Fi separately before accepting their own authenticated connection.
+    fn refresh_background_permissions(&self) -> Result<Permissions> {
+        let active = self.inner.lock().unwrap().job.as_ref().map(|job| {
+            (
+                job.view.id,
+                job.view.route == Some("usb") && !job.cancelled.load(Ordering::SeqCst),
+            )
+        });
+        let usb = active.map_or_else(|| self.usb_network_receiving_available(), |(_, usb)| usb);
+        let ticket = self.begin_permission_check();
+        let result = native::permissions_for_route(&self.helper, usb);
+        self.apply_permissions_scoped(ticket, result, active.map(|(id, _)| id), active.is_none())
+    }
+    fn begin_permission_check(&self) -> u64 {
+        let mut ticket = self.permission_checks.lock().unwrap();
+        *ticket = ticket
+            .checked_add(1)
+            .expect("Permission check generation exhausted");
+        *ticket
+    }
+    fn apply_permissions(&self, ticket: u64, result: Result<Permissions>) -> Result<Permissions> {
+        self.apply_permissions_for_session(ticket, result, None)
+    }
+    fn apply_permissions_for_session(
+        &self,
+        ticket: u64,
+        result: Result<Permissions>,
+        expected_session: Option<u64>,
+    ) -> Result<Permissions> {
+        self.apply_permissions_scoped(ticket, result, expected_session, false)
+    }
+    fn apply_permissions_scoped(
+        &self,
+        ticket: u64,
+        result: Result<Permissions>,
+        expected_session: Option<u64>,
+        expected_idle: bool,
+    ) -> Result<Permissions> {
+        let generation = self.permission_checks.lock().unwrap();
+        if *generation != ticket {
+            // Callers must not authorize a fresh receive from an obsolete success.
+            return Ok(self.inner.lock().unwrap().permissions.clone());
+        }
         let value = result.as_ref().cloned().unwrap_or_default();
+        let can_receive = self.receiving_permissions(&value);
         let cancel = {
             let mut inner = self.inner.lock().unwrap();
+            if expected_idle && inner.job.is_some() {
+                return Ok(inner.permissions.clone());
+            }
+            if expected_session.is_some_and(|id| {
+                !inner
+                    .job
+                    .as_ref()
+                    .is_some_and(|job| job.view.id == id && !job.cancelled.load(Ordering::SeqCst))
+            }) {
+                return Ok(inner.permissions.clone());
+            }
             inner.permissions = value.clone();
-            if inner.receiving_enabled && !value.can_receive() {
-                inner.receiving_enabled = false;
-                inner.notification_sequence += 1;
-                inner.notification = Some(Notification {
-                    id: inner.notification_sequence,
-                    message: "Incoming connections paused. Allow Accessibility and Wi-Fi optimization to enable them again.".into(),
-                });
-                inner.job.as_ref().is_some_and(|job| {
+            let active_usb = inner.job.as_ref().is_some_and(|job| {
+                job.view.route == Some("usb") && !job.cancelled.load(Ordering::SeqCst)
+            });
+            let can_receive = can_receive || (active_usb && value.available && value.post);
+            if inner.receiving_enabled && !can_receive {
+                let reason = match &result {
+                    Err(error) => {
+                        let detail = format!("{error:#}");
+                        format!("Could not verify macOS permissions: {}. Retry Allow connections; if this continues, reopen or reinstall extend.computer.", detail.trim_end_matches('.'))
+                    }
+                    Ok(_) if !value.available => "The input helper is unavailable. Reopen or reinstall extend.computer, then retry Allow connections.".into(),
+                    Ok(_) => {
+                        let mut missing = Vec::new();
+                        if !value.post {
+                            missing.push("Accessibility");
+                        }
+                        if !value.wifi {
+                            missing.push(if value.wifi_pending {
+                                "Wi-Fi optimization approval"
+                            } else if value.wifi_installing {
+                                "Wi-Fi optimization installation"
+                            } else if value.wifi_setup_failed {
+                                "Wi-Fi optimization setup or helper readiness"
+                            } else {
+                                "Wi-Fi optimization"
+                            });
+                        }
+                        format!("{} is not ready. Check Permissions, then retry Allow connections.", missing.join(" and "))
+                    }
+                };
+                inner.receiving_paused(format!("Incoming connections paused. {reason}"));
+                if let Some(job) = inner.job.as_mut().filter(|job| {
                     job.view.kind == SessionKind::Incoming && job.view.phase == Phase::Connected
-                })
+                }) {
+                    // Revoke this exact job while its identity is still locked.
+                    job.cancelled.store(true, Ordering::SeqCst);
+                    job.view.advance(Phase::Disconnecting);
+                    if let Some(socket) = &job.socket {
+                        let _ = socket.shutdown(Shutdown::Both);
+                    }
+                    true
+                } else {
+                    false
+                }
+            } else if !value.can_receive() {
+                if let Some(job) = inner.job.as_mut().filter(|job| {
+                    job.view.kind == SessionKind::Incoming && job.view.route != Some("usb")
+                }) {
+                    job.cancelled.store(true, Ordering::SeqCst);
+                    job.view.advance(Phase::Disconnecting);
+                    if let Some(socket) = &job.socket {
+                        let _ = socket.shutdown(Shutdown::Both);
+                    }
+                    true
+                } else {
+                    false
+                }
             } else {
                 false
             }
         };
+        drop(generation);
         if cancel {
-            self.disconnect();
+            self.approvals.cancel();
         }
         result
     }
@@ -462,7 +643,10 @@ impl Desktop {
     }
     fn reserve(&self, kind: SessionKind, peer: Option<String>) -> Result<(u64, Arc<AtomicBool>)> {
         let mut i = self.inner.lock().unwrap();
-        ensure!(!self.closing.load(Ordering::SeqCst) && !self.update_pending.load(Ordering::SeqCst), "extend.computer is preparing an update. Try again after it restarts.");
+        ensure!(
+            !self.closing.load(Ordering::SeqCst) && !self.update_pending.load(Ordering::SeqCst),
+            "extend.computer is preparing an update. Try again after it restarts."
+        );
         ensure!(i.job.is_none(), "Disconnect the current session first.");
         i.advertisement = None;
         i.next += 1;
@@ -477,13 +661,29 @@ impl Desktop {
                 peer,
                 route: None,
                 reconnecting: false,
+                display: None,
+                display_config: None,
             },
             cancelled: cancelled.clone(),
             socket: None,
+            display_updates: None,
         });
         Ok((id, cancelled))
     }
     fn set_socket(&self, id: u64, socket: &TcpStream) -> Result<()> {
+        self.set_socket_route(id, socket, None)
+    }
+    fn set_socket_route(
+        &self,
+        id: u64,
+        socket: &TcpStream,
+        route: Option<&'static str>,
+    ) -> Result<()> {
+        let cable_route = if route.is_none() {
+            wired::socket_route(socket)
+        } else {
+            None
+        };
         let mut i = self.inner.lock().unwrap();
         let j = i.job.as_mut().context("Session cancelled")?;
         ensure!(
@@ -492,10 +692,10 @@ impl Desktop {
         );
         j.socket = Some(socket.try_clone()?);
         if matches!(j.view.kind, SessionKind::Incoming | SessionKind::Outgoing) {
-            j.view.route = Some(if socket.peer_addr()?.ip().is_loopback() {
-                "internet"
-            } else {
-                "local"
+            j.view.route = Some(match route.or(cable_route) {
+                Some(route) => route,
+                None if socket.peer_addr()?.ip().is_loopback() => "internet",
+                None => "local",
             });
             eprintln!("Control transport: {}", j.view.route.unwrap());
         }
@@ -649,7 +849,9 @@ impl Desktop {
         // Reserve and update installation share this lock, preventing a new
         // session from starting between the idle check and application exit.
         let inner = self.inner.lock().unwrap();
-        if inner.job.is_some() { return false; }
+        if inner.job.is_some() {
+            return false;
+        }
         self.update_pending.store(true, Ordering::SeqCst);
         true
     }
@@ -658,6 +860,7 @@ impl Desktop {
     }
     pub fn shutdown(&self) {
         self.closing.store(true, Ordering::SeqCst);
+        self.disconnect_usb();
         let _preference = self.receiving_preference.lock().unwrap();
         self.stop_listener();
     }

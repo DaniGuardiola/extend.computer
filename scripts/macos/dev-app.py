@@ -4,6 +4,7 @@ import argparse
 from datetime import datetime, timezone
 import importlib.util
 import json
+import os
 from pathlib import Path
 import plistlib
 import shutil
@@ -20,6 +21,7 @@ DEST = REPO/'target/development/extend.computer.app'
 def build():
     signing.setup()
     subprocess.run(['sh', 'scripts/macos/build-cursor-helper.sh'], cwd=REPO, check=True)
+    subprocess.run(['bash', 'scripts/macos/build-usb-helper.sh'], cwd=REPO, env={**os.environ, 'TAURI_ENV_ARCH': 'arm64'}, check=True)
     # No caller-supplied flags: this path cannot select a release profile.
     subprocess.run(['npm', 'run', 'tauri', '--', 'build', '--debug', '--features', 'dev-identity', '--target', 'aarch64-apple-darwin', '--config', json.dumps({'identifier': 'computer.extend.desktop.development'})], cwd=REPO/'desktop', check=True)
     source = REPO/'desktop/src-tauri/target/aarch64-apple-darwin/debug/bundle/macos/extend.computer.app'
@@ -30,13 +32,20 @@ def build():
         if info['CFBundleIdentifier'] != 'computer.extend.desktop.development':
             raise RuntimeError('Refusing to dev-sign a production app')
         helper = app/'Contents/Resources/helpers/extend.computer Cursor.app'
+        display_helper = app/'Contents/Resources/helpers/extend.computer Display.app'
+        usb_helper = app/'Contents/Resources/helpers/ExtendComputerUsb'
+        shutil.copytree(REPO/'target/extend-usb-helper', usb_helper, dirs_exist_ok=True)
+        display_info = display_helper/'Contents/Info.plist'
+        display_data = plistlib.loads(display_info.read_bytes())
+        display_data['CFBundleIdentifier'] = 'computer.extend.display.development'
+        display_info.write_bytes(plistlib.dumps(display_data))
         helper_info = helper/'Contents/Info.plist'
         data = plistlib.loads(helper_info.read_bytes())
         data['CFBundleIdentifier'] = 'computer.extend.prototype.cursor.development'
         helper_info.write_bytes(plistlib.dumps(data))
         # Unique build provenance also makes retention tests exercise new code hashes.
         stamp = datetime.now(timezone.utc).isoformat() + '\n'
-        for bundle in (app, helper):
+        for bundle in (app, helper, display_helper):
             resources = bundle/'Contents/Resources'
             resources.mkdir(parents=True, exist_ok=True)
             (resources/'ExtendComputerDevelopmentBuild.txt').write_text(stamp)
@@ -50,7 +59,11 @@ def build():
             signing.sign(app/'Contents/Library/LaunchServices/ExtendComputerLowJitter', 'computer.extend.lowjitter.broker.development', hardened_runtime=True)
             for library in sorted(app.rglob('*.dylib')):
                 signing.sign(library, 'computer.extend.library.' + library.stem + '.development')
+            # The local development certificate has no Apple TeamIdentifier;
+            # hardened library validation would reject its separate libusb.
+            signing.sign(usb_helper/'ExtendComputerUsb', 'computer.extend.usb.development')
             signing.sign(helper, 'computer.extend.prototype.cursor.development')
+            signing.sign(display_helper, 'computer.extend.display.development')
             signing.sign(app, 'computer.extend.desktop.development')
         signing.run('/usr/bin/codesign', '--verify', '--deep', '--strict', app)
         # The stable install path is only replaced while this dev app is stopped.

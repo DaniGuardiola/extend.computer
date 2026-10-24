@@ -10,7 +10,12 @@ use std::{
     time::{Duration, Instant},
 };
 
-pub(crate) struct Helper(pub(crate) Child, Option<DisplaySize>);
+pub(crate) struct Helper(
+    pub(crate) Child,
+    Option<DisplaySize>,
+    bool,
+    Option<crate::input::ShortcutPolicy>,
+);
 impl Drop for Helper {
     fn drop(&mut self) {
         // Let the desktop launcher observe EOF and remove its temporary job.
@@ -37,15 +42,34 @@ pub(crate) fn spawn(path: &Path, mode: &str, arguments: &[String]) -> Result<Hel
             .spawn()
             .context(EngineError::HelperUnavailable)?,
         None,
+        false,
+        None,
     );
     let mut ready = String::new();
     // Helper emits exactly one startup line before reading input or capturing.
     BufReader::new(child.0.stdout.as_mut().unwrap()).read_line(&mut ready)?;
     let fields: Vec<_> = ready.split_whitespace().collect();
     ensure!(
-        fields.len() == 3 && fields[0] == "READY",
+        (3..=5).contains(&fields.len()) && fields[0] == "READY",
         EngineError::HelperUnavailable
     );
+    let input_mode = matches!(mode, "inject-control" | "inject-input");
+    let mut text = false;
+    let mut shortcut = None;
+    for token in &fields[3..] {
+        match *token {
+            crate::protocol::INPUT_TEXT if !text => text = true,
+            "input-shortcuts-command-v1" if shortcut.is_none() => {
+                shortcut = Some(crate::input::ShortcutPolicy::Command)
+            }
+            "input-shortcuts-control-v1" if shortcut.is_none() => {
+                shortcut = Some(crate::input::ShortcutPolicy::Control)
+            }
+            _ => anyhow::bail!(EngineError::HelperUnavailable),
+        }
+    }
+    child.2 = input_mode && text;
+    child.3 = if input_mode { shortcut } else { None };
     child.1 = Some(
         DisplaySize {
             width: fields[1].parse()?,
@@ -90,6 +114,12 @@ impl NativeSink {
     }
 }
 impl CursorSink for NativeSink {
+    fn shortcut_policy(&self) -> Option<crate::input::ShortcutPolicy> {
+        self.helper.as_ref().and_then(|helper| helper.3)
+    }
+    fn supports_text_input(&self) -> bool {
+        self.helper.as_ref().is_some_and(|helper| helper.2)
+    }
     fn start_control(&mut self, _: &str) -> Result<bool> {
         let Some(path) = &self.path else {
             return Ok(false);
@@ -105,6 +135,12 @@ impl CursorSink for NativeSink {
         Ok(true)
     }
     fn input(&mut self, event: &crate::input::InputEvent) -> Result<()> {
+        if matches!(event, crate::input::InputEvent::Text { .. }) {
+            ensure!(
+                self.supports_text_input(),
+                "Native helper does not support text"
+            );
+        }
         self.command(&serde_json::to_string(event)?)
     }
     fn heartbeat(&mut self) -> Result<()> {
@@ -258,4 +294,64 @@ pub fn send_with_policy(
     result?;
     println!("cursor_updates={sent}");
     client.close()
+}
+
+#[cfg(all(test, unix))]
+mod text_contract_tests {
+    use super::*;
+    #[test]
+    fn shortcut_helper_policy_is_explicit_and_rejects_unknown_or_duplicate_tokens() {
+        use std::os::unix::fs::PermissionsExt;
+        for (tokens, expected, valid) in [
+            ("", None, true),
+            (
+                " input-shortcuts-command-v1",
+                Some(crate::input::ShortcutPolicy::Command),
+                true,
+            ),
+            (
+                " input-text-v1 input-shortcuts-control-v1",
+                Some(crate::input::ShortcutPolicy::Control),
+                true,
+            ),
+            (" input-shortcuts-windows-v1", None, false),
+            (
+                " input-shortcuts-command-v1 input-shortcuts-control-v1",
+                None,
+                false,
+            ),
+            (" input-text-v1 input-text-v1", None, false),
+        ] {
+            let temp = tempfile::tempdir().unwrap();
+            let path = temp.path().join("helper");
+            std::fs::write(&path, format!("#!/bin/sh\nprintf '%s\\n' 'READY 1920 1080{tokens}'\nwhile IFS= read -r line; do printf '%s\\n' OK; done\n")).unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+            let mut sink = NativeSink::new(Some(path));
+            assert_eq!(sink.shortcut_policy(), None);
+            assert_eq!(sink.start_control("peer").is_ok(), valid);
+            assert_eq!(sink.shortcut_policy(), expected);
+            sink.finish();
+            assert_eq!(sink.shortcut_policy(), None);
+        }
+    }
+    #[test]
+    fn native_text_requires_actual_ready_contract() {
+        use std::os::unix::fs::PermissionsExt;
+        for supported in [false, true] {
+            let temp = tempfile::tempdir().unwrap();
+            let path = temp.path().join("helper");
+            std::fs::write(&path,format!("#!/bin/sh\nprintf '%s\\n' 'READY 1920 1080{}'\nwhile IFS= read -r line; do printf '%s\\n' OK; done\n",if supported {" input-text-v1"}else{""})).unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+            let mut sink = NativeSink::new(Some(path));
+            assert!(!sink.supports_text_input());
+            sink.start_input("peer").unwrap();
+            assert_eq!(sink.supports_text_input(), supported);
+            let result = sink.input(&crate::input::InputEvent::Text {
+                value: "é🙂".into(),
+            });
+            assert_eq!(result.is_ok(), supported);
+            sink.finish();
+            assert!(!sink.supports_text_input());
+        }
+    }
 }

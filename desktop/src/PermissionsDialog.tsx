@@ -9,6 +9,7 @@ export type PermissionDetailsProps = {
   checked: boolean;
   error: string;
   openPermission: (permission: PermissionKey) => Promise<void>;
+  wifiRequired?: boolean;
 };
 
 function PermissionRow({
@@ -55,6 +56,7 @@ export function PermissionDetails({
   checked,
   error,
   openPermission,
+  wifiRequired = true,
 }: PermissionDetailsProps) {
   const allowed = snapshot.permissions.post;
   return (
@@ -76,7 +78,7 @@ export function PermissionDetails({
         allowed={allowed}
       >
         <button
-          className={`button quiet shrink-0 whitespace-nowrap ${allowed ? "text-success" : ""}`}
+          className={`button quiet -me-3.5 shrink-0 whitespace-nowrap ${allowed ? "text-success" : ""}`}
           title="Open Accessibility"
           aria-label={
             allowed ? "Allowed — Open Accessibility" : "Open Accessibility"
@@ -89,46 +91,50 @@ export function PermissionDetails({
           <ExternalLink size={14} aria-hidden="true" />
         </button>
       </PermissionRow>
-      <PermissionRow
-        title="Wi-Fi optimization"
-        description="Keep your keyboard and mouse responsive over Wi-Fi. AirDrop pauses while connected."
-        checked={checked}
-        allowed={snapshot.permissions.wifi}
-        issue={
-          snapshot.permissions.wifi_installing
-            ? "Setting up…"
-            : snapshot.permissions.wifi_setup_failed
-              ? "Wi-Fi optimization could not start"
-              : "Permission needed"
-        }
-      >
-        <button
-          className={`button quiet shrink-0 whitespace-nowrap ${snapshot.permissions.wifi ? "text-success" : ""}`}
-          title="Open Wi-Fi optimization settings"
-          aria-label={
-            snapshot.permissions.wifi
-              ? "Allowed — Open Wi-Fi optimization settings"
-              : snapshot.permissions.wifi_setup_failed
-                ? "Retry Wi-Fi optimization setup"
-                : "Open Wi-Fi optimization settings"
-          }
-          disabled={snapshot.permissions.wifi_installing}
-          onClick={() => void openPermission("wifi")}
-        >
-          {snapshot.permissions.wifi && <Check size={16} aria-hidden="true" />}
-          {snapshot.permissions.wifi
-            ? "Allowed"
-            : snapshot.permissions.wifi_installing
+      {wifiRequired ? (
+        <PermissionRow
+          title="Wi-Fi optimization"
+          description="Keep your keyboard and mouse responsive over Wi-Fi. AirDrop pauses while connected."
+          checked={checked}
+          allowed={snapshot.permissions.wifi}
+          issue={
+            snapshot.permissions.wifi_installing
               ? "Setting up…"
               : snapshot.permissions.wifi_setup_failed
-                ? "Try again"
-                : "Open settings"}
-          {!snapshot.permissions.wifi_installing && (
-            <ExternalLink size={14} aria-hidden="true" />
-          )}
-        </button>
-      </PermissionRow>
-      {snapshot.permissions.wifi_setup_failed && (
+                ? "Wi-Fi optimization could not start"
+                : "Permission needed"
+          }
+        >
+          <button
+            className={`button quiet -me-3.5 shrink-0 whitespace-nowrap ${snapshot.permissions.wifi ? "text-success" : ""}`}
+            title="Open Wi-Fi optimization settings"
+            aria-label={
+              snapshot.permissions.wifi
+                ? "Allowed — Open Wi-Fi optimization settings"
+                : snapshot.permissions.wifi_setup_failed
+                  ? "Retry Wi-Fi optimization setup"
+                  : "Open Wi-Fi optimization settings"
+            }
+            disabled={snapshot.permissions.wifi_installing}
+            onClick={() => void openPermission("wifi")}
+          >
+            {snapshot.permissions.wifi && (
+              <Check size={16} aria-hidden="true" />
+            )}
+            {snapshot.permissions.wifi
+              ? "Allowed"
+              : snapshot.permissions.wifi_installing
+                ? "Setting up…"
+                : snapshot.permissions.wifi_setup_failed
+                  ? "Try again"
+                  : "Open settings"}
+            {!snapshot.permissions.wifi_installing && (
+              <ExternalLink size={14} aria-hidden="true" />
+            )}
+          </button>
+        </PermissionRow>
+      ) : null}
+      {wifiRequired && snapshot.permissions.wifi_setup_failed && (
         <p className="error text-xs" role="alert">
           Wi-Fi optimization is unavailable. Try again to repair its setup.
         </p>

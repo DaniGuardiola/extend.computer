@@ -1,3 +1,4 @@
+pub mod display;
 mod presence;
 use crate::error::EngineError;
 use crate::{
@@ -8,7 +9,10 @@ use crate::{
 };
 use anyhow::{bail, ensure, Context, Result};
 use hkdf::Hkdf;
-pub use presence::{query_presence, serve_presence, Presence};
+pub use presence::{
+    query_presence, query_presence_with_device_info, serve_presence, serve_presence_pinned,
+    Presence,
+};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use snow::Builder;
@@ -93,9 +97,17 @@ enum Message {
     },
     ControlGranted {
         display: DisplaySize,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        text_supported: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        shortcut_policy: Option<crate::input::ShortcutPolicy>,
     },
     InputGranted {
         display: DisplaySize,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        text_supported: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        shortcut_policy: Option<crate::input::ShortcutPolicy>,
     },
     Input {
         sequence: u64,
@@ -244,6 +256,14 @@ pub fn serve_connection(
 
 /// Platform resources start only for authenticated peers.
 pub trait CursorSink {
+    /// Only the active native adapter may declare its editing shortcut policy.
+    fn shortcut_policy(&self) -> Option<crate::input::ShortcutPolicy> {
+        None
+    }
+    /// Actual active adapter contract, queried only after start_input/control.
+    fn supports_text_input(&self) -> bool {
+        false
+    }
     fn start_cursor(&mut self, peer: &str) -> Result<bool>;
     fn move_to(&mut self, x: f64, y: f64) -> Result<()>;
     fn start_control(&mut self, _peer: &str) -> Result<bool> {
@@ -308,6 +328,39 @@ pub fn serve_connection_with_cursor(
 
 #[allow(clippy::too_many_arguments)]
 pub fn serve_connection_with_verification(
+    stream: TcpStream,
+    identity: &Identity,
+    store: &TrustStore,
+    window: &mut Option<PairingWindow>,
+    approve: impl FnMut(&str, bool) -> Decision,
+    cursor: &mut impl CursorSink,
+    verify: impl FnMut(&str, &[u8; 8]) -> bool,
+) -> Result<()> {
+    serve_connection_pinned_inner(
+        stream, identity, store, window, approve, cursor, verify, None,
+    )
+}
+/// A relay offer selects a specific authenticated peer, not any trusted device.
+pub fn serve_connection_with_cursor_pinned(
+    stream: TcpStream,
+    identity: &Identity,
+    store: &TrustStore,
+    peer: &str,
+    cursor: &mut impl CursorSink,
+) -> Result<()> {
+    serve_connection_pinned_inner(
+        stream,
+        identity,
+        store,
+        &mut None,
+        |_, _| Decision::Deny,
+        cursor,
+        |_, _| false,
+        Some(peer),
+    )
+}
+#[allow(clippy::too_many_arguments)]
+fn serve_connection_pinned_inner(
     mut stream: TcpStream,
     identity: &Identity,
     store: &TrustStore,
@@ -315,9 +368,11 @@ pub fn serve_connection_with_verification(
     mut approve: impl FnMut(&str, bool) -> Decision,
     cursor: &mut impl CursorSink,
     mut verify: impl FnMut(&str, &[u8; 8]) -> bool,
+    expected: Option<&str>,
 ) -> Result<()> {
     let cursor_session = CursorSession(cursor);
     let cursor = &mut *cursor_session.0;
+    let mut text_granted = false;
     wire::configure(&stream)?;
     let deadline = Instant::now() + Duration::from_secs(10);
     let mut hello = [0; 9];
@@ -347,7 +402,7 @@ pub fn serve_connection_with_verification(
             b'U' => b"extend.computer/v1/unpair",
             _ => b"extend.computer/v1/reconnect/probe",
         },
-        None,
+        expected,
     )?;
     if hello[8] == b'U' {
         // An authenticated identity can remove only its own record, never a
@@ -468,7 +523,19 @@ pub fn serve_connection_with_verification(
                 cursor_deadline = Some(Instant::now()); // Marks a nonrenewable request; session scope uses heartbeat instead.
                 input_granted = true;
                 session_control = true;
-                channel.send(&Message::ControlGranted { display })?;
+                text_granted = cursor.supports_text_input()
+                    && channel.supports_capability(crate::protocol::INPUT_TEXT);
+                channel.send(&Message::ControlGranted {
+                    display,
+                    text_supported: text_granted,
+                    shortcut_policy: if channel
+                        .supports_capability(crate::protocol::INPUT_SHORTCUTS)
+                    {
+                        cursor.shortcut_policy()
+                    } else {
+                        None
+                    },
+                })?;
             }
             Message::RequestInput => {
                 channel.require_capability(crate::protocol::INPUT)?;
@@ -480,7 +547,19 @@ pub fn serve_connection_with_verification(
                 let display = cursor.display_size()?.validate()?;
                 cursor_deadline = Some(Instant::now() + Duration::from_secs(30));
                 input_granted = true;
-                channel.send(&Message::InputGranted { display })?;
+                text_granted = cursor.supports_text_input()
+                    && channel.supports_capability(crate::protocol::INPUT_TEXT);
+                channel.send(&Message::InputGranted {
+                    display,
+                    text_supported: text_granted,
+                    shortcut_policy: if channel
+                        .supports_capability(crate::protocol::INPUT_SHORTCUTS)
+                    {
+                        cursor.shortcut_policy()
+                    } else {
+                        None
+                    },
+                })?;
             }
             Message::Input { sequence, event } => {
                 ensure!(
@@ -491,6 +570,13 @@ pub fn serve_connection_with_verification(
                 ensure!(sequence == next_sequence, "unexpected input sequence");
                 ensure!(pending_cursor < 4, "input window exceeded");
                 event.validate()?;
+                if matches!(event, crate::input::InputEvent::Text { .. }) {
+                    channel.require_capability(crate::protocol::INPUT_TEXT)?;
+                    ensure!(
+                        text_granted && cursor.supports_text_input(),
+                        "Text adapter unavailable"
+                    );
+                }
                 cursor.input(&event)?;
                 pending_cursor += 1;
                 next_sequence += 1;
@@ -669,6 +755,8 @@ pub fn pair_visually(
 }
 
 pub struct Client {
+    text_granted: bool,
+    shortcut_policy: Option<crate::input::ShortcutPolicy>,
     channel: Channel,
     address: std::net::SocketAddr,
     peer: String,
@@ -733,6 +821,8 @@ impl Client {
         decision.persist(store, &peer)?;
         channel.active_timeout()?;
         Ok(Self {
+            text_granted: false,
+            shortcut_policy: None,
             address,
             channel,
             peer,
@@ -761,6 +851,7 @@ impl Client {
         }
     }
     pub fn request_control(&mut self) -> Result<DisplaySize> {
+        self.shortcut_policy = None;
         self.channel.require_capability(crate::protocol::CONTROL)?;
         ensure!(!self.store.is_revoked(&self.peer)?, "device revoked");
         self.channel.send(&Message::RequestControl {
@@ -768,7 +859,22 @@ impl Client {
         })?;
         self.channel.consent_timeout()?;
         let display = match self.channel.receive()? {
-            Message::ControlGranted { display } => display,
+            Message::ControlGranted {
+                display,
+                text_supported,
+                shortcut_policy,
+            } => {
+                self.shortcut_policy = crate::input::ShortcutPolicy::validate_grant(
+                    shortcut_policy,
+                    self.channel
+                        .supports_capability(crate::protocol::INPUT_SHORTCUTS),
+                )?;
+                self.text_granted = text_supported
+                    && self
+                        .channel
+                        .supports_capability(crate::protocol::INPUT_TEXT);
+                display
+            }
             Message::Denied => bail!(EngineError::RemoteConsentDenied),
             _ => bail!(EngineError::RequestRejected),
         };
@@ -776,21 +882,54 @@ impl Client {
         display.validate()
     }
     pub fn request_input(&mut self) -> Result<DisplaySize> {
+        self.shortcut_policy = None;
         self.channel.require_capability(crate::protocol::INPUT)?;
         ensure!(!self.store.is_revoked(&self.peer)?, "device revoked");
         self.channel.send(&Message::RequestInput)?;
         self.channel.consent_timeout()?;
         let display = match self.channel.receive()? {
-            Message::InputGranted { display } => display,
+            Message::InputGranted {
+                display,
+                text_supported,
+                shortcut_policy,
+            } => {
+                self.shortcut_policy = crate::input::ShortcutPolicy::validate_grant(
+                    shortcut_policy,
+                    self.channel
+                        .supports_capability(crate::protocol::INPUT_SHORTCUTS),
+                )?;
+                self.text_granted = text_supported
+                    && self
+                        .channel
+                        .supports_capability(crate::protocol::INPUT_TEXT);
+                display
+            }
             Message::Denied => bail!(EngineError::RemoteConsentDenied),
             _ => bail!(EngineError::RequestRejected),
         };
         self.channel.active_timeout()?;
         display.validate()
     }
+    pub fn shortcut_policy(&self) -> Option<crate::input::ShortcutPolicy> {
+        self.shortcut_policy.filter(|_| {
+            self.channel
+                .supports_capability(crate::protocol::INPUT_SHORTCUTS)
+        })
+    }
+    pub fn supports_text_input(&self) -> bool {
+        self.text_granted
+            && self
+                .channel
+                .supports_capability(crate::protocol::INPUT_TEXT)
+    }
     pub fn queue_input(&mut self, event: crate::input::InputEvent) -> Result<()> {
         ensure!(!self.store.is_revoked(&self.peer)?, "device revoked");
         event.validate()?;
+        if matches!(event, crate::input::InputEvent::Text { .. }) {
+            self.channel
+                .require_capability(crate::protocol::INPUT_TEXT)?;
+            ensure!(self.text_granted, "Peer text adapter unavailable");
+        }
         self.channel.send(&Message::Input {
             sequence: self.sequence,
             event,
@@ -848,5 +987,137 @@ impl Client {
     }
     pub fn close(mut self) -> Result<()> {
         self.channel.send(&Message::Close)
+    }
+}
+
+#[cfg(test)]
+mod text_grant_tests {
+    use super::*;
+    #[derive(Deserialize)]
+    #[serde(tag = "type", deny_unknown_fields)]
+    enum LegacyGrant {
+        ControlGranted { display: DisplaySize },
+        InputGranted { display: DisplaySize },
+    }
+    #[test]
+    fn shortcut_policy_comes_from_active_adapter_in_both_authenticated_grants() {
+        use std::{net::TcpListener, thread};
+        struct Adapter {
+            active: bool,
+            policy: Option<crate::input::ShortcutPolicy>,
+        }
+        impl CursorSink for Adapter {
+            fn shortcut_policy(&self) -> Option<crate::input::ShortcutPolicy> {
+                if self.active {
+                    self.policy
+                } else {
+                    None
+                }
+            }
+            fn start_cursor(&mut self, _: &str) -> Result<bool> {
+                Ok(false)
+            }
+            fn start_control(&mut self, _: &str) -> Result<bool> {
+                self.active = true;
+                Ok(true)
+            }
+            fn start_input(&mut self, _: &str) -> Result<bool> {
+                self.active = true;
+                Ok(true)
+            }
+            fn move_to(&mut self, _: f64, _: f64) -> Result<()> {
+                Ok(())
+            }
+            fn finish(&mut self) {
+                self.active = false;
+            }
+        }
+        for policy in [
+            None,
+            Some(crate::input::ShortcutPolicy::Command),
+            Some(crate::input::ShortcutPolicy::Control),
+        ] {
+            for control in [false, true] {
+                let a = Identity::generate();
+                let b = Identity::generate();
+                let client_dir = tempfile::tempdir().unwrap();
+                let server_dir = tempfile::tempdir().unwrap();
+                let client_trust = TrustStore::open(client_dir.path()).unwrap();
+                let server_trust = TrustStore::open(server_dir.path()).unwrap();
+                let pin = b.fingerprint();
+                client_trust.remember(&pin).unwrap();
+                server_trust.remember(&a.fingerprint()).unwrap();
+                let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+                let address = listener.local_addr().unwrap();
+                let worker = thread::spawn(move || {
+                    let mut adapter = Adapter {
+                        active: false,
+                        policy,
+                    };
+                    assert_eq!(adapter.shortcut_policy(), None);
+                    let result = serve_connection_with_cursor(
+                        listener.accept().unwrap().0,
+                        &b,
+                        &server_trust,
+                        &mut None,
+                        |_, _| Decision::Deny,
+                        &mut adapter,
+                    );
+                    assert_eq!(adapter.shortcut_policy(), None);
+                    result
+                });
+                let mut client = Client::connect(
+                    TcpStream::connect(address).unwrap(),
+                    &a,
+                    &client_trust,
+                    None,
+                    Some(&pin),
+                    |_, _| Decision::Deny,
+                )
+                .unwrap();
+                assert_eq!(client.shortcut_policy(), None);
+                if control {
+                    client.request_control().unwrap();
+                } else {
+                    client.request_input().unwrap();
+                }
+                assert_eq!(client.shortcut_policy(), policy);
+                client.close().unwrap();
+                worker.join().unwrap().unwrap();
+            }
+        }
+    }
+    #[test]
+    fn disabled_text_grant_keeps_strict_legacy_schema() {
+        for message in [
+            Message::ControlGranted {
+                display: DisplaySize {
+                    width: 1000.,
+                    height: 800.,
+                },
+                text_supported: false,
+                shortcut_policy: None,
+            },
+            Message::InputGranted {
+                display: DisplaySize {
+                    width: 1000.,
+                    height: 800.,
+                },
+                text_supported: false,
+                shortcut_policy: None,
+            },
+        ] {
+            let bytes = serde_json::to_vec(&message).unwrap();
+            assert!(serde_json::from_slice::<LegacyGrant>(&bytes).is_ok());
+            let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert!(value.get("text_supported").is_none());
+            assert!(value.get("shortcut_policy").is_none());
+            let mut current = value;
+            current["text_supported"] = true.into();
+            current["shortcut_policy"] = "command".into();
+            assert!(serde_json::from_value::<Message>(current.clone()).is_ok());
+            current["shortcut_policy"] = "meta".into();
+            assert!(serde_json::from_value::<Message>(current).is_err());
+        }
     }
 }

@@ -15,10 +15,28 @@ impl Presence {
     }
 }
 pub fn serve_presence(
+    stream: TcpStream,
+    identity: &Identity,
+    store: &TrustStore,
+    status: impl FnOnce() -> Presence,
+) -> Result<()> {
+    serve_presence_inner(stream, identity, store, status, None)
+}
+pub fn serve_presence_pinned(
+    stream: TcpStream,
+    identity: &Identity,
+    store: &TrustStore,
+    expected: &str,
+    status: impl FnOnce() -> Presence,
+) -> Result<()> {
+    serve_presence_inner(stream, identity, store, status, Some(expected))
+}
+fn serve_presence_inner(
     mut stream: TcpStream,
     identity: &Identity,
     store: &TrustStore,
     status: impl FnOnce() -> Presence,
+    expected: Option<&str>,
 ) -> Result<()> {
     wire::configure(&stream)?;
     let deadline = Instant::now() + Duration::from_secs(3);
@@ -35,7 +53,7 @@ pub fn serve_presence(
         false,
         deadline,
         b"extend.computer/v1/presence",
-        None,
+        expected,
     )?;
     if store.peer(&peer).ok().flatten().is_none() {
         channel.send(&Message::NotPaired)?;
@@ -54,10 +72,20 @@ pub fn serve_presence(
 /// Only a pinned response can establish availability or change a cached endpoint.
 /// None means an authenticated peer explicitly no longer recognizes this pairing.
 pub fn query_presence(
-    mut stream: TcpStream,
+    stream: TcpStream,
     identity: &Identity,
     expected: &str,
 ) -> Result<Option<Presence>> {
+    Ok(query_presence_with_device_info(stream, identity, expected)?.map(|(status, _)| status))
+}
+
+/// Returns hardware metadata only after pinned identity and trusted presence succeed.
+/// Metadata remains in the additive Hello; the strict Presence message is unchanged.
+pub fn query_presence_with_device_info(
+    mut stream: TcpStream,
+    identity: &Identity,
+    expected: &str,
+) -> Result<Option<(Presence, Option<crate::device_info::DeviceInfo>)>> {
     wire::configure(&stream)?;
     stream.write_all(MAGIC)?;
     stream.write_all(b"H")?;
@@ -81,7 +109,7 @@ pub fn query_presence(
         bail!(EngineError::RequestRejected)
     };
     status.validate()?;
-    Ok(Some(status))
+    Ok(Some((status, channel.remote_device_info().cloned())))
 }
 
 #[cfg(test)]
@@ -114,14 +142,16 @@ mod tests {
                 }
             })
         });
-        let result = query_presence(TcpStream::connect(addr).unwrap(), &client, &expected);
+        let result =
+            query_presence_with_device_info(TcpStream::connect(addr).unwrap(), &client, &expected);
         let _ = thread.join().unwrap();
         if !correct_pin {
             assert!(result.is_err());
         } else if known {
-            let status = result.unwrap().unwrap();
+            let (status, info) = result.unwrap().unwrap();
             assert!(!status.receiving);
             assert_eq!(status.name, "Remote");
+            assert_eq!(info, Some(crate::device_info::local_info()));
         } else {
             assert!(result.unwrap().is_none());
         }

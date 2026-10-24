@@ -7,6 +7,7 @@ publish = false
 
 [features]
 default = []
+display-benchmark = []
 dev-identity = ["extend-computer-agent/dev-identity"]
 
 [build-dependencies]
@@ -35,4 +36,4 @@ tungstenite = { version = "0.28", features = ["rustls-tls-native-roots"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSButton", "NSView", "NSWindow"] }
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSProcessInfo"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSProcessInfo", "NSString"] }

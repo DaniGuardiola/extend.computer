@@ -10,14 +10,19 @@ import {
   Settings2,
   Unlink,
 } from "lucide-react";
-import { api, type Device, type Peer, type Snapshot } from "./bridge";
+import { api, native, type Device, type Peer, type Snapshot } from "./bridge";
+import { DeviceIcon } from "./DeviceIcon";
+import { TruncatedText } from "./TruncatedText";
 import { Select } from "./Select";
+import { UsbConnection } from "./UsbConnection";
 import { Dialog } from "./Dialog";
 import { ExplainedButton } from "./ExplainedButton";
+import { displayConfig, readDisplayPreferences } from "./displayPreferences";
+import { DisplayConnectionSettings } from "./DisplayConnectionSettings";
 const availabilityStyle = {
-  update_required: { label: "Update required", dot: "bg-amber-500" },
+  update_required: { label: "Update required", dot: "bg-status-attention" },
   online: { label: "Online", dot: "bg-emerald-500" },
-  receiving_off: { label: "Not accepting connections", dot: "bg-amber-500" },
+  receiving_off: { label: "Not accepting connections", dot: "bg-status-attention" },
   offline: { label: "Offline", dot: "bg-muted/60" },
   checking: {
     label: "Checking…",
@@ -27,6 +32,7 @@ const availabilityStyle = {
 
 export function DeviceRow({
   peer,
+  platform,
   disabled,
   connect,
   session,
@@ -36,6 +42,7 @@ export function DeviceRow({
   refresh,
 }: {
   peer: Peer;
+  platform?: string;
   disabled: boolean;
   session: Snapshot["session"];
   pending: boolean;
@@ -46,6 +53,7 @@ export function DeviceRow({
 }) {
   const connected = session?.phase === "connected";
   const active = connected && session?.kind === "outgoing";
+  const sharingInput = active && !session?.display;
   const transitioning = !!session && !connected;
   const connectionLabel = connected
     ? session?.kind === "incoming"
@@ -61,6 +69,11 @@ export function DeviceRow({
   const status =
     availabilityStyle[active ? "online" : peer.availability] ??
     availabilityStyle.checking;
+  const route = session?.route ?? peer.route;
+  const canManageUsb =
+    native &&
+    navigator.platform.startsWith("Mac") &&
+    (!platform || platform.toLowerCase() === "android");
   const [settings, setSettings] = useState(false);
   const [confirmUnpair, setConfirmUnpair] = useState(false);
   const [device, setDevice] = useState<Device>({
@@ -73,18 +86,48 @@ export function DeviceRow({
   useEffect(() => {
     setDevice({ name: peer.name, address: peer.address, edge: peer.edge });
   }, [peer.name, peer.address, peer.edge]);
+  const sessionMode = session ? (session.display ?? "input") : undefined;
+  const stopAction = session && (
+    <ExplainedButton
+      className={`device-action ${active ? "bg-line/40" : ""}`}
+      disabled={
+        pending ||
+        session.phase === "disconnecting" ||
+        session.kind === "unpair"
+      }
+      explanation="End this connection."
+      onClick={disconnect}
+    >
+      <Square size={18} />
+      <span>
+        {session.phase === "disconnecting"
+          ? "Disconnecting…"
+          : transitioning
+            ? "Cancel"
+            : active
+              ? session.display
+                ? "Stop display"
+                : "Stop sharing"
+              : "Disconnect"}
+      </span>
+    </ExplainedButton>
+  );
   return (
     <li
-      className={`overflow-hidden rounded-xl border ${connected ? "device-connected" : "border-line bg-surface/50"}`}
+      className={`device-card overflow-hidden rounded-xl border ${connected ? "device-connected" : "border-line bg-surface/50"} ${error && !settings ? "device-card-error" : ""}`}
     >
       <div className="flex items-start gap-3 px-5 pt-4 pb-3">
-        <Monitor
+        <DeviceIcon
+          platform={platform}
+          kind={peer.device_info?.kind}
           size={20}
           className={`shrink-0 ${connected ? "text-success" : "text-muted"}`}
         />
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-2">
-            <p className="truncate text-sm font-medium">{peer.name}</p>
+            <TruncatedText className="text-sm font-medium">
+              {peer.name}
+            </TruncatedText>
             <TooltipProvider timeout={400}>
               <TooltipAnchor
                 render={
@@ -98,68 +141,90 @@ export function DeviceRow({
               </TooltipAnchor>
               <Tooltip className="explanation-tooltip">
                 {peer.trust_source === "account"
-                  ? "Signed in to the same account."
-                  : "Paired directly with this device. No account required."}
+                  ? "Signed in to your account."
+                  : "Paired with this computer."}
               </Tooltip>
             </TooltipProvider>
           </div>
-          {session ? (
-            <div
-              className={`mt-1 flex min-h-7 flex-wrap items-center gap-x-3 gap-y-2 text-xs ${connected ? "text-success" : "text-muted"}`}
-            >
-              <span
-                className={`inline-flex items-center gap-1.5 rounded-full px-2 py-1 font-medium ${connected ? "bg-success/15" : "bg-line/50"}`}
-              >
-                {transitioning ? (
-                  <LoaderCircle
-                    size={12}
-                    aria-hidden="true"
-                    className="motion-safe:animate-spin"
-                  />
-                ) : (
-                  <span
-                    aria-hidden="true"
-                    className="size-1.5 rounded-full bg-success"
-                  />
-                )}
-                {connectionLabel}
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <Keyboard size={14} aria-hidden="true" />
-                Keyboard &amp; mouse
-              </span>
-              {connected && session.route && (
-                <span>
-                  {session.route === "local" ? "Local network" : "Internet relay"}
+          <div
+            className={`mt-1 flex min-h-7 flex-wrap items-center gap-x-3 gap-y-2 text-xs ${connected ? "text-success" : "text-muted"}`}
+          >
+            {session ? (
+              <>
+                <span
+                  className={`inline-flex items-center gap-1.5 rounded-full px-2 py-1 font-medium ${connected ? "bg-success/15" : "bg-line/50"}`}
+                >
+                  {transitioning ? (
+                    <LoaderCircle
+                      size={12}
+                      aria-hidden="true"
+                      className="motion-safe:animate-spin"
+                    />
+                  ) : (
+                    <span
+                      aria-hidden="true"
+                      className="size-1.5 rounded-full bg-success"
+                    />
+                  )}
+                  {connectionLabel}
                 </span>
-              )}
-            </div>
-          ) : (
-            <p className="mt-1 flex min-h-7 items-center gap-1.5 text-xs text-muted">
-              <span
-                aria-hidden="true"
-                className={`size-1.5 shrink-0 rounded-full ${status.dot}`}
+                <span className="inline-flex items-center gap-1.5">
+                  {session.display ? (
+                    <Monitor size={14} aria-hidden="true" />
+                  ) : (
+                    <Keyboard size={14} aria-hidden="true" />
+                  )}
+                  {session.display === "extend"
+                    ? "Extended display"
+                    : session.display === "mirror"
+                      ? "Mirrored display"
+                      : "Keyboard & mouse"}
+                </span>
+                {connected && session.route && session.route !== "usb" && (
+                  <span>
+                    {session.route === "local"
+                      ? "Local network"
+                      : "Internet relay"}
+                  </span>
+                )}
+              </>
+            ) : (
+              <span className="inline-flex items-center gap-1.5">
+                <span
+                  aria-hidden="true"
+                  className={`size-1.5 shrink-0 rounded-full ${status.dot}`}
+                />
+                {peer.availability === "receiving_off" ? (
+                  <TooltipProvider timeout={400}>
+                    <TooltipAnchor
+                      render={<span tabIndex={0} className="cursor-help" />}
+                    >
+                      {status.label}
+                    </TooltipAnchor>
+                    <Tooltip className="explanation-tooltip">
+                      Open extend.computer on {peer.name} and turn on Allow
+                      connections.
+                    </Tooltip>
+                  </TooltipProvider>
+                ) : (
+                  status.label
+                )}
+              </span>
+            )}
+            {canManageUsb ? (
+              <UsbConnection
+                peer={peer}
+                route={route}
+                hasSession={disabled || !!session}
+                refresh={refresh}
               />
-              {peer.availability === "receiving_off" ? (
-                <TooltipProvider timeout={400}>
-                  <TooltipAnchor
-                    render={<span tabIndex={0} className="cursor-help" />}
-                  >
-                    {status.label}
-                  </TooltipAnchor>
-                  <Tooltip className="explanation-tooltip">
-                    Open extend.computer on {peer.name} and turn on Allow
-                    connections.
-                  </Tooltip>
-                </TooltipProvider>
-              ) : (
-                status.label
-              )}
-            </p>
-          )}
+            ) : route === "usb" ? (
+              <span>USB</span>
+            ) : null}
+          </div>
         </div>
         <button
-          className="icon-button -mt-1.5"
+          className="device-settings icon-button -me-2.25 -mt-1.5"
           aria-label={`Settings for ${peer.name}`}
           onClick={() => setSettings(true)}
         >
@@ -173,57 +238,81 @@ export function DeviceRow({
       )}
       {(session || peer.availability === "online") && (
         <div className="grid grid-cols-2 gap-1 px-3 pb-3 min-[720px]:grid-cols-4">
-          <ExplainedButton
-            className="device-action"
-            aria-disabled="true"
-            explanation="Use this device as an extra display. Coming later."
-          >
-            <MonitorUp size={18} />
-            <span>Extend display</span>
-          </ExplainedButton>
-          <ExplainedButton
-            className="device-action"
-            aria-disabled="true"
-            explanation="Show the same screen on both devices. Coming later."
-          >
-            <Copy size={18} />
-            <span>Mirror display</span>
-          </ExplainedButton>
-          <ExplainedButton
-            className={`device-action ${active ? "bg-line/40" : ""}`}
-            disabled={
-              session
-                ? pending ||
-                  session.phase === "disconnecting" ||
-                  session.kind === "unpair"
-                : disabled
-            }
-            explanation={
-              session
-                ? "End this keyboard and mouse connection."
-                : "Move your pointer across a screen edge to control this device with your keyboard and mouse."
-            }
-            onClick={() =>
-              session
-                ? disconnect()
-                : peer.address
+          {sessionMode === "extend" ? (
+            stopAction
+          ) : (
+            <ExplainedButton
+              className="device-action"
+              disabled={disabled || !!session || busy}
+              explanation="Extend your desktop onto this device."
+              onClick={async () => {
+                setBusy(true);
+                setError("");
+                try {
+                  await api.display(
+                    peer.id,
+                    peer,
+                    "extend",
+                    displayConfig("extend", readDisplayPreferences(peer.id)),
+                  );
+                  await refresh();
+                } catch (e) {
+                  setError(e instanceof Error ? e.message : String(e));
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              <MonitorUp size={18} />
+              <span>Extend display</span>
+            </ExplainedButton>
+          )}
+          {sessionMode === "mirror" ? (
+            stopAction
+          ) : (
+            <ExplainedButton
+              className="device-action"
+              disabled={disabled || !!session || busy}
+              explanation="Show your screen on this device."
+              onClick={async () => {
+                setBusy(true);
+                setError("");
+                try {
+                  await api.display(
+                    peer.id,
+                    peer,
+                    "mirror",
+                    displayConfig("mirror", readDisplayPreferences(peer.id)),
+                  );
+                  await refresh();
+                } catch (e) {
+                  setError(e instanceof Error ? e.message : String(e));
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              <Copy size={18} />
+              <span>Mirror display</span>
+            </ExplainedButton>
+          )}
+          {sessionMode === "input" ? (
+            stopAction
+          ) : (
+            <ExplainedButton
+              className="device-action"
+              disabled={disabled || !!session || busy}
+              explanation="Control this device with your keyboard and mouse."
+              onClick={() =>
+                peer.address || peer.route === "usb"
                   ? connect(peer.id, peer)
                   : setSettings(true)
-            }
-          >
-            {session ? <Square size={18} /> : <Keyboard size={18} />}
-            <span>
-              {session
-                ? session.phase === "disconnecting"
-                  ? "Disconnecting…"
-                  : transitioning
-                    ? "Cancel"
-                    : active
-                      ? "Stop sharing"
-                      : "Disconnect"
-                : "Share keyboard & mouse"}
-            </span>
-          </ExplainedButton>
+              }
+            >
+              <Keyboard size={18} />
+              <span>Share keyboard &amp; mouse</span>
+            </ExplainedButton>
+          )}
           <ExplainedButton
             className="device-action"
             aria-disabled="true"
@@ -234,7 +323,7 @@ export function DeviceRow({
           </ExplainedButton>
         </div>
       )}
-      {active && (
+      {sharingInput && (
         <div className="flex flex-wrap items-center gap-3 border-t border-line px-5 py-3">
           <span className="mr-auto text-xs text-muted">Screen edge</span>
           <Select
@@ -251,6 +340,22 @@ export function DeviceRow({
             ]}
           />
         </div>
+      )}
+      {active && session.display && session.display_config && (
+        <DisplayConnectionSettings
+          key={session.id}
+          peer={peer.id}
+          session={session.id}
+          current={session.display_config}
+          pending={pending}
+          refresh={refresh}
+          onError={setError}
+        />
+      )}
+      {error && !settings && (
+        <p className="device-error" role="alert">
+          {error}
+        </p>
       )}
       {settings && (
         <Dialog
@@ -294,7 +399,7 @@ export function DeviceRow({
                       await api.unpair(peer.id);
                       await refresh();
                     } catch (e) {
-                      setError(String(e));
+                      setError(e instanceof Error ? e.message : String(e));
                     } finally {
                       setBusy(false);
                     }
@@ -310,12 +415,13 @@ export function DeviceRow({
               onSubmit={async (e) => {
                 e.preventDefault();
                 setBusy(true);
+                setError("");
                 try {
                   await api.update(peer.id, device);
                   await refresh();
                   setSettings(false);
                 } catch (e) {
-                  setError(String(e));
+                  setError(e instanceof Error ? e.message : String(e));
                 } finally {
                   setBusy(false);
                 }
@@ -332,7 +438,7 @@ export function DeviceRow({
                   }
                 />
               </label>
-              <details className="text-xs text-muted">
+              <details className="text-xs text-muted" open={!peer.address}>
                 <summary className="cursor-pointer">Advanced</summary>
                 <label className="field mt-4">
                   Address

@@ -61,6 +61,14 @@ if mode == "capture" {
     CFMachPortInvalidate(tap)
     exit(0)
 }
+if mode == "inject-display" {
+    guard CommandLine.arguments.count == 3 else { fail("Display injection requires one local target descriptor.") }
+    do {
+        let target = try DisplayInputTarget.decode(Data(CommandLine.arguments[2].utf8))
+        runInputReceiver(persistent: true, target: target)
+    } catch { fail("Invalid display input target: \(error)") }
+    exit(0)
+}
 if mode == "inject-input" || mode == "inject-control" { runInputReceiver(persistent: mode == "inject-control"); exit(0) }
 if mode == "inject" {
     guard CGPreflightPostEventAccess() else { fail("Enable Accessibility for extend.computer Cursor, then restart.") }

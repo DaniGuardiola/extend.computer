@@ -15,9 +15,24 @@ export type LocalDeviceInfo = {
   version: string;
 };
 export type Device = { name: string; address: string; edge: "left" | "right" };
+export type DeviceKind = "desktop" | "laptop" | "tablet" | "phone" | "unknown";
+export type DeviceInfo = { platform: string; kind: DeviceKind };
+export type DisplayConfig = {
+  mode: "extend" | "mirror";
+  width: number;
+  height: number;
+  fps: number;
+  bitrate: number;
+  retina: boolean;
+  auto_size: boolean;
+  codec: "h264" | "hevc";
+  separate_cursor: boolean;
+};
 export type Peer = Device & {
   id: string;
+  device_info?: DeviceInfo | null;
   trust_source: "pairing" | "account";
+  route?: "local" | "internet" | "usb" | null;
   availability:
     "checking" | "online" | "receiving_off" | "offline" | "update_required";
 };
@@ -40,8 +55,10 @@ export type Snapshot = {
     kind: "incoming" | "outgoing" | "pair" | "unpair";
     phase: "connecting" | "approval" | "connected" | "disconnecting";
     peer: string | null;
-    route?: "local" | "internet" | null;
+    route?: "local" | "internet" | "usb" | null;
     reconnecting?: boolean;
+    display?: "extend" | "mirror" | null;
+    display_config?: DisplayConfig | null;
   } | null;
   receiving: boolean;
   code: string | null;
@@ -63,6 +80,34 @@ export const api = {
   closePairing: () => invoke<void>("close_pairing"),
   connect: (peer: string, device: Device) =>
     invoke<void>("connect_device", { peer, device }),
+  display: (
+    peer: string,
+    device: Device,
+    mode: "extend" | "mirror",
+    config?: DisplayConfig,
+  ) =>
+    invoke<void>("connect_display", {
+      peer,
+      device,
+      config: config ?? {
+        mode,
+        width: 1440,
+        height: 900,
+        fps: 60,
+        bitrate: 20_000_000,
+        retina: true,
+        auto_size: true,
+        codec: "hevc",
+        separate_cursor: true,
+      },
+    }),
+  updateDisplay: (session: number, config: DisplayConfig) =>
+    invoke<void>("update_display", { session, config }),
+  usbDevices: () => invoke<UsbDevice[]>("usb_devices"),
+  connectUsb: (peer: string, vendor: string, serial: string) =>
+    invoke<void>("connect_usb", { peer, vendor, serial }),
+  disconnectUsb: () => invoke<void>("disconnect_usb"),
+  usbStatus: () => invoke<UsbStatus>("usb_status"),
   disconnect: () => invoke<void>("disconnect"),
   receive: (pairing: boolean) => invoke<void>("start_receiving", { pairing }),
   stopReceiving: () => invoke<void>("stop_receiving"),
@@ -111,4 +156,17 @@ export const accounts = {
   browser: () => invoke<AccountState>("account_browser_login"),
   open: (page: "signup" | "account" | "recover") =>
     invoke<void>("account_open_page", { page }),
+};
+
+export type UsbDevice = {
+  vendor: string;
+  serial: string;
+  name: string;
+  accessory: boolean;
+};
+export type UsbStatus = {
+  state: string;
+  peer?: string;
+  signaling_route?: string;
+  error?: string;
 };

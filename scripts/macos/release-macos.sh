@@ -55,11 +55,14 @@ export APPLE_SIGNING_IDENTITY_SHA1
 python3 scripts/release.py config --channel "$RELEASE_CHANNEL" --build "$RELEASE_BUILD"
 export APPLE_SIGNING_IDENTITY="$APPLE_SIGNING_IDENTITY_SHA1"
 sh scripts/macos/build-cursor-helper.sh
+TAURI_ENV_ARCH=universal bash scripts/macos/build-usb-helper.sh
 # Our credential names intentionally differ from Tauri's notarization variables.
 # We notarize the final, explicitly signed bundle ourselves below.
 env -u APPLE_CERTIFICATE -u APPLE_CERTIFICATE_PASSWORD -u APPLE_API_KEY -u APPLE_API_ISSUER \
   npm run tauri --prefix desktop -- build --target universal-apple-darwin --config src-tauri/tauri.release.json
 app="$root/desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos/extend.computer.app"
+mkdir -p "$app/Contents/Resources/helpers/ExtendComputerUsb"
+ditto "$root/target/extend-usb-helper" "$app/Contents/Resources/helpers/ExtendComputerUsb"
 python3 - "$app" "$APPLE_SIGNING_IDENTITY" "$APPLE_TEAM_ID" "$RELEASE_BUILD" <<'PY'
 from pathlib import Path
 import plistlib

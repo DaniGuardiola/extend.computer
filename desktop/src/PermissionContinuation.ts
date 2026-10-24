@@ -6,11 +6,12 @@ export type PendingPermissionAction =
 export function permissionsReady(
   kind: PendingPermissionAction["kind"],
   access: Permissions,
+  route: "local" | "usb" = "local",
 ) {
   return (
     access.available &&
     access.post &&
-    access.wifi &&
+    (access.wifi || route === "usb") &&
     (kind === "receive" || access.listen)
   );
 }
@@ -28,8 +29,15 @@ export class PermissionContinuation {
     this.action = null;
   }
 
-  takeReady(access: Permissions): PendingPermissionAction | null {
-    if (!this.action || !permissionsReady(this.action.kind, access))
+  takeReady(
+    access: Permissions,
+    currentRoute: (action: PendingPermissionAction) => "local" | "usb" = () =>
+      "local",
+  ): PendingPermissionAction | null {
+    if (
+      !this.action ||
+      !permissionsReady(this.action.kind, access, currentRoute(this.action))
+    )
       return null;
     const action = this.action;
     this.action = null;

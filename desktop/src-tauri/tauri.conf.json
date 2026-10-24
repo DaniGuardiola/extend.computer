@@ -44,7 +44,8 @@
       },
       "frameworks": [
         "../../native/macos/Updater/vendor/Sparkle.framework"
-      ]
+      ],
+      "infoPlist": "Info.plist"
     },
     "icon": [
       "icons/32x32.png",
@@ -54,6 +55,7 @@
       "icons/icon.ico"
     ],
     "resources": {
+      "../../target/extend.computer Display.app": "helpers/extend.computer Display.app",
       "../../target/extend.computer Cursor.app": "helpers/extend.computer Cursor.app",
       "permission-resources/libExtendComputerPermissions.dylib": "libExtendComputerPermissions.dylib",
       "permission-resources/libPermissionFlow.dylib": "libPermissionFlow.dylib",

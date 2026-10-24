@@ -42,15 +42,29 @@ impl Desktop {
         if !*preference || self.closing.load(Ordering::SeqCst) {
             return;
         }
-        if let Err(error) = self.receive_with_preference(false, port, &mut preference) {
-            // Missing permission is handled when the user explicitly enables receiving.
-            if error.is::<incoming::ReceivingPermissionRequired>() {
-                return;
+        for attempt in 0..3 {
+            let before = *self.permission_checks.lock().unwrap();
+            match self.receive_with_preference(false, port, &mut preference) {
+                Ok(()) => return,
+                Err(error) if error.is::<incoming::ReceivingPermissionRequired>() => {
+                    // A concurrent UI check can retire our result before its
+                    // own result arrives. Retry only that race; a current native
+                    // denial must still leave receiving paused.
+                    let superseded =
+                        *self.permission_checks.lock().unwrap() > before.saturating_add(1);
+                    if superseded && attempt < 2 && !self.closing.load(Ordering::SeqCst) {
+                        continue;
+                    }
+                    return;
+                }
+                Err(error) => {
+                    self.notify(format!(
+                        "Incoming connections couldn’t start. {}",
+                        friendly_error(&error)
+                    ));
+                    return;
+                }
             }
-            self.notify(format!(
-                "Incoming connections couldn’t start. {}",
-                friendly_error(&error)
-            ));
         }
     }
 }

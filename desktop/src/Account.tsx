@@ -2,7 +2,6 @@ import { useEffect, useState, type FormEvent } from "react";
 import {
   Fingerprint,
   LogOut,
-  Monitor,
   RefreshCw,
   Trash2,
   ExternalLink,
@@ -15,6 +14,8 @@ import {
   type Peer,
 } from "./bridge";
 import { Dialog } from "./Dialog";
+import { DeviceIcon } from "./DeviceIcon";
+import { TruncatedText } from "./TruncatedText";
 export function useAccount() {
   const [state, setState] = useState<AccountState | null>(null);
   const [error, setError] = useState("");
@@ -116,7 +117,7 @@ export function AccountPanel({ account }: { account: AccountFlow }) {
               ? "This computer is registered to your account. Account presence updates while the app is open."
               : "Signed in. Device registration will retry when the server is reachable."}
           </p>
-          <div className="flex flex-wrap gap-2">
+          <div className="-mx-3.5 flex flex-wrap gap-2">
             <button
               className="button quiet"
               disabled={busy}
@@ -140,7 +141,7 @@ export function AccountPanel({ account }: { account: AccountFlow }) {
             two-factor authentication work there.
           </p>
           <button
-            className="button quiet"
+            className="button quiet -ms-3.5"
             disabled={busy}
             onClick={() => void act(() => accounts.cancel())}
           >
@@ -180,13 +181,13 @@ export function AccountPanel({ account }: { account: AccountFlow }) {
                 spellCheck={false}
               />
             </label>
-            <button className="button" disabled={busy}>
+            <button className="button -ms-3.5" disabled={busy}>
               Verify code
             </button>
           </form>
           {state.pending.keys && (
             <button
-              className="button quiet"
+              className="button quiet -ms-3.5"
               disabled={busy}
               onClick={() => void browser()}
             >
@@ -194,7 +195,7 @@ export function AccountPanel({ account }: { account: AccountFlow }) {
             </button>
           )}
           <button
-            className="button quiet"
+            className="button quiet -ms-3.5"
             disabled={busy}
             onClick={() => void act(() => accounts.cancel())}
           >
@@ -225,12 +226,12 @@ export function AccountPanel({ account }: { account: AccountFlow }) {
                 required
               />
             </label>
-            <button className="button" disabled={busy || !state}>
+            <button className="button -ms-3.5" disabled={busy || !state}>
               {busy ? "Signing in…" : "Log in"}
             </button>
           </form>
           <button
-            className="button quiet"
+            className="button quiet -ms-3.5"
             disabled={busy || !state}
             onClick={() => void browser()}
           >
@@ -265,7 +266,7 @@ export function AccountPanel({ account }: { account: AccountFlow }) {
               />
             </label>
             <button
-              className="button quiet mt-2"
+              className="button quiet -ms-3.5 mt-2"
               disabled={busy}
               onClick={() => void act(() => accounts.configure(server))}
             >
@@ -312,7 +313,7 @@ export function AccountDevices({
           Account devices
         </h2>
         <button
-          className="button quiet"
+          className="button quiet -me-3.5"
           aria-label="Refresh account devices"
           disabled={busy}
           onClick={() => void act(() => accounts.refresh())}
@@ -338,9 +339,9 @@ export function AccountDevices({
               key={device.id}
               className="flex items-center gap-3 rounded-xl border border-line p-3"
             >
-              <Monitor size={19} />
+              <DeviceIcon platform={device.platform} size={19} />
               <div className="min-w-0 flex-1">
-                <p className="truncate">{device.name}</p>
+                <TruncatedText>{device.name}</TruncatedText>
                 <p className="text-xs text-muted">
                   {device.platform} ·{" "}
                   {state.error
@@ -371,7 +372,7 @@ export function AccountDevices({
                 </button>
               )}
               <button
-                className="icon-button"
+                className="icon-button -me-2.25"
                 aria-label={"Remove " + device.name + " from account"}
                 disabled={busy}
                 onClick={() => setRemoval(device)}
@@ -422,7 +423,8 @@ export function AccountDevices({
       )}
       {!!devices.length && (
         <p className="mt-3 text-xs text-muted">
-          These devices need local pairing. Updated apps connect through your account.
+          These devices need local pairing. Updated apps connect through your
+          account.
         </p>
       )}
     </section>

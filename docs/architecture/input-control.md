@@ -7,7 +7,7 @@ Input sharing has two roles: a device supplies input, and another receives that 
 > [!NOTE]
 > macOS only. Other platforms **not supported yet**.
 
-The current sender captures input locally and forwards it through the authenticated Rust session. The receiver validates messages and posts events through its native helper. The desktop app and CLI share this engine.
+The current sender captures input locally and forwards it through the authenticated Rust session. The receiver validates messages and posts events through its native helper. The app and CLI share this engine.
 
 ## Handoff
 
