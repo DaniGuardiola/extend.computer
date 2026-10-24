@@ -475,7 +475,9 @@ mod tests {
                 Instant::now() < deadline,
                 "Multiplexed encrypted sessions timed out"
             );
-            std::thread::sleep(Duration::from_millis(1));
+            // Each poll moves about one packet; a millisecond sleep per pass
+            // would stretch two 400 KB keyframes past the reorder deadline.
+            std::thread::yield_now();
         }
         assert!(host.counters().0 > 100 && host.counters().1 > 100);
         assert_eq!(host.counters().2, 0);

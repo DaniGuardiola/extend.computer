@@ -129,11 +129,27 @@ jobs:
             desktop/src-tauri -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: npm ci
-      - name: Build native resources and desktop frontend
+      # Native helpers rebuild only when their sources or build scripts change;
+      # this also avoids downloading Sparkle on every run.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: native
+        with:
+          path: |
+            target/extend.computer Cursor.app
+            target/extend.computer Display.app
+            desktop/src-tauri/permission-resources
+            desktop/src-tauri/updater-resources
+            native/macos/LowJitter/.build
+            native/macos/Permissions/.build
+            native/macos/Updater/vendor
+          key: macos-native-${{ env.DEVELOPER_DIR }}-${{ hashFiles('native/macos/**', 'native/shared/**', 'scripts/macos/build-*.sh', 'desktop/package.json') }}
+      - name: Build native resources
+        if: steps.native.outputs.cache-hit != 'true'
         run: |
           sh scripts/macos/build-cursor-helper.sh
           npm run native:permissions --prefix desktop
-          npm run build --prefix desktop
+      - name: Build desktop frontend
+        run: npm run build --prefix desktop
       - name: Test desktop and core
         run: |
           cargo test --locked
