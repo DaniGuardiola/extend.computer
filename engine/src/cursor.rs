@@ -299,6 +299,26 @@ pub fn send_with_policy(
 #[cfg(all(test, unix))]
 mod text_contract_tests {
     use super::*;
+    /// Linux refuses to exec a script another test thread's fork still holds
+    /// open for writing (ETXTBSY); retry only that race.
+    fn retry_busy<T>(mut start: impl FnMut() -> Result<T>) -> Result<T> {
+        for _ in 0..20 {
+            match start() {
+                Err(error)
+                    if error.chain().any(|cause| {
+                        cause
+                            .downcast_ref::<std::io::Error>()
+                            .and_then(std::io::Error::raw_os_error)
+                            == Some(26)
+                    }) =>
+                {
+                    std::thread::sleep(Duration::from_millis(25))
+                }
+                result => return result,
+            }
+        }
+        start()
+    }
     #[test]
     fn shortcut_helper_policy_is_explicit_and_rejects_unknown_or_duplicate_tokens() {
         use std::os::unix::fs::PermissionsExt;
@@ -328,7 +348,7 @@ mod text_contract_tests {
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
             let mut sink = NativeSink::new(Some(path));
             assert_eq!(sink.shortcut_policy(), None);
-            assert_eq!(sink.start_control("peer").is_ok(), valid);
+            assert_eq!(retry_busy(|| sink.start_control("peer")).is_ok(), valid);
             assert_eq!(sink.shortcut_policy(), expected);
             sink.finish();
             assert_eq!(sink.shortcut_policy(), None);
@@ -344,7 +364,7 @@ mod text_contract_tests {
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
             let mut sink = NativeSink::new(Some(path));
             assert!(!sink.supports_text_input());
-            sink.start_input("peer").unwrap();
+            retry_busy(|| sink.start_input("peer")).unwrap();
             assert_eq!(sink.supports_text_input(), supported);
             let result = sink.input(&crate::input::InputEvent::Text {
                 value: "é🙂".into(),

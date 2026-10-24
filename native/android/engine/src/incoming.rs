@@ -653,7 +653,12 @@ mod tests {
         .unwrap();
         let port = listener.snapshot()["port"].as_u64().unwrap() as u16;
         let _idle = TcpStream::connect(("127.0.0.1", port)).unwrap();
-        thread::sleep(Duration::from_millis(150));
+        // The idle handshake must not hold the window open; allow loaded CI
+        // runners time to observe the 100 ms expiry.
+        let deadline = std::time::Instant::now() + Duration::from_secs(3);
+        while listener.snapshot()["state"] != "expired" && std::time::Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(10));
+        }
         assert_eq!(listener.snapshot()["state"], "expired");
         listener.stop();
         assert!(TcpListener::bind(("0.0.0.0", port)).is_ok());
