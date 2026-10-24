@@ -1,29 +1,38 @@
+import { api } from '../lib/api'
+import { useMfaAction } from '../lib/mutations'
+import { ManageKeysLink } from './ManageKeysLink'
+import { DownloadButton } from './DownloadButton'
+import { CopyButton } from './CopyButton'
+import { ErrorFeedback, useErrorFeedback } from './ErrorFeedback'
 import { useEffect, useState, type FormEvent } from 'react'
 import * as Ariakit from '@ariakit/react'
 import { ShieldCheck, KeyRound, Smartphone } from 'lucide-react'
-import type { PublicKeyCredentialCreationOptionsJSON } from '@simplewebauthn/browser'
 import { SessionSignOutChoice } from './SessionSignOutChoice'
 import { CodeInput } from './CodeInput'
-import { api, message } from '../lib/api'
-export type MfaInfo = {
-  enabled: boolean
-  totp: boolean
-  keys: number
-  recovery_codes: number
-  totp_available: boolean
-}
+import { message, type Passkey } from '../lib/api'
+import type { MfaInfo } from '../lib/contracts'
+export type { MfaInfo } from '../lib/contracts'
 export function MfaControls({
   verify,
-  onChange,
-  revision,
-  initialData,
+  info,
+  credentials,
+  issuedRecoveryCodes,
 }: {
   verify: (work: () => Promise<void>) => void
-  onChange: () => Promise<void>
-  revision: string
-  initialData?: MfaInfo
+  info: MfaInfo
+  credentials: Passkey[]
+  issuedRecoveryCodes?: string[] | null
 }) {
-  const [info, setInfo] = useState<MfaInfo | null>(initialData ?? null)
+  const operation = useMfaAction()
+  const factorKeys = credentials.filter((key) => key.purpose === 'factor')
+
+  const verificationMethods = [
+    ...(info?.totp ? ['a one-time code'] : []),
+    ...(credentials.some((key) => key.purpose !== 'factor')
+      ? ['a passkey']
+      : []),
+    ...(factorKeys.length ? ['a security key'] : []),
+  ]
   const [setup, setSetup] = useState<{ secret: string; uri: string } | null>(
     null,
   )
@@ -31,45 +40,31 @@ export function MfaControls({
   const [qrError, setQrError] = useState(false)
   const [setupStep, setSetupStep] = useState<'scan' | 'confirm'>('scan')
   const [showSetupKey, setShowSetupKey] = useState(false)
-  const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'error'>(
-    'idle',
-  )
+  const [setupCopyError, setSetupCopyError] = useState(false)
   const [codes, setCodes] = useState<string[] | null>(null)
-  const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    if (issuedRecoveryCodes) setCodes(issuedRecoveryCodes)
+  }, [issuedRecoveryCodes])
+  const [codesCopyError, setCodesCopyError] = useState(false)
+  useEffect(() => setCodesCopyError(false), [codes])
+  const [error, setError, errorAttempt] = useErrorFeedback()
+  const busy = operation.isPending
   const [signOutOthers, setSignOutOthers] = useState(false)
   const [sensitive, setSensitive] = useState<{
     title: string
+    description?: string
+    confirmation: string
     work: (signOut: boolean) => Promise<void>
   } | null>(null)
   function sensitiveAction(
     title: string,
     work: (signOut: boolean) => Promise<void>,
+    description?: string,
+    confirmation = 'Continue',
   ) {
     setSignOutOthers(false)
-    setSensitive({ title, work })
+    setSensitive({ title, work, description, confirmation })
   }
-  async function refresh() {
-    setInfo(await api<MfaInfo>('/mfa'))
-    await onChange()
-  }
-  useEffect(() => {
-    if (initialData) {
-      setInfo(initialData)
-      return
-    }
-    let active = true
-    api<MfaInfo>('/mfa')
-      .then((value) => {
-        if (active) setInfo(value)
-      })
-      .catch((e) => {
-        if (active) setError(message(e))
-      })
-    return () => {
-      active = false
-    }
-  }, [revision, initialData])
   useEffect(() => {
     let active = true
     setSignOutOthers(false)
@@ -77,7 +72,7 @@ export function MfaControls({
     setQrError(false)
     setSetupStep('scan')
     setShowSetupKey(false)
-    setCopyStatus('idle')
+    setSetupCopyError(false)
     if (setup)
       import('qrcode')
         .then(({ default: QR }) =>
@@ -93,27 +88,14 @@ export function MfaControls({
       active = false
     }
   }, [setup])
-  async function copySetupKey() {
-    if (!setup) return
-    try {
-      await navigator.clipboard.writeText(setup.secret)
-      setCopyStatus('copied')
-    } catch {
-      setCopyStatus('error')
-    }
-  }
   function action(work: () => Promise<void>) {
     setError('')
     verify(async () => {
-      setBusy(true)
       try {
-        await work()
-        await refresh()
+        await operation.run(work)
       } catch (e) {
         setError(message(e))
         throw e
-      } finally {
-        setBusy(false)
       }
     })
   }
@@ -122,39 +104,21 @@ export function MfaControls({
   }
   async function confirm(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const code = new FormData(event.currentTarget).get('code')
-    setBusy(true)
-    setError('')
+    const code = String(new FormData(event.currentTarget).get('code') ?? '')
     try {
-      result(
-        await api('/mfa/totp/confirm', 'POST', {
-          code,
-          sign_out_others: !!info?.totp && signOutOthers,
-        }),
-      )
-      setSetup(null)
-      await refresh()
+      await operation.run(async () => {
+        result(
+          await api('POST /mfa/totp/confirm', {
+            code,
+            sign_out_others: !!info?.totp && signOutOthers,
+          }),
+        )
+        setSetup(null)
+        setError('')
+      })
     } catch (e) {
       setError(message(e))
-    } finally {
-      setBusy(false)
     }
-  }
-  function addKey() {
-    action(async () => {
-      const { startRegistration } = await import('@simplewebauthn/browser')
-      const optionsJSON = await api<PublicKeyCredentialCreationOptionsJSON>(
-        '/passkeys/register/options',
-        'POST',
-        { factor: true },
-      )
-      await api(
-        '/passkeys/register/verify',
-        'POST',
-        await startRegistration({ optionsJSON }),
-      )
-      if (!info?.enabled) result(await api('/mfa/enable', 'POST'))
-    })
   }
   return (
     <>
@@ -164,19 +128,39 @@ export function MfaControls({
             <h2 id="mfa-title">Two-factor authentication</h2>
             <p>
               {info?.enabled
-                ? 'On. Password sign-ins require a second factor.'
-                : 'Require a second factor when signing in.'}
+                ? `Password sign-ins require ${new Intl.ListFormat('en', { type: 'disjunction' }).format(verificationMethods)}.`
+                : 'Require a second factor for password sign-ins.'}
             </p>
           </div>
-          <span className="status-label">{info?.enabled ? 'On' : 'Off'}</span>
+          {info?.enabled ? (
+            <Ariakit.TooltipProvider showTimeout={0} placement="left">
+              <Ariakit.TooltipAnchor
+                render={<button type="button" />}
+                className="status-label [grid-column:2] [grid-row:1] self-center p-0 [border:0] [background:none] text-app-ink leading-[1.4]"
+              >
+                On
+              </Ariakit.TooltipAnchor>
+              <Ariakit.Tooltip
+                className="account-tooltip"
+                flip="right top bottom"
+                overflowPadding={16}
+              >
+                <Ariakit.TooltipArrow />
+                Remove all verification methods to turn off two-factor
+                authentication.
+              </Ariakit.Tooltip>
+            </Ariakit.TooltipProvider>
+          ) : (
+            <span className="status-label status-label-off [grid-column:2] [grid-row:1] self-center p-0 [border:0] [background:none] text-app-ink leading-[1.4]">
+              Off
+            </span>
+          )}
         </div>
-        {error && (
-          <p role="alert" className="message error-message">
-            {error}
-          </p>
+        {error && !setup && (
+          <ErrorFeedback error={error} attempt={errorAttempt} />
         )}
         {info && (
-          <div className="security-list">
+          <div className="security-list [border-top:1px_solid_var(--line)] mt-[22px]">
             <div className="security-row">
               <div>
                 <Smartphone size={19} />
@@ -195,7 +179,7 @@ export function MfaControls({
                   disabled={busy || !info.totp_available}
                   onClick={() =>
                     action(async () =>
-                      setSetup(await api('/mfa/totp/setup', 'POST')),
+                      setSetup(await api('POST /mfa/totp/setup')),
                     )
                   }
                 >
@@ -209,10 +193,16 @@ export function MfaControls({
                       sensitiveAction(
                         'Remove one-time codes?',
                         async (signOut) => {
-                          await api('/mfa/totp', 'DELETE', {
+                          await api('DELETE /mfa/totp', {
                             sign_out_others: signOut,
                           })
                         },
+                        info.enabled && !info.keys
+                          ? 'This is your last verification method. Removing it will turn off two-factor authentication and invalidate your recovery codes. Password sign-ins will no longer require a second factor.'
+                          : 'You can still verify password sign-ins with a passkey or security key.',
+                        info.enabled && !info.keys
+                          ? 'Remove codes and turn off 2FA'
+                          : 'Remove codes',
                       )
                     }
                   >
@@ -226,29 +216,17 @@ export function MfaControls({
                 <KeyRound size={19} />
                 <div>
                   <h3>Passkeys and security keys</h3>
-                  <p>
-                    {info.keys
-                      ? `${info.keys} registered. Passkeys let you sign in directly; touch-only keys follow your password.`
-                      : 'Add a passkey or a USB/NFC security key.'}
-                  </p>
+                  <p>{info.keys} available to verify password sign-ins.</p>
                 </div>
               </div>
               <div className="mfa-actions">
-                <button
-                  className="text-button"
-                  disabled={busy || info.keys >= 10}
-                  onClick={addKey}
-                >
-                  Add key
-                </button>
+                <ManageKeysLink>Manage keys</ManageKeysLink>
                 {!info.enabled && !!info.keys && (
                   <button
                     className="text-button"
                     disabled={busy}
                     onClick={() =>
-                      action(async () =>
-                        result(await api('/mfa/enable', 'POST')),
-                      )
+                      action(async () => result(await api('POST /mfa/enable')))
                     }
                   >
                     Enable with existing keys
@@ -264,8 +242,8 @@ export function MfaControls({
                     <div>
                       <h3>Recovery codes</h3>
                       <p>
-                        {info.recovery_codes} unused. Save them somewhere safe;
-                        each works once.
+                        {info.recovery_codes} unused. Save them somewhere safe.
+                        Each works once.
                       </p>
                     </div>
                   </div>
@@ -274,39 +252,11 @@ export function MfaControls({
                     disabled={busy}
                     onClick={() =>
                       action(async () =>
-                        result(await api('/mfa/recovery-codes', 'POST')),
+                        result(await api('POST /mfa/recovery-codes')),
                       )
                     }
                   >
                     Generate new codes
-                  </button>
-                </div>
-                <div className="security-row">
-                  <div>
-                    <ShieldCheck size={19} />
-                    <div>
-                      <h3>Turn off two-factor authentication</h3>
-                      <p>
-                        Password sign-ins will no longer require a second
-                        factor.
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    className="text-button"
-                    disabled={busy}
-                    onClick={() =>
-                      sensitiveAction(
-                        'Turn off two-factor authentication?',
-                        async (signOut) => {
-                          await api('/mfa/disable', 'POST', {
-                            sign_out_others: signOut,
-                          })
-                        },
-                      )
-                    }
-                  >
-                    Turn off
                   </button>
                 </div>
               </>
@@ -315,12 +265,18 @@ export function MfaControls({
         )}
       </section>
       <Ariakit.Dialog
+        unmountOnHide
         open={!!sensitive}
         onClose={() => setSensitive(null)}
         className="dialog"
         backdrop={<div className="dialog-backdrop" />}
       >
         <Ariakit.DialogHeading>{sensitive?.title}</Ariakit.DialogHeading>
+        {sensitive?.description && (
+          <Ariakit.DialogDescription>
+            {sensitive.description}
+          </Ariakit.DialogDescription>
+        )}
         <SessionSignOutChoice
           checked={signOutOthers}
           onChange={setSignOutOthers}
@@ -339,13 +295,18 @@ export function MfaControls({
               action(() => pending.work(signOut))
             }}
           >
-            Continue
+            {sensitive?.confirmation}
           </button>
         </div>
       </Ariakit.Dialog>
       <Ariakit.Dialog
+        unmountOnHide
         open={!!setup}
-        onClose={() => !busy && setSetup(null)}
+        onClose={() => {
+          if (busy) return
+          setError('')
+          setSetup(null)
+        }}
         className="dialog totp-setup-dialog"
         backdrop={<div className="dialog-backdrop" />}
       >
@@ -383,20 +344,23 @@ export function MfaControls({
               {showSetupKey && (
                 <div id="totp-setup-key" className="totp-manual-setup">
                   <p>Add this key to your app or password manager.</p>
-                  <div className="totp-key-row">
-                    <code>{setup?.secret}</code>
-                    <button
-                      type="button"
-                      className="text-button"
-                      aria-label="Copy setup key"
-                      onClick={() => void copySetupKey()}
-                    >
-                      <span aria-live="polite">
-                        {copyStatus === 'copied' ? 'Copied' : 'Copy'}
-                      </span>
-                    </button>
+                  <div className="totp-key-copy-row">
+                    <div className="totp-key-box">
+                      <code>
+                        {setup?.secret
+                          .match(/.{1,16}/g)
+                          ?.map((line) => line.match(/.{1,4}/g)?.join(' '))
+                          .join('\n')}
+                      </code>
+                    </div>
+                    <CopyButton
+                      value={setup?.secret ?? ''}
+                      ariaLabel="Copy setup key"
+                      showIcon
+                      onError={setSetupCopyError}
+                    />
                   </div>
-                  {copyStatus === 'error' && (
+                  {setupCopyError && (
                     <p role="status">
                       Could not copy. Select and copy the key manually.
                     </p>
@@ -423,11 +387,7 @@ export function MfaControls({
           </>
         ) : (
           <form onSubmit={confirm}>
-            {error && (
-              <p role="alert" className="message error-message">
-                {error}
-              </p>
-            )}
+            {error && <ErrorFeedback error={error} attempt={errorAttempt} />}
             <label className="field">
               One-time code
               <CodeInput disabled={busy} />
@@ -458,6 +418,7 @@ export function MfaControls({
         )}
       </Ariakit.Dialog>
       <Ariakit.Dialog
+        unmountOnHide
         open={!!codes}
         onClose={() => setCodes(null)}
         className="dialog"
@@ -475,24 +436,26 @@ export function MfaControls({
             </li>
           ))}
         </ul>
+        {codesCopyError && (
+          <p role="status">
+            Could not copy. Select and copy the codes manually.
+          </p>
+        )}
+        <div className="recovery-code-actions">
+          <CopyButton
+            value={codes?.join('\n') ?? ''}
+            label="Copy codes"
+            showIcon
+            onError={setCodesCopyError}
+          />
+          <DownloadButton
+            value={codes?.join('\n') ?? ''}
+            filename="extend-computer-recovery-codes.txt"
+          />
+        </div>
         <div className="dialog-actions">
-          <button
-            className="button button-outline"
-            onClick={() => {
-              const url = URL.createObjectURL(
-                new Blob([codes!.join('\n')], { type: 'text/plain' }),
-              )
-              const a = document.createElement('a')
-              a.href = url
-              a.download = 'extend-computer-recovery-codes.txt'
-              a.click()
-              URL.revokeObjectURL(url)
-            }}
-          >
-            Download codes
-          </button>
           <Ariakit.DialogDismiss className="button">
-            Saved
+            Confirm saved
           </Ariakit.DialogDismiss>
         </div>
       </Ariakit.Dialog>

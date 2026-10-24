@@ -1,0 +1,10 @@
+node_modules
+dist
+.wrangler
+.dev.vars*
+*.local
+.tanstack
+test-results
+playwright-report
+.DS_Store
+**/._*

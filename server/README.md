@@ -43,6 +43,8 @@ Registration returns `id`, `fingerprint`, and `device_token`. Re-registering the
 
 ## Passkeys
 
+The account dashboard uses one **Add key** flow. After a fresh security check, `{ "auto": true }` registration requests discoverable credentials and user verification when available, without requiring either. A key supports passwordless sign-in only when registration verifies user verification and the browser reports a discoverable credential; otherwise it remains a second factor. Passwordless authentication always requires a verified assertion. Adding any key atomically enables two-factor authentication and issues recovery codes when it was off. Existing recovery codes remain valid when adding another key. Turning off passwordless sign-in retains second-factor protection; removing the last method turns it off. Older `{ "factor": true }` and default passwordless registration requests remain supported and also require fresh verification.
+
 Set `EXTEND_ORIGIN` to the exact external HTTPS origin (for example `https://accounts.example.com`). Local development permits `http://localhost:8080`. Paths, credentials, insecure remote origins, subdomains, and alternate ports are not accepted. This setting is explicit; Host and proxy headers cannot choose a relying party. Without it, password accounts still work and passkey ceremonies return 503.
 
 | Method | Path | Credential | Behavior |
@@ -66,7 +68,7 @@ EXTEND_TEST_URL=http://localhost:8081 EXTEND_TEST_CDP=<isolated-browser-websocke
 
 ## Trust and hosting
 
-Passwords use Argon2id. Random 256-bit account and device tokens are stored as SHA-256 hashes. Login sessions expire after 30 days. Device tokens can heartbeat their own device, prove possession of its key, and join the account-private relay; they cannot read the directory or manage accounts. Every directory operation is scoped to an authenticated account. Database queries run outside the async executor. Password hashing has a two-worker bound; login/signup requests have a 20-per-minute socket-IP limit and a 16 KiB body limit. Accounts have limits of 100 active sessions and 100 registered devices.
+Passwords use Argon2id. Random 256-bit account and device tokens are stored as SHA-256 hashes. Login sessions expire after 30 days without activity. Authenticated account requests and device heartbeats renew that period; expired sessions cannot be renewed. Device tokens can heartbeat their own device, prove possession of its key, and join the account-private relay; they cannot read the directory or manage accounts. Every directory operation is scoped to an authenticated account. Database queries run outside the async executor. Password hashing has a two-worker bound; login/signup requests have a 20-per-minute socket-IP limit and a 16 KiB body limit. Accounts have limits of 100 active sessions and 100 registered devices.
 
 Forwarded IP headers are ignored. Behind a reverse proxy, the application rate limit is shared by requests from that proxy. Configure per-client limits at the proxy before public hosting. SQLite supports one server instance with a local persistent disk; multiple replicas and distributed rate limits need a later storage change. Email verification, account recovery, richer session management, and distributed abuse controls remain separate work for the standalone server.
 
@@ -107,10 +109,10 @@ Authenticated management endpoints:
 | POST | `/v1/mfa/reauth` | `{ "password": "..." }`; success or MFA ticket |
 | POST | `/v1/mfa/totp/setup` | Returns setup secret and `otpauth://` URI |
 | POST | `/v1/mfa/totp/confirm` | `{ "code": "123456" }`; enables TOTP and returns recovery codes |
-| DELETE | `/v1/mfa/totp` | Remove TOTP; cannot remove the last enabled factor |
+| DELETE | `/v1/mfa/totp` | Remove TOTP; removing the last verification method disables 2FA and invalidates recovery codes |
 | POST | `/v1/mfa/enable` | Enable already enrolled keys; returns recovery codes |
 | POST | `/v1/mfa/recovery-codes` | Replace all recovery codes |
-| POST | `/v1/mfa/disable` | Disable 2FA |
+| POST | `/v1/mfa/disable` | Disable 2FA after removing registered keys |
 
 Management requires a fresh password check (and an enabled second factor), valid for five minutes on that exact session. Start security-key enrollment with `/v1/passkeys/register/options` and `{ "factor": true }`; these keys can work without a PIN and cannot perform passwordless login. Ordinary passkey registration still requires user verification. Adding factors and regenerating recovery codes preserve signed-in sessions. Removing or replacing a factor, disabling 2FA, and password changes revoke other sessions. Security changes update valid sessions to the new security version, clear recent security verification, and invalidate pending tickets. Save recovery codes immediately; only their hashes remain on the server. `tests/mfa-browser.mjs` verifies touch-only key enrollment and login in isolated Chromium.
 

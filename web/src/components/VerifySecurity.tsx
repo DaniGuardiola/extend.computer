@@ -1,7 +1,10 @@
+import { api } from '../lib/api'
+import { useAction } from '../lib/mutations'
+import { ErrorFeedback, useErrorFeedback } from './ErrorFeedback'
 import { useState, type FormEvent } from 'react'
 import * as Ariakit from '@ariakit/react'
 import { SecondFactor, type MfaPending } from './SecondFactor'
-import { api, message } from '../lib/api'
+import { message } from '../lib/api'
 export function VerifySecurity({
   onVerified,
   onClose,
@@ -9,41 +12,44 @@ export function VerifySecurity({
   onVerified: () => Promise<void>
   onClose: () => void
 }) {
+  const operation = useAction()
   const [pending, setPending] = useState<MfaPending | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const [verifying, setVerifying] = useState(false)
+  const busy = operation.isPending || verifying
+  const [error, setError, errorAttempt] = useErrorFeedback()
   async function finish() {
-    setBusy(true)
     try {
-      await onVerified()
-      onClose()
+      await operation.run(async () => {
+        await onVerified()
+        onClose()
+      })
     } catch (e) {
       setError(message(e))
-    } finally {
-      setBusy(false)
     }
   }
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const password = new FormData(event.currentTarget).get('password')
-    setBusy(true)
-    setError('')
+    const password = String(
+      new FormData(event.currentTarget).get('password') ?? '',
+    )
     try {
-      const result = await api<MfaPending | { success: true }>(
-        '/mfa/reauth',
-        'POST',
-        { password },
-      )
-      if ('mfa_required' in result) setPending(result)
-      else await finish()
+      await operation.run(async () => {
+        const result = await api('POST /mfa/reauth', { password })
+        if ('mfa_required' in result) {
+          setError('')
+          setPending(result)
+        } else {
+          await onVerified()
+          onClose()
+        }
+      })
     } catch (e) {
       setError(message(e))
-    } finally {
-      setBusy(false)
     }
   }
   return (
     <Ariakit.Dialog
+      unmountOnHide
       open
       onClose={() => !busy && onClose()}
       className="dialog"
@@ -53,16 +59,13 @@ export function VerifySecurity({
       <Ariakit.DialogDescription>
         Verify your password and any enabled second factor.
       </Ariakit.DialogDescription>
-      {error && (
-        <p role="alert" className="message error-message">
-          {error}
-        </p>
-      )}
+      {error && <ErrorFeedback error={error} attempt={errorAttempt} />}
       {pending ? (
         <SecondFactor
           pending={pending}
           onVerified={finish}
           onCancel={() => setPending(null)}
+          onBusyChange={setVerifying}
         />
       ) : (
         <form onSubmit={submit}>

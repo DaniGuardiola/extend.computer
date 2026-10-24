@@ -11,8 +11,8 @@ const env = {
   EMAIL_FROM: 'extend <accounts@example.com>',
   PUBLIC_ORIGIN: 'https://example.com',
 }
-test('email links keep tokens in fragments and explain recovery revocation', () => {
-  const email = accountEmail(
+test('email links keep tokens in fragments and explain recovery revocation', async () => {
+  const email = await accountEmail(
     'reset',
     'user@example.com',
     token,
@@ -20,11 +20,13 @@ test('email links keep tokens in fragments and explain recovery revocation', () 
   )
   assert.ok(email.text.includes('https://example.com/email#reset=' + token))
   assert.ok(email.text.includes('Two-factor authentication stays enabled'))
+  assert.ok(email.text.includes('Your passkeys and security keys are kept'))
+  assert.ok(!email.text.includes('Passkeys are removed'))
   assert.ok(email.html.includes('expires in 30 minutes'))
-  assert.throws(() =>
+  await assert.rejects(() =>
     accountEmail('verify', 'user@example.com', token, 'http://example.com'),
   )
-  assert.throws(() =>
+  await assert.rejects(() =>
     accountEmail(
       'verify',
       'user@example.com',
@@ -33,6 +35,28 @@ test('email links keep tokens in fragments and explain recovery revocation', () 
     ),
   )
   assert.equal(emailEnabled({}), false)
+})
+test('both templates render HTML and plain text with the same action and fallback link', async () => {
+  for (const kind of ['verify', 'reset'] as const) {
+    const email = await accountEmail(
+      kind,
+      'user@example.com',
+      token,
+      env.PUBLIC_ORIGIN,
+    )
+    const link = `${env.PUBLIC_ORIGIN}/email#${kind}=${token}`
+    assert.ok(email.html.includes('<html'))
+    assert.ok(email.html.includes(`href="${link}"`))
+    assert.ok(email.html.includes('Button not working?'))
+    assert.ok(email.text.includes(link))
+    assert.ok(email.text.includes('expires in 30 minutes'))
+    assert.ok(!email.text.includes('<table'))
+    assert.ok(email.html.length < 100_000, 'Stay below Gmail clipping size')
+    assert.deepEqual(email.to, ['user@example.com'])
+  }
+  await assert.rejects(() =>
+    accountEmail('verify', 'user@example.com', 'invalid', env.PUBLIC_ORIGIN),
+  )
 })
 test('mail transport uses idempotency and fails without exposing provider errors', async () => {
   let sent = 0

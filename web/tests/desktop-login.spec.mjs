@@ -1,0 +1,168 @@
+import { testOrigin, createTestHeaders } from './test-config.mjs'
+// Local protocol + real browser test. No real emails or user browser access.
+import { test } from './browser-fixtures.mjs'
+import { randomBytes, createHash } from 'node:crypto'
+import { createServer } from 'node:http'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
+import assert from 'node:assert/strict'
+import { fileURLToPath } from 'node:url'
+const origin = testOrigin
+test(
+  'desktop-login',
+  { tag: '@integration' },
+  async ({ newContext, newPage }) => {
+    const context = await newContext({ extraHTTPHeaders: createTestHeaders() })
+    const server = createServer()
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+    let id
+    const request = async (path, body, token) => {
+      const r = await context.request.post(origin + '/v1' + path, {
+        headers: {
+          Origin: origin,
+          'X-Extend-Client': 'desktop',
+          ...(token ? { Authorization: 'Bearer ' + token } : {}),
+        },
+        data: body,
+      })
+      return { status: r.status(), data: await r.json().catch(() => null) }
+    }
+    try {
+      const email = 'desktop-flow-' + Date.now() + '@example.invalid'
+      const password = randomBytes(24).toString('hex')
+      const signup = await request('/auth/signup', {
+        email,
+        password,
+      })
+      assert.equal(signup.status, 201)
+      id = signup.data.account.id
+      const verifier = randomBytes(32).toString('base64url')
+      const challenge = createHash('sha256')
+        .update(verifier)
+        .digest('base64url')
+      const state = randomBytes(32).toString('hex')
+      const callback = new Promise((resolve) =>
+        server.once('request', (req, res) => {
+          res.writeHead(303, {
+            Location: `${origin}/desktop/connected#close`,
+            'Referrer-Policy': 'no-referrer',
+            'Cache-Control': 'no-store',
+          })
+          res.end()
+          resolve(new URL(req.url, 'http://127.0.0.1'))
+        }),
+      )
+      await context.clearCookies()
+      const page = await context.newPage()
+      // Exercise the useful fallback in browsers that prohibit automatic close.
+      await page.addInitScript(() => {
+        window.close = () => {
+          window.__desktopCloseAttempts =
+            (window.__desktopCloseAttempts ?? 0) + 1
+        }
+      })
+      const errors = []
+      page.on('pageerror', (e) => errors.push(e.message))
+      await page.goto(
+        origin +
+          `/desktop/connect?port=${server.address().port}&state=${state}&challenge=${challenge}`,
+      )
+      await page.waitForLoadState('networkidle')
+      await page
+        .getByRole('textbox', { name: 'Email', exact: true })
+        .fill(email)
+      await page.getByLabel('Password', { exact: true }).fill(password)
+      await page.getByRole('button', { name: 'Sign in', exact: true }).click()
+      await page.getByText(`Signed in as ${email}.`, { exact: true }).waitFor()
+      await page
+        .getByRole('button', { name: 'Sign in to app', exact: true })
+        .click()
+      const returned = await callback
+      await page.getByRole('heading', { name: "You're signed in." }).waitFor()
+      await page.waitForURL(origin + '/desktop/connected')
+      await page.waitForFunction(() => window.__desktopCloseAttempts === 1)
+      assert.equal(page.url(), origin + '/desktop/connected')
+      assert.equal(await page.evaluate(() => window.__desktopCloseAttempts), 1)
+      assert.equal(await page.evaluate(() => document.referrer), '')
+      assert.ok(
+        await page
+          .getByRole('link', { name: 'Manage your account' })
+          .isVisible(),
+      )
+      assert.equal(returned.searchParams.get('state'), state)
+      const code = returned.searchParams.get('code')
+      assert.equal(
+        (
+          await request('/auth/desktop/exchange', {
+            code,
+            verifier: randomBytes(32).toString('base64url'),
+          })
+        ).status,
+        401,
+      )
+      const exchange = await request('/auth/desktop/exchange', {
+        code,
+        verifier,
+      })
+      assert.equal(exchange.status, 200)
+      assert.ok(exchange.data.token)
+      assert.equal(exchange.data.account.id, id)
+      assert.equal(
+        (await request('/auth/desktop/exchange', { code, verifier })).status,
+        401,
+      )
+      const grant = await request(
+        '/auth/desktop/authorize',
+        { challenge },
+        signup.data.token,
+      )
+      assert.equal(grant.status, 200)
+      assert.equal(
+        (await request('/auth/logout', {}, signup.data.token)).status,
+        204,
+      )
+      assert.equal(
+        (
+          await request('/auth/desktop/exchange', {
+            code: grant.data.code,
+            verifier,
+          })
+        ).status,
+        401,
+      )
+      assert.deepEqual(errors, [])
+      console.log(
+        JSON.stringify({
+          desktopBrowserLogin: true,
+          pkceRequired: true,
+          codeSingleUse: true,
+          sourceSessionRevocation: true,
+          noBrowserErrors: true,
+        }),
+      )
+    } finally {
+      if (id)
+        await promisify(execFile)(
+          process.execPath,
+          [
+            'node_modules/wrangler/bin/wrangler.js',
+            'd1',
+            'execute',
+            'extend-computer',
+            '--local',
+            '--command',
+            `DELETE FROM accounts WHERE id='${id}';`,
+          ],
+          {
+            cwd: fileURLToPath(new URL('..', import.meta.url)),
+            env: {
+              ...process.env,
+              WRANGLER_LOG_PATH: '/tmp/extend-desktop-test-db.log',
+            },
+          },
+        )
+      await context.close()
+      await new Promise((resolve) => server.close(resolve))
+    }
+  },
+)

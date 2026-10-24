@@ -161,7 +161,10 @@ pub fn router(server: Arc<Server>) -> Router {
         .route("/v1/account", get(account))
         .route("/v1/mfa", get(mfa::info))
         .route("/v1/passkeys", get(passkeys::list))
-        .route("/v1/passkeys/{id}", delete(passkeys::remove))
+        .route(
+            "/v1/passkeys/{id}",
+            delete(passkeys::remove).patch(passkeys::set_usage),
+        )
         .route("/v1/auth/logout", post(logout))
         .route("/v1/devices", get(devices).post(register_device))
         .route("/v1/devices/{id}", delete(revoke_device))
@@ -399,13 +402,18 @@ fn bearer(headers: &HeaderMap) -> Result<String, ApiError> {
 }
 
 fn owner(db: &Connection, session: &str) -> Result<String, ApiError> {
-    db.query_row(
+    let account = db.query_row(
         "SELECT s.account_id FROM sessions s JOIN accounts a ON a.id=s.account_id WHERE s.token_hash = ? AND s.expires_at > ? AND s.mfa_version=a.mfa_version",
         params![session, now()],
         |r| r.get(0),
     )
     .optional()?
-    .ok_or_else(ApiError::unauthorized)
+    .ok_or_else(ApiError::unauthorized)?;
+    db.execute(
+        "UPDATE sessions SET expires_at=? WHERE token_hash=?",
+        params![now() + SESSION_SECONDS, session],
+    )?;
+    Ok(account)
 }
 
 async fn account(
@@ -481,7 +489,7 @@ async fn register_device(
             "Device name must contain 1 to 128 bytes without control characters",
         ));
     }
-    if !["macos", "windows", "linux"].contains(&input.platform.as_str()) {
+    if !["macos", "windows", "linux", "android"].contains(&input.platform.as_str()) {
         return Err(ApiError::bad("Unsupported platform"));
     }
     server.work(move |db| {
@@ -567,6 +575,7 @@ async fn heartbeat(
             if changed == 0 {
                 return Err(ApiError::unauthorized());
             }
+            db.execute("UPDATE sessions SET expires_at=? WHERE token_hash IN (SELECT session_hash FROM device_sessions WHERE token_hash=? AND device_id=?)", params![now()+SESSION_SECONDS,credential,id])?;
             Ok(StatusCode::NO_CONTENT)
         })
         .await

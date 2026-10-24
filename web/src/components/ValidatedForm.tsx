@@ -11,7 +11,11 @@ const Validation = createContext<Record<string, string>>({})
 function fieldError(input: HTMLInputElement) {
   if (input.disabled || !input.willValidate) return ''
   if (input.validity.valueMissing)
-    return input.type === 'email' ? 'Enter your email.' : 'Enter your password.'
+    return input.type === 'email'
+      ? 'Enter your email.'
+      : input.autocomplete === 'new-password'
+        ? 'Enter a password.'
+        : 'Enter your password.'
   if (input.validity.typeMismatch) return 'Enter a valid email address.'
   if (input.minLength > 0 && input.value.length < input.minLength)
     return `Use at least ${input.minLength} characters.`
@@ -77,24 +81,46 @@ export function ValidatedForm({
   )
 }
 
-export function ValidatedInput(props: ComponentProps<'input'>) {
+export function ValidatedInput({
+  hint,
+  validHint,
+  ...props
+}: ComponentProps<'input'> & { hint?: string; validHint?: string }) {
   const errors = useContext(Validation)
+  const [valid, setValid] = useState(false)
   const id = useId()
   const error = errors[props.name ?? '']
   return (
     <>
       <input
         {...props}
+        onInput={(event) => {
+          const input = event.currentTarget
+          setValid(
+            input.value.length > 0 &&
+              input.value.length >= input.minLength &&
+              input.validity.valid,
+          )
+          props.onInput?.(event)
+        }}
         aria-invalid={error ? true : undefined}
         aria-describedby={
-          [props['aria-describedby'], error ? id : undefined]
+          [props['aria-describedby'], error || hint ? id : undefined]
             .filter(Boolean)
             .join(' ') || undefined
         }
       />
-      {error && (
-        <span id={id} className="field-error" role="alert">
-          {error}
+      {(error || hint) && (
+        <span
+          id={id}
+          className={
+            hint
+              ? `field-feedback${error ? ' field-error' : ''}`
+              : 'field-error'
+          }
+          role={error ? 'alert' : undefined}
+        >
+          {error || (valid && validHint ? validHint : hint)}
         </span>
       )}
     </>

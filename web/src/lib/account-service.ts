@@ -11,6 +11,7 @@ import {
 import { matchTotp, newTotpSecret, sealSecret, openSecret } from './totp'
 import { hashPassword, verifyPassword } from './password'
 import { sessionClient } from './session-details'
+import { isDevicePlatform } from './device-platform'
 import {
   hashRecoveryCode,
   newRecoveryCodes,
@@ -31,6 +32,7 @@ class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
+    public retryAfter = 60,
   ) {
     super(message)
   }
@@ -116,6 +118,11 @@ function password(value: unknown): string {
     fail(400, 'Use a password of 12 to 1024 bytes')
   return value as string
 }
+function authenticationPassword(value: unknown, error: string): string {
+  if (typeof value !== 'string' || Buffer.byteLength(value) > 1024)
+    fail(401, error)
+  return value as string
+}
 async function body(request: Request): Promise<Record<string, unknown>> {
   if (!request.headers.get('Content-Type')?.startsWith('application/json'))
     fail(415, 'Send JSON')
@@ -185,6 +192,9 @@ function registration(
 ): RegistrationResponseJSON {
   const base = credentialBase(input)
   const response = input.response as Record<string, unknown>
+  const extensions = input.clientExtensionResults as
+    { credProps?: { rk?: unknown } } | undefined
+  const rk = extensions?.credProps?.rk
   const transports = Array.isArray(response.transports)
     ? response.transports
         .filter((value): value is string => typeof value === 'string')
@@ -192,6 +202,8 @@ function registration(
     : []
   return {
     ...base,
+    clientExtensionResults:
+      typeof rk === 'boolean' ? { credProps: { rk } } : {},
     response: {
       clientDataJSON: text(response.clientDataJSON, 4096, 'client data'),
       attestationObject: text(response.attestationObject, 12000, 'attestation'),
@@ -238,6 +250,7 @@ type Challenge = {
 
 /** Per-IP coordinated abuse limits and bounded password work. Account data lives in D1. */
 export class AccountService extends DurableObject<Env> {
+  private sessionExpiries = new WeakMap<Request, number>()
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env)
     this.ctx.storage.sql.exec(
@@ -251,11 +264,22 @@ export class AccountService extends DurableObject<Env> {
   // Internal binding only. No public route bypasses the checks below.
   async fetch(request: Request): Promise<Response> {
     try {
-      return await this.handle(request)
+      const response = await this.handle(request)
+      const expires = this.sessionExpiries.get(request)
+      const raw = cookie(request, COOKIE)
+      if (
+        expires &&
+        raw &&
+        !bearer(request) &&
+        !response.headers.has('Set-Cookie')
+      )
+        setCookie(response, request, COOKIE, raw, Math.max(0, expires - now()))
+      return response
     } catch (error) {
       if (error instanceof ApiError) {
         const response = json({ error: error.message }, error.status)
-        if (error.status === 429) response.headers.set('Retry-After', '60')
+        if (error.status === 429)
+          response.headers.set('Retry-After', String(error.retryAfter))
         return response
       }
       // Do not log request bodies, credentials, or authenticator responses.
@@ -327,7 +351,29 @@ export class AccountService extends DurableObject<Env> {
     return true
   }
 
-  private async sendEmail(account: Account, kind: EmailKind): Promise<void> {
+  async reserveAccountEmail(
+    account: string,
+  ): Promise<{ allowed: boolean; retry_after: number }> {
+    const stamp = now()
+    const row = this.ctx.storage.sql
+      .exec<{ count: number; until: number }>(
+        `INSERT INTO attempts VALUES (?, 1, ?) ON CONFLICT(key) DO UPDATE SET
+      count = CASE WHEN until <= ? THEN 1 ELSE count + 1 END,
+      until = CASE WHEN until <= ? THEN excluded.until ELSE until END
+      RETURNING count, until`,
+        'mail-account:' + account,
+        stamp + 3600,
+        stamp,
+        stamp,
+      )
+      .toArray()[0]!
+    return {
+      allowed: row.count <= 5,
+      retry_after: row.count >= 5 ? Math.max(1, row.until - stamp) : 60,
+    }
+  }
+
+  private async sendEmail(account: Account, kind: EmailKind): Promise<number> {
     if (!emailEnabled(this.env))
       fail(
         503,
@@ -339,6 +385,15 @@ export class AccountService extends DurableObject<Env> {
       .bind(account.id, now() + 60, now())
       .first()
     if (!allowed) fail(429, 'Wait a minute before requesting another email.')
+    const budget = await this.env.ACCOUNTS.getByName(
+      'mail-budget',
+    ).reserveAccountEmail(account.id)
+    if (!budget.allowed)
+      throw new ApiError(
+        429,
+        'Email limit reached. Please wait before requesting another email.',
+        budget.retry_after,
+      )
     if (!(await this.env.ACCOUNTS.getByName('mail-budget').reserveEmail()))
       fail(503, 'Email is temporarily unavailable. Try again later.')
     const raw = token()
@@ -359,26 +414,28 @@ export class AccountService extends DurableObject<Env> {
         .run()
       fail(503, 'Email is temporarily unavailable. Try again later.')
     }
+    return budget.retry_after
   }
 
   private async session(request: Request): Promise<Session> {
     const raw = bearer(request) ?? cookie(request, COOKIE)
     if (!raw || !/^[a-f0-9]{64}$/.test(raw)) fail(401, 'Please sign in')
     const found = await this.env.DB.prepare(
-      'SELECT s.account_id, s.token_hash FROM sessions s JOIN accounts a ON a.id=s.account_id WHERE s.token_hash = ? AND s.expires_at > ? AND s.mfa_version=a.mfa_version',
+      'SELECT s.account_id, s.token_hash, s.expires_at FROM sessions s JOIN accounts a ON a.id=s.account_id WHERE s.token_hash = ? AND s.expires_at > ? AND s.mfa_version=a.mfa_version',
     )
       .bind(digest(raw!), now())
-      .first<Session>()
+      .first<Session & { expires_at: number }>()
     if (!found) fail(401, 'Please sign in')
     const details = sessionClient(
       request.headers.get('User-Agent') ?? '',
       request.headers.get('X-Extend-Client') === 'desktop',
     )
     const location = request.headers.get('X-Extend-Session-Location')
-    await this.env.DB.prepare(
-      'UPDATE sessions SET last_access_at=?,platform=COALESCE(platform,?),client=COALESCE(client,?),location=? WHERE token_hash=? AND (last_access_at IS NULL OR last_access_at<? OR client IS NULL OR location IS NOT ?)',
+    const updated = await this.env.DB.prepare(
+      'UPDATE sessions SET expires_at=?,last_access_at=?,platform=COALESCE(platform,?),client=COALESCE(client,?),location=? WHERE token_hash=? AND (last_access_at IS NULL OR last_access_at<? OR client IS NULL OR location IS NOT ?)',
     )
       .bind(
+        now() + SESSION_SECONDS,
         now(),
         details.platform,
         details.client,
@@ -388,6 +445,10 @@ export class AccountService extends DurableObject<Env> {
         location ? decodeURIComponent(location) : null,
       )
       .run()
+    this.sessionExpiries.set(
+      request,
+      updated.meta.changes ? now() + SESSION_SECONDS : found!.expires_at,
+    )
     return found!
   }
 
@@ -800,7 +861,12 @@ export class AccountService extends DurableObject<Env> {
     ) {
       const input = await body(request)
       const address = email(input.email)
-      const secret = password(input.password)
+      const secret = path.endsWith('/signup')
+        ? password(input.password)
+        : authenticationPassword(
+            input.password,
+            'Email or password is incorrect',
+          )
       this.limit('email:' + digest(address), 10)
       if (path.endsWith('/signup')) {
         if (this.env.SIGNUP_ENABLED !== 'true')
@@ -1065,9 +1131,6 @@ export class AccountService extends DurableObject<Env> {
             'DELETE FROM sessions WHERE account_id = ? AND EXISTS (SELECT 1 FROM accounts WHERE id = ? AND password_hash = ?)',
           ).bind(link!.account_id, link!.account_id, replacement),
           this.env.DB.prepare(
-            'DELETE FROM passkeys WHERE account_id = ? AND EXISTS (SELECT 1 FROM accounts WHERE id = ? AND password_hash = ? AND mfa_enabled=0)',
-          ).bind(link!.account_id, link!.account_id, replacement),
-          this.env.DB.prepare(
             'DELETE FROM email_tokens WHERE account_id = ? AND EXISTS (SELECT 1 FROM accounts WHERE id = ? AND password_hash = ?)',
           ).bind(link!.account_id, link!.account_id, replacement),
           this.env.DB.prepare(
@@ -1123,7 +1186,12 @@ export class AccountService extends DurableObject<Env> {
         .bind(account)
         .first<Account>()
       this.limit('reauth:' + account, 5)
-      if (!verifyPassword(password(input.password), user!.password_hash))
+      if (
+        !verifyPassword(
+          authenticationPassword(input.password, 'Password is incorrect'),
+          user!.password_hash,
+        )
+      )
         fail(401, 'Password is incorrect')
       if (user!.mfa_enabled)
         return this.mfaPending(user!, 'manage', session.token_hash)
@@ -1185,7 +1253,7 @@ export class AccountService extends DurableObject<Env> {
       if (step === null)
         fail(
           400,
-          'Code is incorrect. Try the current code from your authenticator.',
+          'The code is incorrect. Try the current code from your authenticator app or password manager.',
         )
       const replacing = !!(await db
         .prepare('SELECT account_id FROM totp_factors WHERE account_id=?')
@@ -1223,6 +1291,11 @@ export class AccountService extends DurableObject<Env> {
     if (path === '/v1/mfa/disable' && method === 'POST') {
       const user = await this.elevated(session)
       const revokeOthers = await sessionChoice(request)
+      if ((await this.mfaInfo(account)).keys)
+        fail(
+          400,
+          'Remove your passkeys and security keys to turn off two-factor authentication',
+        )
       return this.mfaChange(
         session,
         false,
@@ -1242,14 +1315,9 @@ export class AccountService extends DurableObject<Env> {
       const revokeOthers = await sessionChoice(request)
       const user = await this.elevated(session)
       const info = await this.mfaInfo(account)
-      if (user.mfa_enabled && !info.keys)
-        fail(
-          400,
-          'Add a security key first, or turn off two-factor authentication.',
-        )
       return this.mfaChange(
         session,
-        !!user.mfa_enabled,
+        !!user.mfa_enabled && info.keys > 0,
         (version) => [
           db
             .prepare(
@@ -1276,8 +1344,10 @@ export class AccountService extends DurableObject<Env> {
         .prepare('SELECT * FROM accounts WHERE id = ?')
         .bind(account)
         .first<Account>()
-      if (!user!.email_verified) await this.sendEmail(user!, 'verify')
-      return json({ success: true })
+      const retry_after = !user!.email_verified
+        ? await this.sendEmail(user!, 'verify')
+        : 0
+      return json({ success: true, retry_after })
     }
     if (path === '/v1/auth/logout' && method === 'POST') {
       await db
@@ -1305,16 +1375,22 @@ export class AccountService extends DurableObject<Env> {
           CASE MAX(d.platform) WHEN 'macos' THEN 'macOS' WHEN 'windows' THEN 'Windows' WHEN 'linux' THEN 'Linux' ELSE MAX(d.platform) END
         END) AS platform,s.client,s.location,
         MAX(COALESCE(s.last_access_at,s.created_at),COALESCE(MAX(ds.last_seen),0)) AS last_access_at,
-        s.token_hash=? AS current
+        s.token_hash=? AS current,
+        json_group_array(DISTINCT d.name) FILTER (WHERE d.id IS NOT NULL) AS device_names
         FROM sessions s JOIN accounts a ON a.id=s.account_id
         LEFT JOIN device_sessions ds ON ds.session_hash=s.token_hash
-        LEFT JOIN devices d ON d.id=ds.device_id
+        LEFT JOIN devices d ON d.id=ds.device_id AND d.account_id=s.account_id
         WHERE s.account_id=? AND s.expires_at>? AND s.mfa_version=a.mfa_version
         GROUP BY s.token_hash ORDER BY current DESC,last_access_at DESC`,
         )
         .bind(session.token_hash, account, now())
-        .all()
-      return json({ sessions: results })
+        .all<{ device_names: string; [key: string]: unknown }>()
+      return json({
+        sessions: results.map(({ device_names, ...details }) => ({
+          ...details,
+          device_names: JSON.parse(device_names) as string[],
+        })),
+      })
     }
     if (path === '/v1/sessions' && method === 'DELETE') {
       await db
@@ -1352,7 +1428,10 @@ export class AccountService extends DurableObject<Env> {
         .first<Account>()
       if (
         !verifyPassword(
-          password(input.current_password),
+          authenticationPassword(
+            input.current_password,
+            'Current password is incorrect',
+          ),
           current!.password_hash,
         )
       )
@@ -1423,7 +1502,7 @@ export class AccountService extends DurableObject<Env> {
       const name = text(input.name, 128, 'device name').trim()
       if (
         !name ||
-        !['macos', 'windows', 'linux'].includes(String(input.platform))
+        !isDevicePlatform(input.platform)
       )
         fail(400, 'Invalid device registration')
       const existing = await db
@@ -1498,12 +1577,13 @@ export class AccountService extends DurableObject<Env> {
     }
     if (path === '/v1/passkeys/register/options' && method === 'POST') {
       const input = request.body ? await body(request) : {}
-      const factor = input.factor === true
+      const automatic = input.auto === true
+      const factor = input.factor === true || automatic
       const owner = await db
         .prepare('SELECT * FROM accounts WHERE id=?')
         .bind(account)
         .first<Account>()
-      if (factor || owner!.mfa_enabled) await this.elevated(session)
+      await this.elevated(session)
       const user = await db
         .prepare('SELECT email FROM accounts WHERE id = ?')
         .bind(account)
@@ -1519,6 +1599,7 @@ export class AccountService extends DurableObject<Env> {
         userName: user!.email,
         userID: new Uint8Array(Buffer.from(account, 'hex')),
         attestationType: 'none',
+        extensions: { credProps: true },
         authenticatorSelection: {
           residentKey: factor ? 'preferred' : 'required',
           userVerification: factor ? 'preferred' : 'required',
@@ -1531,7 +1612,7 @@ export class AccountService extends DurableObject<Env> {
         account,
         JSON.stringify({
           challenge: options.challenge,
-          purpose: factor ? 'factor' : 'login',
+          purpose: automatic ? 'auto' : factor ? 'factor' : 'login',
           version: owner!.mfa_version,
         }),
       )
@@ -1557,14 +1638,14 @@ export class AccountService extends DurableObject<Env> {
         .first<Account>()
       if (owner!.mfa_version !== ceremony.version)
         fail(403, 'Security settings changed. Start again.')
-      if (ceremony.purpose === 'factor' || owner!.mfa_enabled)
-        await this.elevated(session)
+      await this.elevated(session)
       if (challenge.account_id !== account)
         fail(401, 'Passkey request belongs to another session')
+      const response = registration(input)
       let verification
       try {
         verification = await verifyRegistrationResponse({
-          response: registration(input),
+          response,
           expectedChallenge: ceremony.challenge,
           expectedOrigin: challenge.origin,
           expectedRPID: url.hostname,
@@ -1574,7 +1655,17 @@ export class AccountService extends DurableObject<Env> {
         fail(400, 'Could not verify passkey')
       }
       if (!verification!.verified) fail(400, 'Could not verify passkey')
-      const credential = verification!.registrationInfo!.credential
+      const info = verification!.registrationInfo!
+      // credProps is a browser capability hint. Actual sign-in still requires
+      // verified user verification on every authentication.
+      const purpose =
+        ceremony.purpose === 'auto'
+          ? info.userVerified &&
+            response.clientExtensionResults.credProps?.rk === true
+            ? 'login'
+            : 'factor'
+          : ceremony.purpose
+      const credential = info.credential
       const insert = (version: number) =>
         db
           .prepare(
@@ -1589,35 +1680,64 @@ export class AccountService extends DurableObject<Env> {
             credential.counter,
             JSON.stringify(credential.transports ?? []),
             text(
-              input.name ??
-                (ceremony.purpose === 'factor' ? 'Security key' : 'Passkey'),
+              input.name ?? (purpose === 'factor' ? 'Security key' : 'Passkey'),
               80,
               'key name',
             ),
             url.hostname,
             now(),
-            ceremony.purpose,
+            purpose,
             account,
             version,
             session.token_hash,
             account,
             now(),
-            ceremony.purpose === 'factor' && !owner!.mfa_enabled ? 1 : 0,
+            ceremony.purpose !== 'login' && !owner!.mfa_enabled ? 1 : 0,
             now(),
           )
-      if (owner!.mfa_enabled)
-        return this.mfaChange(
-          session,
-          true,
-          (version) => [insert(version)],
-          false,
-        )
-      const inserted = await insert(owner!.mfa_version).run()
-      if (!inserted.meta.changes)
-        fail(403, 'Session or security settings changed. Start again.')
-      return json({ success: true }, 201)
+      const changed = await this.mfaChange(
+        session,
+        true,
+        (version) => [insert(version)],
+        !owner!.mfa_enabled,
+      )
+      return json({ ...((await changed.json()) as object), purpose }, 201)
     }
     const passkeyPath = path.match(/^\/v1\/passkeys\/([^/]+)$/)
+    if (passkeyPath && method === 'PATCH') {
+      const input = await body(request)
+      if (typeof input.sign_in_enabled !== 'boolean')
+        fail(400, 'Choose whether this passkey can sign you in')
+      const owner = await this.elevated(session)
+      const key = await db
+        .prepare('SELECT purpose FROM passkeys WHERE id=? AND account_id=?')
+        .bind(passkeyPath[1], account)
+        .first<{ purpose: string }>()
+      if (!key) fail(404, 'Passkey not found')
+      if (key!.purpose !== 'login' && key!.purpose !== 'login-disabled')
+        fail(400, 'Add this key as a passkey before enabling sign-in')
+      const purpose = input.sign_in_enabled ? 'login' : 'login-disabled'
+      return this.mfaChange(
+        session,
+        !!owner.mfa_enabled,
+        (version) => [
+          db
+            .prepare(
+              'UPDATE passkeys SET purpose=? WHERE id=? AND account_id=? AND purpose=? AND EXISTS(SELECT 1 FROM accounts WHERE id=? AND mfa_version=?)',
+            )
+            .bind(
+              purpose,
+              passkeyPath[1],
+              account,
+              key!.purpose,
+              account,
+              version,
+            ),
+        ],
+        false,
+        false,
+      )
+    }
     if (passkeyPath && method === 'DELETE') {
       const owner = await db
         .prepare('SELECT * FROM accounts WHERE id=?')
@@ -1632,14 +1752,9 @@ export class AccountService extends DurableObject<Env> {
           .bind(passkeyPath[1], account)
           .first()
         if (!key) fail(404, 'Passkey not found')
-        if (!info.totp && info.keys <= 1)
-          fail(
-            400,
-            'Add another factor first, or turn off two-factor authentication.',
-          )
         return this.mfaChange(
           session,
-          true,
+          info.totp || info.keys > 1,
           (version) => [
             db
               .prepare(
@@ -1673,13 +1788,26 @@ export async function heartbeat(request: Request, env: Env): Promise<Response> {
   )?.[1]
   const raw = bearer(request)
   if (!id || !raw) return json({ error: 'Invalid device credentials' }, 401)
-  const result = await env.DB.prepare(
-    `UPDATE device_sessions SET last_seen = ? WHERE token_hash = ? AND device_id = ?
+  const timestamp = now()
+  const results = await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE device_sessions SET last_seen = ? WHERE token_hash = ? AND device_id = ?
     AND session_hash IN (SELECT s.token_hash FROM sessions s JOIN accounts a ON a.id=s.account_id WHERE s.expires_at > ? AND s.mfa_version=a.mfa_version)`,
-  )
-    .bind(now(), digest(raw), id, now())
-    .run()
-  return result.meta.changes
+    ).bind(timestamp, digest(raw), id, timestamp),
+    env.DB.prepare(
+      `UPDATE sessions SET expires_at=?,last_access_at=? WHERE expires_at>? AND token_hash IN
+      (SELECT session_hash FROM device_sessions WHERE token_hash=? AND device_id=? AND last_seen=?)
+      AND mfa_version=(SELECT mfa_version FROM accounts WHERE id=sessions.account_id)`,
+    ).bind(
+      timestamp + SESSION_SECONDS,
+      timestamp,
+      timestamp,
+      digest(raw),
+      id,
+      timestamp,
+    ),
+  ])
+  return results[0]!.meta.changes
     ? empty()
     : json({ error: 'Invalid device credentials' }, 401)
 }

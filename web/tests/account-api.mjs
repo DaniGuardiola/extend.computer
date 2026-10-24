@@ -1,6 +1,7 @@
+import { testOrigin } from './test-config.mjs'
 import assert from 'node:assert/strict'
 import { randomBytes } from 'node:crypto'
-const origin = process.env.EXTEND_TEST_URL ?? 'http://localhost:3001'
+const origin = testOrigin
 const address = origin + '/api/v1'
 const password = 'disposable-api-test-password'
 const suffix = Date.now()
@@ -155,6 +156,74 @@ assert.equal(
   ).status,
   401,
 )
+// Each accepted platform uses the same registration/heartbeat/revocation path.
+for (const platform of ['macos', 'windows', 'linux', 'android']) {
+  const registered = await request(
+    '/devices',
+    'POST',
+    {
+      name: 'Platform test device',
+      platform,
+      public_key: randomBytes(32).toString('hex'),
+    },
+    a.body.token,
+  )
+  assert.equal(registered.status, 200)
+  const listed = (
+    await request('/devices', 'GET', undefined, a.body.token)
+  ).body.devices.find((item) => item.id === registered.body.id)
+  assert.equal(listed.platform, platform)
+  assert.equal(
+    (
+      await request(
+        '/devices/' + registered.body.id + '/heartbeat',
+        'POST',
+        {},
+        registered.body.device_token,
+      )
+    ).status,
+    204,
+  )
+  assert.equal(
+    (
+      await request(
+        '/devices/' + registered.body.id,
+        'DELETE',
+        undefined,
+        a.body.token,
+      )
+    ).status,
+    204,
+  )
+  assert.equal(
+    (
+      await request(
+        '/devices/' + registered.body.id + '/heartbeat',
+        'POST',
+        {},
+        registered.body.device_token,
+      )
+    ).status,
+    401,
+  )
+}
+for (const platform of ['unknown', 'Android', '', 'ios', ['android']]) {
+  assert.equal(
+    (
+      await request(
+        '/devices',
+        'POST',
+        {
+          name: 'Invalid platform',
+          platform,
+          public_key: randomBytes(32).toString('hex'),
+        },
+        a.body.token,
+      )
+    ).status,
+    400,
+  )
+}
 assert.equal(
   (await request('/auth/logout', 'POST', undefined, a.body.token)).status,
   204,
@@ -173,6 +242,8 @@ console.log(
       'stable device identity',
       'session revocation',
       'device revocation',
+      'Android and desktop registration platforms',
+      'unknown platform rejection',
       'CSRF origin rejection',
       'wrong password rejection',
       'logout invalidation',

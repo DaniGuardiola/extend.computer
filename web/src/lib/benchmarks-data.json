@@ -1,0 +1,405 @@
+{
+  "date": "2026-10-09",
+  "scope": "Development diagnostic, not a release certification",
+  "products": [
+    {
+      "id": "extend",
+      "name": "extend.computer",
+      "build": "v14 \u00b7 two encoder slots",
+      "fps": 60,
+      "bitrateMbps": 20,
+      "codec": "HEVC \u00b7 hardware encoder"
+    },
+    {
+      "id": "duet",
+      "name": "Duet",
+      "build": "4.0.491 \u00b7 original signed app",
+      "fps": 60,
+      "bitrateMbps": null,
+      "codec": "Video Toolbox H265 \u00b7 observed session setting"
+    }
+  ],
+  "latency": [
+    {
+      "product": "extend",
+      "scene": "motion",
+      "repeat": 1,
+      "median": 25.041784667072964,
+      "p95": 37.59462159558225,
+      "samples": 938,
+      "visibleFpsLowerBound": 50.80654892878661,
+      "nativePresentationFps": 59.95,
+      "route": "direct_lan"
+    },
+    {
+      "product": "extend",
+      "scene": "scroll",
+      "repeat": 1,
+      "median": 20.865252914106236,
+      "p95": 33.3902379889528,
+      "samples": 973,
+      "visibleFpsLowerBound": 48.96147461307926,
+      "nativePresentationFps": 59.4,
+      "route": "direct_lan"
+    },
+    {
+      "product": "extend",
+      "scene": "scroll",
+      "repeat": 2,
+      "median": 20.86522776098132,
+      "p95": 33.37769776688049,
+      "samples": 953,
+      "visibleFpsLowerBound": 49.09143932077266,
+      "nativePresentationFps": 59.05,
+      "route": "direct_lan"
+    },
+    {
+      "product": "extend",
+      "scene": "motion",
+      "repeat": 2,
+      "median": 25.056214557935164,
+      "p95": 37.555502433222365,
+      "samples": 922,
+      "visibleFpsLowerBound": 48.66043175956773,
+      "nativePresentationFps": 59.9,
+      "route": "direct_lan"
+    },
+    {
+      "product": "extend",
+      "scene": "motion",
+      "repeat": 3,
+      "median": 20.868734121746613,
+      "p95": 37.548582541774735,
+      "samples": 992,
+      "visibleFpsLowerBound": 51.018115035540994,
+      "nativePresentationFps": 59.95,
+      "route": "direct_lan"
+    },
+    {
+      "product": "extend",
+      "scene": "scroll",
+      "repeat": 3,
+      "median": 20.900307901644766,
+      "p95": 33.37552406571476,
+      "samples": 950,
+      "visibleFpsLowerBound": 48.68382026881686,
+      "nativePresentationFps": 59.6,
+      "route": "direct_lan"
+    },
+    {
+      "product": "duet",
+      "scene": "motion",
+      "repeat": 1,
+      "median": 58.413912138194135,
+      "p95": 70.92780600773452,
+      "samples": 1022,
+      "visibleFpsLowerBound": 51.31916896314545,
+      "nativePresentationFps": null,
+      "route": "direct_lan"
+    },
+    {
+      "product": "duet",
+      "scene": "scroll",
+      "repeat": 1,
+      "median": 54.23809876673147,
+      "p95": 66.73236119901205,
+      "samples": 931,
+      "visibleFpsLowerBound": 49.22314252832543,
+      "nativePresentationFps": null,
+      "route": "direct_lan"
+    },
+    {
+      "product": "duet",
+      "scene": "scroll",
+      "repeat": 2,
+      "median": 54.3513869364527,
+      "p95": 66.7638864905662,
+      "samples": 878,
+      "visibleFpsLowerBound": 46.362576541735436,
+      "nativePresentationFps": null,
+      "route": "direct_lan"
+    },
+    {
+      "product": "duet",
+      "scene": "motion",
+      "repeat": 2,
+      "median": 58.37040985096209,
+      "p95": 70.89074962421194,
+      "samples": 942,
+      "visibleFpsLowerBound": 48.55367956765242,
+      "nativePresentationFps": null,
+      "route": "direct_lan"
+    },
+    {
+      "product": "duet",
+      "scene": "motion",
+      "repeat": 3,
+      "median": 58.39576896449694,
+      "p95": 66.78048194436714,
+      "samples": 1012,
+      "visibleFpsLowerBound": 52.06072963547964,
+      "nativePresentationFps": null,
+      "route": "direct_lan"
+    },
+    {
+      "product": "duet",
+      "scene": "scroll",
+      "repeat": 3,
+      "median": 54.224916147258995,
+      "p95": 62.61379206369355,
+      "samples": 958,
+      "visibleFpsLowerBound": 50.09650765862775,
+      "nativePresentationFps": null,
+      "route": "direct_lan"
+    }
+  ],
+  "quality": [
+    {
+      "region": "text_10pt",
+      "extend": {
+        "luma_ssim_box11": 0.9999455987638987,
+        "rgb_psnr_db": 47.16167288661669,
+        "chroma_rmse_bt709": 6.5388350232124796e-06
+      },
+      "duet": {
+        "luma_ssim_box11": 0.9999260063055556,
+        "rgb_psnr_db": 48.338151946074035,
+        "chroma_rmse_bt709": 0.0016653844228994147
+      }
+    },
+    {
+      "region": "text_12pt",
+      "extend": {
+        "luma_ssim_box11": 0.9999507772342868,
+        "rgb_psnr_db": 47.33294322621899,
+        "chroma_rmse_bt709": 3.269417511606251e-06
+      },
+      "duet": {
+        "luma_ssim_box11": 0.9998223034655372,
+        "rgb_psnr_db": 47.882603594241516,
+        "chroma_rmse_bt709": 0.0016543700436225635
+      }
+    },
+    {
+      "region": "text_14pt",
+      "extend": {
+        "luma_ssim_box11": 0.9999418024397505,
+        "rgb_psnr_db": 47.30128737936308,
+        "chroma_rmse_bt709": 4.623654585973656e-06
+      },
+      "duet": {
+        "luma_ssim_box11": 0.9998605746506796,
+        "rgb_psnr_db": 48.011711246604364,
+        "chroma_rmse_bt709": 0.0016502731337331308
+      }
+    },
+    {
+      "region": "text_18pt",
+      "extend": {
+        "luma_ssim_box11": 0.9999364119452389,
+        "rgb_psnr_db": 47.05429396002928,
+        "chroma_rmse_bt709": 3.2694175116062063e-06
+      },
+      "duet": {
+        "luma_ssim_box11": 0.999880045501797,
+        "rgb_psnr_db": 48.00862268347128,
+        "chroma_rmse_bt709": 0.0016465923939377937
+      }
+    },
+    {
+      "region": "text_24pt",
+      "extend": {
+        "luma_ssim_box11": 0.9998573082287905,
+        "rgb_psnr_db": 46.1869914918673,
+        "chroma_rmse_bt709": 3.269417511606251e-06
+      },
+      "duet": {
+        "luma_ssim_box11": 0.9996948877528393,
+        "rgb_psnr_db": 47.12740497312745,
+        "chroma_rmse_bt709": 0.001586682006544657
+      }
+    },
+    {
+      "region": "colored_edges_1px",
+      "extend": {
+        "luma_ssim_box11": 0.9744135815700022,
+        "rgb_psnr_db": 7.189458212809782,
+        "chroma_rmse_bt709": 0.3185219782193848
+      },
+      "duet": {
+        "luma_ssim_box11": 0.9674526842129865,
+        "rgb_psnr_db": 7.322656362635497,
+        "chroma_rmse_bt709": 0.3137462098393213
+      }
+    },
+    {
+      "region": "colored_edges_2px",
+      "extend": {
+        "luma_ssim_box11": 0.999211381893839,
+        "rgb_psnr_db": 17.654710516460234,
+        "chroma_rmse_bt709": 0.09584273362836492
+      },
+      "duet": {
+        "luma_ssim_box11": 0.9989453091109213,
+        "rgb_psnr_db": 12.149669874278588,
+        "chroma_rmse_bt709": 0.18068220051979722
+      }
+    },
+    {
+      "region": "colored_edges_3px",
+      "extend": {
+        "luma_ssim_box11": 0.9985322358890266,
+        "rgb_psnr_db": 11.707935037002708,
+        "chroma_rmse_bt709": 0.1899270224346969
+      },
+      "duet": {
+        "luma_ssim_box11": 0.9993785290636907,
+        "rgb_psnr_db": 13.862721332618165,
+        "chroma_rmse_bt709": 0.14815719443380226
+      }
+    },
+    {
+      "region": "colored_edges_5px",
+      "extend": {
+        "luma_ssim_box11": 0.9992095750185255,
+        "rgb_psnr_db": 13.92247777342196,
+        "chroma_rmse_bt709": 0.1472181400991596
+      },
+      "duet": {
+        "luma_ssim_box11": 0.9519097022607951,
+        "rgb_psnr_db": 14.371638908893924,
+        "chroma_rmse_bt709": 0.1308565279029639
+      }
+    },
+    {
+      "region": "grayscale_gradient",
+      "extend": {
+        "luma_ssim_box11": 0.9942012022606733,
+        "rgb_psnr_db": 51.079884804737816,
+        "chroma_rmse_bt709": 1.6586458297818943e-17
+      },
+      "duet": {
+        "luma_ssim_box11": 0.9938559734264301,
+        "rgb_psnr_db": 50.15787882146885,
+        "chroma_rmse_bt709": 0.001084343070232816
+      }
+    },
+    {
+      "region": "color_gradient",
+      "extend": {
+        "luma_ssim_box11": 0.997336259133214,
+        "rgb_psnr_db": 46.21910971805544,
+        "chroma_rmse_bt709": 0.0032513525861550684
+      },
+      "duet": {
+        "luma_ssim_box11": 0.9973245487648565,
+        "rgb_psnr_db": 40.8730155351485,
+        "chroma_rmse_bt709": 0.0064523588165111235
+      }
+    }
+  ],
+  "interactions": [
+    {
+      "product": "duet",
+      "status": "complete",
+      "regions": [
+        {
+          "region": "button",
+          "luma_ssim_box11": 0.9995256005010078,
+          "contrast_foreground_iou": 0.9982738780207134,
+          "accepted": true
+        },
+        {
+          "region": "drag",
+          "luma_ssim_box11": 0.9997583858938437,
+          "contrast_foreground_iou": 0.9990523804855733,
+          "accepted": true
+        },
+        {
+          "region": "replacement",
+          "luma_ssim_box11": 0.9997519486752955,
+          "contrast_foreground_iou": 0.969485614646905,
+          "accepted": true
+        },
+        {
+          "region": "scroll",
+          "luma_ssim_box11": 0.9982125165082713,
+          "contrast_foreground_iou": 0.9984276330805711,
+          "accepted": true
+        }
+      ]
+    },
+    {
+      "product": "extend",
+      "status": "complete",
+      "regions": [
+        {
+          "region": "button",
+          "luma_ssim_box11": 0.9995812986519075,
+          "contrast_foreground_iou": 0.9986225895316805,
+          "accepted": true
+        },
+        {
+          "region": "drag",
+          "luma_ssim_box11": 0.9998490009705461,
+          "contrast_foreground_iou": 0.9993194192377496,
+          "accepted": true
+        },
+        {
+          "region": "replacement",
+          "luma_ssim_box11": 0.9999183211755264,
+          "contrast_foreground_iou": 0.9890893831305078,
+          "accepted": true
+        },
+        {
+          "region": "scroll",
+          "luma_ssim_box11": 0.9999699762394287,
+          "contrast_foreground_iou": 0.9995724115628537,
+          "accepted": true
+        }
+      ]
+    }
+  ],
+  "evidence": [
+    {
+      "id": "motion-scroll-extend-cadence-v2",
+      "sha256": "c541a20728399081e566f838d93386ccc08f0fbf8e49960dca2b34725985a3d0",
+      "scenes": 6
+    },
+    {
+      "id": "motion-scroll-duet-cadence-v2",
+      "sha256": "1b05d2f6b56594c714da4f84587ce7c34de93b60b5542b541b9f4a29b47ffa3b",
+      "scenes": 6
+    },
+    {
+      "id": "digital-quality-extend-current",
+      "sha256": "269754dce761a5d541abf4fa9be52876c78a6b11f1a80b35129d04c1dc00e0f2",
+      "scenes": 3
+    },
+    {
+      "id": "digital-quality-duet-current",
+      "sha256": "fb5c4d062c713c8f5298cead32c81caf5133200910d0b5ca84b3acdfc6a7f153",
+      "scenes": 3
+    }
+  ],
+  "context": {
+    "source": "Apple M4 Pro \u00b7 Mac16,8 \u00b7 48 GB \u00b7 macOS 26.7",
+    "receiver": "Apple M3 Max \u00b7 Mac15,9 \u00b7 48 GB \u00b7 macOS 27.0",
+    "power": "Both hosts on AC power",
+    "display": "1728 \u00d7 1085 logical \u00b7 3456 \u00d7 2170 backing \u00b7 2\u00d7 Retina",
+    "route": "Direct LAN over Wi-Fi \u00b7 en0 on both hosts",
+    "camera": "Pixel 10a \u00b7 1920 \u00d7 1080 \u00b7 240 fps",
+    "fixture": "AppKit \u00b7 identical workload hash \u00b7 20 seconds per scene",
+    "repeats": "3 motion + 3 scroll runs per product",
+    "baseline": "5-second connected idle + 5-second warm-up per campaign",
+    "workloadSha256": "a80b05bb39e03f9c3d0b7d9892ca170375a5c086f6499698cd064ab27326edb2"
+  },
+  "limits": [
+    "First readable matching counter on receiver minus source, in one camera timeline. Includes both panels and scanout.",
+    "Unreadable transitions excluded. Visible frame rate is a lower bound, not an encoder or presentation rate. Cadence excludes stationary preparation counter zero.",
+    "Both requested 60 FPS at matched Retina geometry. Duet FPS, resolution, transport and encoder were observed before and after the run, not continuously. Duet bitrate unavailable.",
+    "Digital quality is median of three synthetic compositor captures against independently calibrated references. It excludes physical panels and does not score detail lost solely through viewport scaling.",
+    "Interaction outcomes shown are earlier accepted diagnostics, not revalidated for v14 or Duet 4.0.491.",
+    "Cursor latency, energy, presets, long-session reliability and recovery still lack complete matched comparison. Overall score withheld."
+  ]
+}

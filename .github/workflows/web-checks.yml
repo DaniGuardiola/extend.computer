@@ -1,0 +1,66 @@
+name: Web checks
+on:
+  pull_request:
+    paths:
+      - 'web/**'
+      - '!web/README.md'
+      - '.github/workflows/web-checks.yml'
+      - '.node-version'
+  push:
+    branches: [main]
+    paths:
+      - 'web/**'
+      - '!web/README.md'
+      - '.github/workflows/web-checks.yml'
+      - '.node-version'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: web-checks-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  web:
+    # Match the Linux capture environment and architecture. The image includes
+    # the exact Chromium build and system fonts, avoiding a browser installation.
+    runs-on: ubuntu-24.04-arm
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
+      options: --ipc=host
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      - run: npm run build
+      - run: npm run test:browser
+      - name: Preserve UI report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: web-ui-report
+          path: |
+            web/playwright-report
+            web/test-results/playwright
+          retention-days: 7
+      - run: npm run test:visual
+      - name: Preserve visual report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: web-visual-report
+          path: |
+            web/playwright-report
+            web/test-results/playwright
+          retention-days: 7

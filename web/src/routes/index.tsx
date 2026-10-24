@@ -753,6 +753,7 @@ function Landing() {
           <a href="#how-it-works" className="nav-about">
             How it works
           </a>
+          <Link to="/benchmarks">Benchmarks</Link>
           <Link to="/login">
             Sign in <ArrowUpRight size={16} />
           </Link>

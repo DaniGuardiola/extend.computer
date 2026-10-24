@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AccountRouteImport } from './routes/account'
+import { Route as BenchmarksRouteImport } from './routes/benchmarks'
 import { Route as EmailRouteImport } from './routes/email'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as RecoverRouteImport } from './routes/recover'
@@ -26,6 +27,11 @@ const IndexRoute = IndexRouteImport.update({
 const AccountRoute = AccountRouteImport.update({
   id: '/account',
   path: '/account',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BenchmarksRoute = BenchmarksRouteImport.update({
+  id: '/benchmarks',
+  path: '/benchmarks',
   getParentRoute: () => rootRouteImport,
 } as any)
 const EmailRoute = EmailRouteImport.update({
@@ -62,6 +68,7 @@ const DesktopConnectedRoute = DesktopConnectedRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/account': typeof AccountRoute
+  '/benchmarks': typeof BenchmarksRoute
   '/email': typeof EmailRoute
   '/login': typeof LoginRoute
   '/recover': typeof RecoverRoute
@@ -72,6 +79,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/account': typeof AccountRoute
+  '/benchmarks': typeof BenchmarksRoute
   '/email': typeof EmailRoute
   '/login': typeof LoginRoute
   '/recover': typeof RecoverRoute
@@ -83,6 +91,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/account': typeof AccountRoute
+  '/benchmarks': typeof BenchmarksRoute
   '/email': typeof EmailRoute
   '/login': typeof LoginRoute
   '/recover': typeof RecoverRoute
@@ -95,6 +104,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/account'
+    | '/benchmarks'
     | '/email'
     | '/login'
     | '/recover'
@@ -105,6 +115,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/account'
+    | '/benchmarks'
     | '/email'
     | '/login'
     | '/recover'
@@ -115,6 +126,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/account'
+    | '/benchmarks'
     | '/email'
     | '/login'
     | '/recover'
@@ -126,6 +138,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AccountRoute: typeof AccountRoute
+  BenchmarksRoute: typeof BenchmarksRoute
   EmailRoute: typeof EmailRoute
   LoginRoute: typeof LoginRoute
   RecoverRoute: typeof RecoverRoute
@@ -148,6 +161,13 @@ declare module '@tanstack/react-router' {
       path: '/account'
       fullPath: '/account'
       preLoaderRoute: typeof AccountRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/benchmarks': {
+      id: '/benchmarks'
+      path: '/benchmarks'
+      fullPath: '/benchmarks'
+      preLoaderRoute: typeof BenchmarksRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/email': {
@@ -198,6 +218,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AccountRoute: AccountRoute,
+  BenchmarksRoute: BenchmarksRoute,
   EmailRoute: EmailRoute,
   LoginRoute: LoginRoute,
   RecoverRoute: RecoverRoute,

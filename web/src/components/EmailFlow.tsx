@@ -1,73 +1,114 @@
-import { useEffect, useState, type FormEvent } from 'react'
-import { Link } from '@tanstack/react-router'
+import { api } from '../lib/api'
+import { useAction } from '../lib/mutations'
+import { useQueryClient } from '@tanstack/react-query'
+import { ThemeHeader } from './ThemePicker'
+import { ErrorFeedback, useErrorFeedback } from './ErrorFeedback'
+import { NewPasswordInput } from './NewPasswordInput'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { MoveUpRight } from 'lucide-react'
 import { Brand } from './Brand'
 import { ValidatedForm, ValidatedInput } from './ValidatedForm'
-import { api, message } from '../lib/api'
+import { message } from '../lib/api'
 
 export function EmailFlow({ recovery = false }: { recovery?: boolean }) {
+  const operation = useAction()
+  const queryClient = useQueryClient()
+  const navigate = useNavigate()
+  const verification = useRef<Promise<unknown> | null>(null)
   const [link, setLink] = useState<{
     kind: 'verify' | 'reset'
     token: string
   } | null>(null)
   const [ready, setReady] = useState(recovery)
-  const [busy, setBusy] = useState(false)
+  const [kind, setKind] = useState<'verify' | 'reset' | null>(null)
+  const busy = operation.isPending
   const [done, setDone] = useState(false)
-  const [error, setError] = useState('')
-  const [errorAttempt, setErrorAttempt] = useState(0)
+  const [error, setError, errorAttempt] = useErrorFeedback()
   useEffect(() => {
     if (recovery) return
     const match = window.location.hash.match(/^#(verify|reset)=([a-f0-9]{64})$/)
-    if (match)
+    if (match) {
       setLink({ kind: match[1] as 'verify' | 'reset', token: match[2]! })
+      setKind(match[1] as 'verify' | 'reset')
+    }
     // Tokens stay out of referrers, server logs and the history entry.
     window.history.replaceState(null, '', window.location.pathname)
     setReady(true)
   }, [recovery])
+  useEffect(() => {
+    if (link?.kind !== 'verify') return
+    let active = true
+    const request = (verification.current ??= api('POST /auth/email/verify', {
+      token: link.token,
+    }))
+    request
+      .then(() => {
+        if (!active) return
+        void queryClient.invalidateQueries({ queryKey: ['account'] })
+        sessionStorage.setItem('extend-email-verified', '1')
+        void navigate({ to: '/account' })
+      })
+      .catch((error) => {
+        if (!active) return
+        setError(message(error))
+      })
+    return () => {
+      active = false
+    }
+  }, [link, navigate])
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const data = new FormData(event.currentTarget)
-    setBusy(true)
     try {
-      if (recovery)
-        await api('/auth/recovery/request', 'POST', {
-          email: data.get('email'),
-        })
-      else if (link)
-        await api(
-          link.kind === 'verify'
-            ? '/auth/email/verify'
-            : '/auth/recovery/complete',
-          'POST',
-          {
+      await operation.run(async () => {
+        if (recovery)
+          await api('POST /auth/recovery/request', {
+            email: String(data.get('email') ?? ''),
+          })
+        else if (link?.kind === 'reset')
+          await api('POST /auth/recovery/complete', {
             token: link.token,
-            ...(link.kind === 'reset'
-              ? { password: data.get('password') }
-              : {}),
-          },
-        )
-      setDone(true)
-      setError('')
-      setLink(null)
+            password: String(data.get('password') ?? ''),
+          })
+        if (!recovery) queryClient.clear()
+        setDone(true)
+        setError('')
+        setLink(null)
+      })
     } catch (error) {
       setError(message(error))
-      setErrorAttempt((attempt) => attempt + 1)
-    } finally {
-      setBusy(false)
     }
   }
-  const reset = link?.kind === 'reset'
+  const reset = kind === 'reset'
+  const resetLinkInvalid = reset && error.startsWith('Invalid or expired link')
   return (
     <div className="auth-layout">
-      <aside className="auth-aside">
+      <aside className="auth-aside flex flex-col justify-between py-12 px-16 bg-app-aside [border-right:1px_solid_var(--line)]">
         <Brand appearance="app" />
         <div>
-          <h2>Account recovery</h2>
-          <p>Verify your email or reset your password.</p>
+          <h2>
+            {recovery || reset
+              ? 'Account recovery'
+              : kind === 'verify'
+                ? 'Email verification'
+                : 'Account'}
+          </h2>
+          <p>
+            {recovery || reset
+              ? 'Reset your password.'
+              : kind === 'verify'
+                ? 'Confirm your email address.'
+                : 'Manage your account.'}
+          </p>
         </div>
       </aside>
-      <main id="main" className="auth-main">
-        <div className="auth-box">
+      <main
+        id="main"
+        className="auth-main flex justify-center items-center py-16 px-7"
+      >
+        <ThemeHeader />
+        <div className="auth-box w-full max-w-[360px]">
           <Link to="/login" className="back-link">
             Back to sign in <MoveUpRight size={12} />
           </Link>
@@ -75,47 +116,63 @@ export function EmailFlow({ recovery = false }: { recovery?: boolean }) {
             {done
               ? recovery
                 ? 'Check your inbox'
-                : 'Account updated'
+                : reset
+                  ? 'Password reset'
+                  : 'Email verified'
               : recovery
                 ? 'Reset your password'
                 : reset
-                  ? 'Choose a new password'
-                  : 'Verify your email'}
+                  ? resetLinkInvalid
+                    ? 'Unable to reset password'
+                    : 'Choose a new password'
+                  : !ready
+                    ? 'Opening your link'
+                    : link
+                      ? error
+                        ? 'Unable to verify email'
+                        : 'Verifying your email'
+                      : 'This link is incomplete'}
           </h1>
           {error ? (
-            <p
-              key={errorAttempt}
-              className="message error-message auth-error-enter"
-              role="alert"
-            >
-              {error}
-            </p>
+            <ErrorFeedback error={error} attempt={errorAttempt} />
           ) : null}
           {done ? (
             <>
-              <p className="auth-description" role="status">
+              <p
+                className="auth-description text-app-muted text-[13px] leading-[1.7] mb-[30px]"
+                role="status"
+              >
                 {recovery
-                  ? 'If this address belongs to a verified account, a reset link is on its way. It expires in 30 minutes.'
+                  ? 'If an account exists for this email, we’ll send a reset link. It expires in 30 minutes.'
                   : 'You can sign in to your account now.'}
               </p>
-              <Link to="/login" className="button primary">
-                Sign in
-              </Link>
             </>
+          ) : resetLinkInvalid ? (
+            <Link to="/recover" className="button auth-submit gap-[10px]">
+              Request new reset link
+            </Link>
           ) : !ready ? (
             <p role="status">Opening your link…</p>
+          ) : link?.kind === 'verify' ? (
+            error ? null : (
+              <p
+                className="auth-description text-app-muted text-[13px] leading-[1.7] mb-[30px]"
+                role="status"
+              >
+                One moment…
+              </p>
+            )
           ) : !recovery && !link ? (
-            <p className="auth-description">
-              This link is incomplete. Request a new email from your account, or
-              use password recovery.
+            <p className="auth-description text-app-muted text-[13px] leading-[1.7] mb-[30px]">
+              Request a new email from your account, or use password recovery.
             </p>
           ) : (
             <ValidatedForm onSubmit={submit}>
-              <p className="auth-description">
+              <p className="auth-description text-app-muted text-[13px] leading-[1.7] mb-[30px]">
                 {recovery
                   ? 'Enter your email to request a password reset.'
                   : reset
-                    ? 'This signs out all sessions. Two-factor authentication stays enabled. Passkeys are removed only if two-factor authentication is off.'
+                    ? 'You’ll be signed out on all devices. If you use two-factor authentication, you’ll still need it to sign in.'
                     : 'Confirm this address belongs to you. This link works once.'}
               </p>
               {recovery ? (
@@ -133,19 +190,10 @@ export function EmailFlow({ recovery = false }: { recovery?: boolean }) {
               ) : reset ? (
                 <label className="field">
                   New password
-                  <ValidatedInput
-                    aria-label="New password"
-                    name="password"
-                    type="password"
-                    autoComplete="new-password"
-                    required
-                    minLength={12}
-                    maxLength={1024}
-                  />
-                  <span className="field-hint">At least 12 characters.</span>
+                  <NewPasswordInput aria-label="New password" name="password" />
                 </label>
               ) : null}
-              <button className="button auth-submit" disabled={busy}>
+              <button className="button auth-submit gap-[10px]" disabled={busy}>
                 {busy
                   ? 'One moment…'
                   : recovery

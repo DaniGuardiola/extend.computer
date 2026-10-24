@@ -1,9 +1,10 @@
+import { testOrigin } from './test-config.mjs'
 import assert from 'node:assert/strict'
 import { randomBytes, createHmac } from 'node:crypto'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
-const origin = process.env.EXTEND_TEST_URL ?? 'http://localhost:3002'
+const origin = testOrigin
 assert.ok(
   ['localhost', '127.0.0.1'].includes(new URL(origin).hostname),
   'This test is local-only',
@@ -28,9 +29,14 @@ const sql = async (statement) => {
     },
   )
 }
-const request = async (path, data, token) => {
+const request = async (
+  path,
+  data,
+  token,
+  method = data === undefined ? 'GET' : 'POST',
+) => {
   const response = await fetch(origin + '/api/v1' + path, {
-    method: data === undefined ? 'GET' : 'POST',
+    method,
     headers: {
       Origin: origin,
       'Content-Type': 'application/json',
@@ -185,7 +191,7 @@ try {
   for (const token of [session, other.body.token, verified.body.token])
     assert.equal((await request('/account', undefined, token)).status, 200)
   assert.equal(
-    (await request('/mfa/disable', {}, verified.body.token)).status,
+    (await request('/mfa/totp', {}, verified.body.token, 'DELETE')).status,
     403,
   )
   assert.equal(
@@ -222,6 +228,10 @@ try {
     200,
   )
   assert.equal((await request('/account', undefined, session)).status, 401)
+  const removedFactor = await request('/mfa', undefined, verified.body.token)
+  assert.equal(removedFactor.body.enabled, false)
+  assert.equal(removedFactor.body.totp, false)
+  assert.equal(removedFactor.body.recovery_codes, 0)
   assert.equal(
     (
       await request(

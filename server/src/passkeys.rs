@@ -22,6 +22,7 @@ enum Ceremony {
         session: String,
         version: i64,
         state: SecurityKeyRegistration,
+        automatic: bool,
     },
     Mfa {
         ticket: String,
@@ -149,8 +150,9 @@ pub async fn register_options(
     headers: HeaderMap,
     Json(input): Json<Value>,
 ) -> Result<Response, ApiError> {
-    if input.get("factor").and_then(Value::as_bool) == Some(true) {
-        return factor_options(server, headers).await;
+    let automatic = input.get("auto").and_then(Value::as_bool) == Some(true);
+    if automatic || input.get("factor").and_then(Value::as_bool) == Some(true) {
+        return factor_options(server, headers, automatic).await;
     }
     let service = service(&server)?;
     service.check_origin(&headers)?;
@@ -161,14 +163,12 @@ pub async fn register_options(
         .clone()
         .work(move |db| {
             let account = owner(db, &lookup)?;
-            let (enabled, version): (bool, i64) = db.query_row(
+            let (_enabled, version): (bool, i64) = db.query_row(
                 "SELECT mfa_enabled,mfa_version FROM accounts WHERE id=?",
                 [&account],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )?;
-            if enabled {
-                crate::mfa::elevated(db, &lookup)?;
-            }
+            crate::mfa::elevated(db, &lookup)?;
             let email: String =
                 db.query_row("SELECT email FROM accounts WHERE id = ?", [&account], |r| {
                     r.get(0)
@@ -228,9 +228,13 @@ pub async fn register_verify(
         session: original,
         version,
         state,
+        automatic,
     } = ceremony
     {
-        return finish_factor(server, account, original, version, state, session, input).await;
+        return finish_factor(
+            server, account, original, version, state, session, input, automatic,
+        )
+        .await;
     }
     let Ceremony::Register {
         account,
@@ -261,7 +265,7 @@ pub async fn register_verify(
             }
             let(enabled,current):(bool,i64)=db.query_row("SELECT mfa_enabled,mfa_version FROM accounts WHERE id=?",[&account],|r|Ok((r.get(0)?,r.get(1)?)))?;
             if current!=version{return Err(ApiError::unauthorized())}
-            if enabled {crate::mfa::elevated(db,&session)?;}
+            crate::mfa::elevated(db,&session)?;
             let count: i64 = db.query_row(
                 "SELECT COUNT(*) FROM passkeys WHERE account_id = ?",
                 [&account],
@@ -286,9 +290,9 @@ pub async fn register_verify(
             if inserted != 1 {
                 return Err(ApiError::bad("Passkey already registered"));
             }
-            if enabled {crate::mfa::change(&tx,&session,true,false,false)?;}
+            let result = crate::mfa::change(&tx, &session, true, !enabled, false)?;
             tx.commit()?;
-            Ok((StatusCode::CREATED, Json(json!({"success":true}))))
+            Ok((StatusCode::CREATED, Json(result)))
         })
         .await
 }
@@ -356,6 +360,59 @@ pub async fn list(
     }).await
 }
 
+#[derive(Deserialize)]
+pub struct PasskeyUsage {
+    sign_in_enabled: bool,
+}
+
+pub async fn set_usage(
+    State(server): State<Arc<Server>>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(input): Json<PasskeyUsage>,
+) -> Result<Json<Value>, ApiError> {
+    let session = bearer(&headers)?;
+    server
+        .work(move |db| {
+            let account = crate::mfa::elevated(db, &session)?;
+            let purpose: Option<String> = db
+                .query_row(
+                    "SELECT purpose FROM passkeys WHERE id=? AND account_id=?",
+                    params![id, account],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            let purpose = purpose.ok_or(ApiError(StatusCode::NOT_FOUND, "Passkey not found"))?;
+            if purpose != "login" && purpose != "login-disabled" {
+                return Err(ApiError::bad(
+                    "Add this key as a passkey before enabling sign-in",
+                ));
+            }
+            let enabled: bool = db.query_row(
+                "SELECT mfa_enabled FROM accounts WHERE id=?",
+                [&account],
+                |r| r.get(0),
+            )?;
+            let tx = db.transaction()?;
+            tx.execute(
+                "UPDATE passkeys SET purpose=? WHERE id=? AND account_id=?",
+                params![
+                    if input.sign_in_enabled {
+                        "login"
+                    } else {
+                        "login-disabled"
+                    },
+                    id,
+                    account
+                ],
+            )?;
+            let result = crate::mfa::change(&tx, &session, enabled, false, false)?;
+            tx.commit()?;
+            Ok(Json(result))
+        })
+        .await
+}
+
 pub async fn remove(
     State(server): State<Arc<Server>>,
     headers: HeaderMap,
@@ -369,10 +426,9 @@ pub async fn remove(
             if enabled {
                 crate::mfa::elevated(db,&session)?;
                 let(keys,totp):(i64,bool)=db.query_row("SELECT (SELECT COUNT(*) FROM passkeys WHERE account_id=?),EXISTS(SELECT 1 FROM totp_factors WHERE account_id=?)",params![account,account],|r|Ok((r.get(0)?,r.get(1)?)))?;
-                if keys<=1&&!totp{return Err(ApiError::bad("Add another factor or disable two-factor authentication first"))}
                 let tx=db.transaction()?;
                 if tx.execute("DELETE FROM passkeys WHERE id=? AND account_id=?",params![id,account])?==0{return Err(ApiError(StatusCode::NOT_FOUND,"Passkey not found"))}
-                crate::mfa::change(&tx,&session,true,false,true)?;tx.commit()?;
+                crate::mfa::change(&tx,&session,totp||keys>1,false,true)?;tx.commit()?;
                 return Ok(StatusCode::NO_CONTENT)
             }
             if db.execute(
@@ -387,7 +443,11 @@ pub async fn remove(
         .await
 }
 
-async fn factor_options(server: Arc<Server>, headers: HeaderMap) -> Result<Response, ApiError> {
+async fn factor_options(
+    server: Arc<Server>,
+    headers: HeaderMap,
+    automatic: bool,
+) -> Result<Response, ApiError> {
     let service = service(&server)?;
     service.check_origin(&headers)?;
     let session = bearer(&headers)?;
@@ -437,14 +497,27 @@ async fn factor_options(server: Arc<Server>, headers: HeaderMap) -> Result<Respo
             None,
         )
         .map_err(|_| ApiError::bad("Could not start security key registration"))?;
+    let mut options = serde_json::to_value(options).map_err(|_| ApiError::internal())?;
+    if automatic {
+        // Request verification when available while retaining touch-only support.
+        // Direct sign-in independently requires verified assertions.
+        options["publicKey"]["authenticatorSelection"]["userVerification"] = json!("preferred");
+        options["publicKey"]["authenticatorSelection"]["residentKey"] = json!("preferred");
+        options["publicKey"]["authenticatorSelection"]["requireResidentKey"] = json!(false);
+        options["publicKey"]
+            .as_object_mut()
+            .ok_or_else(ApiError::internal)?
+            .remove("hints");
+    }
     service.start(
         Ceremony::RegisterFactor {
             account,
             session,
             version,
             state,
+            automatic,
         },
-        serde_json::to_value(options).map_err(|_| ApiError::internal())?,
+        options,
     )
 }
 async fn finish_factor(
@@ -455,6 +528,7 @@ async fn finish_factor(
     state: SecurityKeyRegistration,
     session: String,
     input: RegisterPublicKeyCredential,
+    automatic: bool,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
     if original != session {
         return Err(ApiError::unauthorized());
@@ -464,16 +538,52 @@ async fn finish_factor(
         .webauthn
         .finish_securitykey_registration(&input, &state)
         .map_err(|_| ApiError::bad("Could not verify security key"))?;
+    let credential = serde_json::to_value(&key).map_err(|_| ApiError::internal())?;
     let serialized = serde_json::to_string(&key).map_err(|_| ApiError::internal())?;
-    let counter = serde_json::to_value(&key).map_err(|_| ApiError::internal())?["cred"]["counter"]
+    let counter = credential["cred"]["counter"]
         .as_u64()
         .ok_or_else(ApiError::internal)?;
+    // Discoverability is a browser hint; passwordless authentication still
+    // cryptographically verifies user verification on every sign-in.
+    let discoverable = input
+        .extensions
+        .cred_props
+        .as_ref()
+        .and_then(|props| props.rk)
+        == Some(true);
+    let purpose = if automatic && discoverable && credential["cred"]["user_verified"] == true {
+        "login"
+    } else {
+        "factor"
+    };
+    let name = if purpose == "login" {
+        "Passkey"
+    } else {
+        "Security key"
+    };
     let rp = service.rp_id.clone();
-    server.work(move|db|{if crate::mfa::elevated(db,&session)?!=account{return Err(ApiError::unauthorized())}
- let(current,enabled):(i64,bool)=db.query_row("SELECT mfa_version,mfa_enabled FROM accounts WHERE id=?",[&account],|r|Ok((r.get(0)?,r.get(1)?)))?;if current!=version{return Err(ApiError::unauthorized())}
- let count:i64=db.query_row("SELECT COUNT(*) FROM passkeys WHERE account_id=?",[&account],|r|r.get(0))?;if count>=10{return Err(ApiError::bad("Passkey limit reached"))}
- let tx=db.transaction()?;tx.execute("INSERT INTO passkeys(id,account_id,credential,counter,name,rp_id,created_at,purpose) VALUES (?,?,?,?,?,?,?,'factor')",params![input.id,account,serialized,counter as i64,"Security key",rp,now()])?;
- if enabled{crate::mfa::change(&tx,&session,true,false,false)?;}tx.commit()?;Ok((StatusCode::CREATED,Json(json!({"success":true}))))}).await
+    server.work(move |db| {
+        if crate::mfa::elevated(db, &session)? != account {
+            return Err(ApiError::unauthorized());
+        }
+        let (current, enabled): (i64, bool) = db.query_row(
+            "SELECT mfa_version,mfa_enabled FROM accounts WHERE id=?",
+            [&account],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+        if current != version { return Err(ApiError::unauthorized()); }
+        let count: i64 = db.query_row("SELECT COUNT(*) FROM passkeys WHERE account_id=?", [&account], |r| r.get(0))?;
+        if count >= 10 { return Err(ApiError::bad("Passkey limit reached")); }
+        let tx = db.transaction()?;
+        tx.execute(
+            "INSERT INTO passkeys(id,account_id,credential,counter,name,rp_id,created_at,purpose) VALUES (?,?,?,?,?,?,?,?)",
+            params![input.id, account, serialized, counter as i64, name, rp, now(), purpose],
+        )?;
+        let mut result = crate::mfa::change(&tx, &session, true, !enabled, false)?;
+        result["purpose"] = json!(purpose);
+        tx.commit()?;
+        Ok((StatusCode::CREATED, Json(result)))
+    }).await
 }
 
 pub async fn mfa_options(

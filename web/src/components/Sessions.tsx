@@ -1,79 +1,60 @@
-import { useEffect, useState } from 'react'
+import { useRevokeSession } from '../lib/mutations'
+import { ErrorFeedback, useErrorFeedback } from './ErrorFeedback'
+import { useState } from 'react'
 import * as Ariakit from '@ariakit/react'
-import { Monitor } from 'lucide-react'
-import { api, message } from '../lib/api'
+import { Globe, Monitor } from 'lucide-react'
+import { message } from '../lib/api'
 
-export type AccountSession = {
-  id: string
-  created_at: number
-  last_access_at: number
-  platform: string | null
-  client: string | null
-  location: string | null
-  current: number
-}
+import type { AccountSession } from '../lib/contracts'
+export type { AccountSession } from '../lib/contracts'
 
 export function Sessions({
-  revision,
-  initialData,
+  sessions,
   onSignedOut,
 }: {
-  revision: string
-  initialData?: AccountSession[]
+  sessions: AccountSession[]
   onSignedOut: () => Promise<void>
 }) {
-  const [sessions, setSessions] = useState<AccountSession[] | null>(
-    initialData ?? null,
-  )
+  const operation = useRevokeSession()
   const [target, setTarget] = useState<AccountSession | 'all' | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const busy = operation.isPending
+  const [error, setError, errorAttempt] = useErrorFeedback()
   const [notice, setNotice] = useState('')
-  useEffect(() => {
-    if (initialData) {
-      setSessions(initialData)
-      setError('')
-      return
-    }
-    let active = true
-    api<{ sessions: AccountSession[] }>('/sessions')
-      .then((result) => {
-        if (active) {
-          setSessions(result.sessions)
-          setError('')
-        }
-      })
-      .catch((e) => {
-        if (active) setError(message(e))
-      })
-    return () => {
-      active = false
-    }
-  }, [revision, initialData])
   async function revoke() {
     if (!target) return
-    setBusy(true)
-    setError('')
     setNotice('')
     try {
-      await api(
-        target === 'all' ? '/sessions' : '/sessions/' + target.id,
-        'DELETE',
-      )
+      const signedOut = await operation.run(target)
       setTarget(null)
-      if (target === 'all' || target.current) await onSignedOut()
-      else {
-        setSessions(
-          (await api<{ sessions: AccountSession[] }>('/sessions')).sessions,
-        )
-        setNotice('Session signed out.')
-      }
+      setError('')
+      if (signedOut) await onSignedOut()
+      else setNotice('Session signed out.')
     } catch (e) {
       setError(message(e))
-    } finally {
-      setBusy(false)
     }
   }
+  const targetSession = target && target !== 'all' ? target : null
+  function clientLabel(session: AccountSession) {
+    return session.client === 'Desktop app'
+      ? session.platform
+        ? `${session.platform} app`
+        : 'Desktop app'
+      : (session.client ?? 'Session')
+  }
+  function sessionName(session: AccountSession) {
+    const client =
+      session.client === 'Desktop app'
+        ? `the ${clientLabel(session)}`
+        : (session.client ?? 'this session')
+    const devices = session.device_names?.length
+      ? new Intl.ListFormat('en', { type: 'conjunction' }).format(
+          session.device_names,
+        )
+      : null
+    const platform = session.client === 'Desktop app' ? null : session.platform
+    return client + (devices || platform ? ` on ${devices ?? platform}` : '')
+  }
+  const targetName = targetSession ? sessionName(targetSession) : 'this session'
   const date = (value: number) =>
     new Date(value * 1000).toLocaleString(undefined, {
       dateStyle: 'medium',
@@ -84,7 +65,7 @@ export function Sessions({
       <div className="security-heading">
         <div>
           <h2 id="sessions-title">Sessions</h2>
-          <p>Manage where you’re signed in. Locations are approximate.</p>
+          <p>Manage where you’re signed in.</p>
         </div>
         <button
           className="text-button"
@@ -98,37 +79,75 @@ export function Sessions({
         </button>
       </div>
       {error && !target && (
-        <p role="alert" className="message error-message">
-          {error}
-        </p>
+        <ErrorFeedback error={error} attempt={errorAttempt} />
       )}
       {notice && (
         <p role="status" className="message success-message">
           {notice}
         </p>
       )}
-      {!sessions ? (
-        <p role="status">
-          {error
-            ? 'Could not load sessions. Try refreshing.'
-            : 'Loading sessions…'}
-        </p>
-      ) : (
-        <div className="security-list">
-          {sessions.map((session) => (
+      <div className="security-list [border-top:1px_solid_var(--line)] mt-[22px]">
+        {[...sessions]
+          .sort(
+            (a, b) =>
+              b.current - a.current || b.last_access_at - a.last_access_at,
+          )
+          .map((session) => (
             <article key={session.id} className="security-row session-row">
               <div>
-                <Monitor size={19} />
+                {session.client === 'Desktop app' ? (
+                  <Monitor size={19} />
+                ) : (
+                  <Globe size={19} />
+                )}
                 <div>
                   <h3>
-                    {[session.client ?? 'Session', session.platform]
+                    {[
+                      clientLabel(session),
+                      session.device_names?.length
+                        ? session.device_names.join(', ')
+                        : session.client === 'Desktop app'
+                          ? null
+                          : session.platform,
+                    ]
                       .filter(Boolean)
                       .join(' · ')}{' '}
                     {session.current ? (
                       <span className="session-current">This session</span>
                     ) : null}
+                    {!session.current &&
+                      Date.now() / 1000 - session.last_access_at >=
+                        14 * 86400 && (
+                        <span className="session-current session-inactive">
+                          Inactive for{' '}
+                          {Math.floor(
+                            (Date.now() / 1000 - session.last_access_at) /
+                              86400,
+                          )}{' '}
+                          days
+                        </span>
+                      )}
                   </h3>
-                  <p>{session.location ?? 'Location unavailable'}</p>
+                  <p>
+                    <Ariakit.TooltipProvider showTimeout={0} placement="left">
+                      <Ariakit.TooltipAnchor
+                        render={<span tabIndex={0} />}
+                        className="session-location"
+                      >
+                        {session.location ?? 'Location unavailable'}
+                      </Ariakit.TooltipAnchor>
+                      <Ariakit.Tooltip
+                        className="account-tooltip"
+                        flip="right top bottom"
+                        overflowPadding={16}
+                      >
+                        <Ariakit.TooltipArrow />
+                        {session.location
+                          ? 'Estimated from this session’s IP address. VPNs and proxies can make it inaccurate.'
+                          : 'No location information was available for this session.'}
+                      </Ariakit.Tooltip>
+                    </Ariakit.TooltipProvider>
+                  </p>
                   <p>
                     Last active{' '}
                     <time
@@ -153,7 +172,7 @@ export function Sessions({
               </div>
               <button
                 className="text-button"
-                aria-label={`Sign out ${session.current ? 'this session' : [session.client ?? 'session', session.platform].filter(Boolean).join(' on ')}`}
+                aria-label={`Sign out ${session.current ? 'this session' : sessionName(session)}`}
                 disabled={busy}
                 onClick={() => {
                   setError('')
@@ -164,31 +183,33 @@ export function Sessions({
               </button>
             </article>
           ))}
-        </div>
-      )}
+      </div>
       <Ariakit.Dialog
+        unmountOnHide
         open={!!target}
-        onClose={() => !busy && setTarget(null)}
+        onClose={() => {
+          if (busy) return
+          setError('')
+          setTarget(null)
+        }}
         className="dialog"
         backdrop={<div className="dialog-backdrop" />}
       >
         <Ariakit.DialogHeading>
           {target === 'all'
             ? 'Sign out all sessions?'
-            : 'Sign out this session?'}
+            : target?.current
+              ? 'Sign out this session?'
+              : `Sign out ${targetName}?`}
         </Ariakit.DialogHeading>
         <Ariakit.DialogDescription>
           {target === 'all'
             ? 'You’ll be signed out everywhere, including this browser. Devices will need to sign in again.'
             : target?.current
               ? 'You’ll be signed out of this browser.'
-              : 'This session and its connected devices will need to sign in again.'}
+              : `You’ll be signed out of ${targetName}.`}
         </Ariakit.DialogDescription>
-        {error && (
-          <p role="alert" className="message error-message">
-            {error}
-          </p>
-        )}
+        {error && <ErrorFeedback error={error} attempt={errorAttempt} />}
         <div className="dialog-actions">
           <Ariakit.DialogDismiss
             className="button button-outline"

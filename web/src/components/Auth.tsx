@@ -1,109 +1,113 @@
+import { api } from '../lib/api'
+import { useAction } from '../lib/mutations'
+import { useQueryClient } from '@tanstack/react-query'
+import { serverQuery, resetSessionQueries } from '../lib/query'
+import { ThemeHeader } from './ThemePicker'
+import { ErrorFeedback, useErrorFeedback } from './ErrorFeedback'
+import { NewPasswordInput } from './NewPasswordInput'
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { Fingerprint, MoveUpRight } from 'lucide-react'
-import type { PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/browser'
 import { SecondFactor, type MfaPending } from './SecondFactor'
 import { Brand } from './Brand'
 import { ValidatedForm, ValidatedInput } from './ValidatedForm'
-import { api, message } from '../lib/api'
+import { message } from '../lib/api'
 export function Auth({
   signup = false,
-  previewLoading = false,
+  sessionEnded = false,
   onSignedIn,
 }: {
   signup?: boolean
-  previewLoading?: boolean
+  sessionEnded?: boolean
   onSignedIn?: () => void | Promise<void>
 }) {
+  const operation = useAction()
+  const queryClient = useQueryClient()
+  async function signedIn() {
+    // MFA reauthentication uses the same endpoints as sign-in. Clear only when
+    // the Auth flow completes, not whenever a second factor is verified.
+    await resetSessionQueries(queryClient)
+    await (onSignedIn ? onSignedIn() : navigate({ to: '/account' }))
+  }
   const navigate = useNavigate()
   const [pending, setPending] = useState<MfaPending | null>(null)
-  const [busy, setBusy] = useState(import.meta.env.DEV && previewLoading)
-  const [error, setError] = useState('')
-  const [errorAttempt, setErrorAttempt] = useState(0)
+  const busy = operation.isPending
+  const [error, setError, errorAttempt] = useErrorFeedback()
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const data = new FormData(event.currentTarget)
-    setBusy(true)
     try {
-      const result = await api<MfaPending | { account: unknown }>(
-        '/auth/' + (signup ? 'signup' : 'login'),
-        'POST',
-        {
-          email: data.get('email'),
-          password: data.get('password'),
-        },
-      )
-      if ('mfa_required' in result) {
-        setError('')
-        setPending(result)
-        return
-      }
-      if (signup) {
-        const settings = await api<{ email_enabled: boolean }>('/server')
-        if (settings.email_enabled)
-          await api('/auth/email/request', 'POST').catch(() => {})
-      }
-      await (onSignedIn ? onSignedIn() : navigate({ to: '/account' }))
+      await operation.run(async () => {
+        const result = await api(
+          signup ? 'POST /auth/signup' : 'POST /auth/login',
+          {
+            email: String(data.get('email') ?? ''),
+            password: String(data.get('password') ?? ''),
+          },
+        )
+        if ('mfa_required' in result) {
+          setError('')
+          setPending(result)
+          return
+        }
+        if (signup) {
+          const settings = await queryClient.fetchQuery(serverQuery)
+          if (settings.email_enabled)
+            await api('POST /auth/email/request').catch(() => {})
+        }
+        await signedIn()
+      })
     } catch (error) {
       setError(message(error))
-      setErrorAttempt((attempt) => attempt + 1)
-    } finally {
-      setBusy(false)
     }
   }
   async function passkey() {
-    setBusy(true)
     try {
-      const { startAuthentication } = await import('@simplewebauthn/browser')
-      const optionsJSON = await api<PublicKeyCredentialRequestOptionsJSON>(
-        '/passkeys/login/options',
-        'POST',
-      )
-      await api(
-        '/passkeys/login/verify',
-        'POST',
-        await startAuthentication({ optionsJSON }),
-      )
-      await (onSignedIn ? onSignedIn() : navigate({ to: '/account' }))
+      await operation.run(async () => {
+        const { startAuthentication } = await import('@simplewebauthn/browser')
+        const optionsJSON = await api('POST /passkeys/login/options')
+        await api(
+          'POST /passkeys/login/verify',
+          await startAuthentication({ optionsJSON }),
+        )
+        await signedIn()
+      })
     } catch (error) {
       setError(message(error))
-      setErrorAttempt((attempt) => attempt + 1)
-    } finally {
-      setBusy(false)
     }
   }
   return (
     <div className="auth-layout">
-      <aside className="auth-aside">
+      <aside className="auth-aside flex flex-col justify-between py-12 px-16 bg-app-aside [border-right:1px_solid_var(--line)]">
         <Brand appearance="app" />
         <div>
           <h2>Account</h2>
-          <p>Manage your devices and sign-in settings.</p>
+          <p>Manage your devices and account.</p>
         </div>
       </aside>
-      <main id="main" className="auth-main auth-account-main">
-        <div className="auth-box">
+      <main
+        id="main"
+        className="auth-main auth-account-main flex justify-center items-center py-16 px-7 flex-col gap-8"
+      >
+        <ThemeHeader />
+        <div className="auth-box w-full max-w-[360px]">
           <Link to="/" className="back-link">
             Back to home <MoveUpRight size={12} />
           </Link>
           <h1 className="auth-title-only">
             {signup ? 'Create an account' : 'Sign in'}
           </h1>
-          {error && (
-            <p
-              key={errorAttempt}
-              className="message error-message auth-error-enter"
-              role="alert"
-            >
-              {error}
-            </p>
+          {sessionEnded && !pending && !error && (
+            <ErrorFeedback
+              error="Your session ended. Sign in again to continue."
+              attempt={1}
+            />
           )}
+          {error && <ErrorFeedback error={error} attempt={errorAttempt} />}
           {pending ? (
             <SecondFactor
               pending={pending}
-              onVerified={() =>
-                onSignedIn ? onSignedIn() : navigate({ to: '/account' })
-              }
+              onVerified={signedIn}
               onCancel={() => setPending(null)}
             />
           ) : (
@@ -123,29 +127,27 @@ export function Auth({
                 </label>
                 <label className="field">
                   Password
-                  <ValidatedInput
-                    aria-label="Password"
-                    name="password"
-                    type="password"
-                    autoComplete={signup ? 'new-password' : 'current-password'}
-                    required
-                    minLength={12}
-                    maxLength={1024}
-                    aria-describedby={signup ? 'password-hint' : undefined}
-                  />
+                  {signup ? (
+                    <NewPasswordInput aria-label="Password" name="password" />
+                  ) : (
+                    <ValidatedInput
+                      aria-label="Password"
+                      name="password"
+                      type="password"
+                      autoComplete="current-password"
+                      required
+                      minLength={12}
+                      maxLength={1024}
+                    />
+                  )}
                 </label>
                 {!signup && (
-                  <p className="auth-recovery-link">
+                  <p className="auth-recovery-link text-right text-[12px] text-app-accent mt-[-8px] mr-0 mb-0 ml-0">
                     <Link to="/recover">Forgot your password?</Link>
                   </p>
                 )}
-                {signup && (
-                  <p id="password-hint" className="field-hint">
-                    At least 12 characters. You can add a passkey next.
-                  </p>
-                )}
                 <button
-                  className="button auth-submit"
+                  className="button auth-submit gap-[10px]"
                   disabled={busy}
                   aria-busy={busy}
                   type="submit"
@@ -171,11 +173,11 @@ export function Auth({
               </ValidatedForm>
               {!signup && (
                 <>
-                  <div className="auth-divider">
+                  <div className="auth-divider text-center text-app-muted text-[11px] my-[22px] mx-0">
                     <span>or</span>
                   </div>
                   <button
-                    className="button button-outline auth-submit"
+                    className="button button-outline auth-submit gap-[10px]"
                     disabled={busy}
                     onClick={passkey}
                   >
@@ -188,7 +190,7 @@ export function Auth({
           )}
         </div>
         {!pending && (
-          <p className="auth-switch">
+          <p className="auth-switch mt-[27px] text-center text-[12px] text-app-muted">
             {signup ? 'Already have an account?' : 'Need an account?'}
             <Link to={signup ? '/login' : '/signup'}>
               {signup ? 'Sign in' : 'Create an account'}

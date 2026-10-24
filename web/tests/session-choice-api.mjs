@@ -1,9 +1,10 @@
+import { testOrigin } from './test-config.mjs'
 import assert from 'node:assert/strict'
 import { randomBytes, createHmac } from 'node:crypto'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
-const origin = process.env.EXTEND_TEST_URL ?? 'http://localhost:3002'
+const origin = testOrigin
 assert.ok(
   ['localhost', '127.0.0.1'].includes(new URL(origin).hostname),
   'This test is local-only',

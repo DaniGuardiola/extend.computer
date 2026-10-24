@@ -73,6 +73,145 @@ fn setup() -> (tempfile::TempDir, Arc<Server>, Router) {
 }
 
 #[tokio::test]
+async fn android_and_desktop_platforms_register_without_accepting_unknown_platforms() {
+    let (_dir, _server, app) = setup();
+    let token = signup(&app, "platforms@example.invalid").await;
+    for (index, platform) in ["macos", "windows", "linux", "android"].iter().enumerate() {
+        let (status, device) = request(&app, "POST", "/v1/devices", Some(&token),
+            json!({"name":"Platform test", "platform":platform,"public_key":hex::encode([index as u8 + 1; 32])})).await;
+        assert_eq!(status, StatusCode::OK, "{platform}: {device}");
+        let id = device["id"].as_str().unwrap();
+        let credential = device["device_token"].as_str().unwrap();
+        assert_eq!(
+            request(
+                &app,
+                "POST",
+                &format!("/v1/devices/{id}/heartbeat"),
+                Some(credential),
+                json!({})
+            )
+            .await
+            .0,
+            StatusCode::NO_CONTENT
+        );
+        let (_, directory) = request(&app, "GET", "/v1/devices", Some(&token), Value::Null).await;
+        let entry = directory["devices"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|d| d["id"] == id)
+            .unwrap();
+        assert_eq!(entry["platform"], *platform);
+        assert_eq!(entry["online"], true);
+        assert_eq!(
+            request(
+                &app,
+                "DELETE",
+                &format!("/v1/devices/{id}"),
+                Some(&token),
+                Value::Null
+            )
+            .await
+            .0,
+            StatusCode::NO_CONTENT
+        );
+        assert_eq!(
+            request(
+                &app,
+                "POST",
+                &format!("/v1/devices/{id}/heartbeat"),
+                Some(credential),
+                json!({})
+            )
+            .await
+            .0,
+            StatusCode::UNAUTHORIZED
+        );
+    }
+    for platform in ["unknown", "Android", "", "ios"] {
+        assert_eq!(request(&app, "POST", "/v1/devices", Some(&token),
+            json!({"name":"Invalid platform", "platform":platform,"public_key":hex::encode([9; 32])})).await.0, StatusCode::BAD_REQUEST);
+    }
+    let (_, directory) = request(&app, "GET", "/v1/devices", Some(&token), Value::Null).await;
+    assert!(directory["devices"].as_array().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn session_activity_renews_expiry_without_reviving_expired_sessions() {
+    let (_dir, server, app) = setup();
+    let token = signup(&app, "idle@example.com").await;
+    let device = register(&app, &token, 1).await;
+    let hash = token_hash(&token);
+    let set_expiry = |expiry| {
+        server
+            .db
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE sessions SET expires_at=? WHERE token_hash=?",
+                params![expiry, hash],
+            )
+            .unwrap();
+    };
+    let expiry = || -> i64 {
+        server
+            .db
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT expires_at FROM sessions WHERE token_hash=?",
+                [&hash],
+                |r| r.get(0),
+            )
+            .unwrap()
+    };
+    set_expiry(now() + 60);
+    assert_eq!(
+        request(&app, "GET", "/v1/account", Some(&token), Value::Null)
+            .await
+            .0,
+        StatusCode::OK
+    );
+    assert!(expiry() >= now() + SESSION_SECONDS - 2);
+    let endpoint = format!("/v1/devices/{}/heartbeat", device["id"].as_str().unwrap());
+    let credential = device["device_token"].as_str().unwrap();
+    set_expiry(now() + 60);
+    assert_eq!(
+        request(&app, "POST", &endpoint, Some(credential), Value::Null)
+            .await
+            .0,
+        StatusCode::NO_CONTENT
+    );
+    assert!(expiry() >= now() + SESSION_SECONDS - 2);
+    let expired = now() - 1;
+    set_expiry(expired);
+    assert_eq!(
+        request(&app, "GET", "/v1/account", Some(&token), Value::Null)
+            .await
+            .0,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        request(&app, "POST", &endpoint, Some(credential), Value::Null)
+            .await
+            .0,
+        StatusCode::UNAUTHORIZED
+    );
+    let remaining: Option<i64> = server
+        .db
+        .lock()
+        .unwrap()
+        .query_row(
+            "SELECT expires_at FROM sessions WHERE token_hash=?",
+            [&hash],
+            |r| r.get(0),
+        )
+        .optional()
+        .unwrap();
+    assert!(remaining.is_none_or(|value| value == expired));
+}
+
+#[tokio::test]
 async fn devices_are_private_scoped_and_revocable() {
     let (_dir, _server, app) = setup();
     let alice = signup(&app, "alice@example.com").await;
@@ -722,7 +861,14 @@ async fn disabled_relay_advertises_policy_and_rejects_all_upgrade_routes() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body, json!({"relay_enabled": false}));
     for action in ["connect", "tunnel", "accept"] {
-        let (status, body) = request(&app, "GET", &format!("/v1/relay/{action}?device=test"), None, json!(null)).await;
+        let (status, body) = request(
+            &app,
+            "GET",
+            &format!("/v1/relay/{action}?device=test"),
+            None,
+            json!(null),
+        )
+        .await;
         assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
         assert_eq!(body["code"], "relay_disabled");
         assert_eq!(body["relay_enabled"], false);

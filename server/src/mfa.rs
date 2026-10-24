@@ -466,8 +466,9 @@ async fn settings(
 ) -> Result<Json<Value>, ApiError> {
     let session = bearer(&headers)?;
     server.work(move|db|{let account=elevated(db,&session)?;let(enabled,keys):(bool,i64)=db.query_row("SELECT mfa_enabled,(SELECT COUNT(*) FROM passkeys WHERE account_id=accounts.id) FROM accounts WHERE id=?",[&account],|r|Ok((r.get(0)?,r.get(1)?)))?;let(totp,_,_)=factors(db,&account)?;if kind=="enable"&&!totp&&keys==0{return Err(ApiError::bad("Add a factor first"))}
+if kind=="disable"&&keys>0{return Err(ApiError::bad("Remove your passkeys and security keys to turn off two-factor authentication"))}
 if kind=="recovery"&&!enabled{return Err(ApiError::bad("Enable two-factor authentication first"))}
-if kind=="remove"&&enabled&&keys==0{return Err(ApiError::bad("Add another factor or turn off two-factor authentication first"))}let tx=db.transaction()?;if kind=="disable"||kind=="remove"{tx.execute("DELETE FROM totp_factors WHERE account_id=?",[&account])?;tx.execute("DELETE FROM totp_setup WHERE account_id=?",[&account])?;}let response=change(&tx,&session,kind!="disable"&&(enabled||kind=="enable"),kind!="remove",kind=="disable"||kind=="remove")?;tx.commit()?;Ok(response)}).await.map(Json)
+let tx=db.transaction()?;if kind=="disable"||kind=="remove"{tx.execute("DELETE FROM totp_factors WHERE account_id=?",[&account])?;tx.execute("DELETE FROM totp_setup WHERE account_id=?",[&account])?;}let response=change(&tx,&session,kind!="disable"&&(enabled||kind=="enable")&&(kind!="remove"||keys>0),kind!="remove",kind=="disable"||kind=="remove")?;tx.commit()?;Ok(response)}).await.map(Json)
 }
 
 #[cfg(test)]

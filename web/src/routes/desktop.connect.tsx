@@ -1,27 +1,40 @@
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { accountQuery, useClientReady } from '../lib/query'
+import { useAction } from '../lib/mutations'
+import { ThemeHeader } from '../components/ThemePicker'
 import { useEffect, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { Auth } from '../components/Auth'
 import { Brand } from '../components/Brand'
-import { api, ApiError, message, type Account } from '../lib/api'
+import { api, message } from '../lib/api'
 export const Route = createFileRoute('/desktop/connect')({
   component: DesktopConnect,
   head: () => ({ meta: [{ title: 'Sign in to desktop · extend.computer' }] }),
 })
 function DesktopConnect() {
-  const [account, setAccount] = useState<Account | null>(null)
-  const [checked, setChecked] = useState(false)
+  const operation = useAction()
+  const queryClient = useQueryClient()
+  const ready = useClientReady()
   const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
+  const [leaving, setLeaving] = useState(false)
+  const busy = operation.isPending || leaving
   const [request, setRequest] = useState<{
     state: string
     challenge: string
     port: number
   } | null>(null)
+  const session = useQuery({
+    ...accountQuery,
+    enabled: ready && !!request,
+    staleTime: 0,
+  })
+  const account = session.isFetching ? undefined : session.data
+  const checked =
+    ready && (!request || (!session.isPending && !session.isFetching))
   async function refresh() {
-    setAccount(await api<Account>('/account'))
+    await queryClient.ensureQueryData(accountQuery)
   }
   useEffect(() => {
-    let active = true
     const params = new URLSearchParams(location.search)
     const port = Number(params.get('port'))
     const state = params.get('state') ?? ''
@@ -34,50 +47,42 @@ function DesktopConnect() {
       !/^[A-Za-z0-9_-]{43}$/.test(challenge)
     ) {
       setError('Invalid desktop sign-in request. Start again from the app.')
-      setChecked(true)
       return
     }
     setRequest({ port, state, challenge })
-    api<Account>('/account')
-      .then((value) => {
-        if (active) setAccount(value)
-      })
-      .catch((e) => {
-        if (active && !(e instanceof ApiError && e.status === 401))
-          setError(message(e))
-      })
-      .finally(() => {
-        if (active) setChecked(true)
-      })
-    return () => {
-      active = false
-    }
   }, [])
+  useEffect(() => {
+    if (session.error) setError(message(session.error))
+  }, [session.error])
   async function connect() {
     if (!request) return
-    setBusy(true)
     setError('')
     try {
-      const { code } = await api<{ code: string }>(
-        '/auth/desktop/authorize',
-        'POST',
-        { challenge: request.challenge },
-      )
-      // Only an ephemeral loopback destination; never an arbitrary redirect URL.
-      const callback = new URL(`http://127.0.0.1:${request.port}/callback`)
-      callback.searchParams.set('state', request.state)
-      callback.searchParams.set('code', code)
-      location.assign(callback.href)
+      await operation.run(async () => {
+        const { code } = await api('POST /auth/desktop/authorize', {
+          challenge: request.challenge,
+        })
+        // Only an ephemeral loopback destination; never an arbitrary redirect URL.
+        const callback = new URL(`http://127.0.0.1:${request.port}/callback`)
+        callback.searchParams.set('state', request.state)
+        callback.searchParams.set('code', code)
+        setLeaving(true)
+        location.assign(callback.href)
+      })
     } catch (e) {
       setError(message(e))
-      setBusy(false)
+      setLeaving(false)
     }
   }
   if (checked && request && !account && !error)
     return <Auth onSignedIn={refresh} />
   return (
-    <main id="main" className="auth-main desktop-connect-main">
-      <div className="auth-box">
+    <main
+      id="main"
+      className="auth-main desktop-connect-main flex justify-center items-center py-16 px-7 min-h-[100svh]"
+    >
+      <ThemeHeader />
+      <div className="auth-box w-full max-w-[360px]">
         <Brand appearance="app" />
         <h1>Connect the desktop app</h1>
         <p>
@@ -94,19 +99,22 @@ function DesktopConnect() {
           <>
             <p>Signed in as {account.email}.</p>
             <button
-              className="button auth-submit"
+              className="button primary auth-submit gap-[10px]"
               disabled={busy}
               onClick={connect}
             >
-              {busy ? 'Connecting…' : 'Continue to desktop'}
+              {busy ? 'Signing in…' : 'Sign in to app'}
             </button>
             <button
               className="text-button"
               disabled={busy}
               onClick={async () => {
                 try {
-                  await api('/auth/logout', 'POST')
-                  setAccount(null)
+                  await operation.run(async () => {
+                    await api('POST /auth/logout')
+                    queryClient.clear()
+                    queryClient.setQueryData(accountQuery.queryKey, null)
+                  })
                 } catch (e) {
                   setError(message(e))
                 }

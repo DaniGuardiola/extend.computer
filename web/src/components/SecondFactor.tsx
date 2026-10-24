@@ -1,29 +1,28 @@
+import { api } from '../lib/api'
+import { useAction } from '../lib/mutations'
+import { ErrorFeedback, useErrorFeedback } from './ErrorFeedback'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Fingerprint } from 'lucide-react'
-import type { PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/browser'
 import { CodeInput } from './CodeInput'
-import { api, message } from '../lib/api'
-export type MfaPending = {
-  mfa_required: true
-  ticket: string
-  totp: boolean
-  keys: boolean
-  recovery: boolean
-}
+import { message } from '../lib/api'
+import type { MfaPending } from '../lib/contracts'
+export type { MfaPending } from '../lib/contracts'
 export function SecondFactor({
   pending,
   onVerified,
   onCancel,
+  onBusyChange,
 }: {
   pending: MfaPending
   onVerified: () => void | Promise<void>
   onCancel: () => void
+  onBusyChange?: (busy: boolean) => void
 }) {
-  const [busy, setBusy] = useState(false)
+  const operation = useAction()
+  const busy = operation.isPending
   const [showVerifying, setShowVerifying] = useState(false)
   const verifying = useRef(false)
-  const [error, setError] = useState('')
-  const [errorAttempt, setErrorAttempt] = useState(0)
+  const [error, setError, errorAttempt] = useErrorFeedback()
   useEffect(() => {
     setShowVerifying(false)
     if (!busy) return
@@ -40,38 +39,40 @@ export function SecondFactor({
   async function attempt(work: () => Promise<unknown>) {
     if (verifying.current) return
     verifying.current = true
-    setBusy(true)
+    onBusyChange?.(true)
     try {
-      await work()
-      await onVerified()
+      await operation.run(async () => {
+        await work()
+        await onVerified()
+      })
     } catch (e) {
       setError(message(e))
-      setErrorAttempt((attempt) => attempt + 1)
     } finally {
       verifying.current = false
-      setBusy(false)
+      onBusyChange?.(false)
     }
   }
   function verifyCode(value: FormDataEntryValue | null) {
     return attempt(() =>
-      api('/auth/mfa/verify', 'POST', { ticket: pending.ticket, code: value }),
+      api('POST /auth/mfa/verify', {
+        ticket: pending.ticket,
+        code: String(value ?? ''),
+      }),
     )
   }
   async function code(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const data = new FormData(event.currentTarget)
-    await verifyCode(data.get('code'))
+    await verifyCode(String(data.get('code') ?? ''))
   }
   async function key() {
     await attempt(async () => {
       const { startAuthentication } = await import('@simplewebauthn/browser')
-      const optionsJSON = await api<PublicKeyCredentialRequestOptionsJSON>(
-        '/auth/mfa/key/options',
-        'POST',
-        { ticket: pending.ticket },
-      )
+      const optionsJSON = await api('POST /auth/mfa/key/options', {
+        ticket: pending.ticket,
+      })
       const credential = await startAuthentication({ optionsJSON })
-      await api('/auth/mfa/key/verify', 'POST', {
+      await api('POST /auth/mfa/key/verify', {
         ...credential,
         ticket: pending.ticket,
       })
@@ -86,15 +87,7 @@ export function SecondFactor({
             ? 'Enter one of your saved recovery codes. Each works once.'
             : 'Confirm with your passkey or security key.'}
       </p>
-      {error && (
-        <p
-          key={errorAttempt}
-          role="alert"
-          className="message error-message auth-error-enter"
-        >
-          {error}
-        </p>
-      )}
+      {error && <ErrorFeedback error={error} attempt={errorAttempt} />}
       {method !== 'key' && (
         <form key={method} onSubmit={code}>
           <label className="field">
@@ -114,7 +107,7 @@ export function SecondFactor({
       )}
       {pending.keys && (
         <button
-          className="button button-outline auth-submit"
+          className="button button-outline auth-submit gap-[10px]"
           onClick={key}
           disabled={busy}
         >

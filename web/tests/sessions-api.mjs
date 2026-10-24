@@ -1,8 +1,8 @@
+import { testOrigin } from './test-config.mjs'
 import assert from 'node:assert/strict'
 import { randomBytes } from 'node:crypto'
 
-const origin = process.env.EXTEND_TEST_URL ?? 'http://localhost:3006'
-assert.ok(['localhost', '127.0.0.1'].includes(new URL(origin).hostname))
+const origin = testOrigin
 async function request(path, method = 'GET', data, token) {
   const response = await fetch(origin + '/api/v1' + path, {
     method,
