@@ -1,5 +1,11 @@
 # extend.computer
 
+## 0.3.1
+
+### Patch Changes
+
+- [`8bec829`](https://github.com/DaniGuardiola/extend.computer/commit/8bec829e22b3cfea056b11ceecc2ed6849830586) Thanks [@DaniGuardiola](https://github.com/DaniGuardiola)! - Keep Wi-Fi optimization showing as allowed while a USB cable is connected. Background permission checks over a cable skip the Wi-Fi check, and they no longer reset its status, so the setting stops flipping to "Permission needed" and devices on the local network can keep connecting.
+
 ## 0.3.0
 
 ### Minor Changes
