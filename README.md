@@ -7,6 +7,17 @@
 
 Implemented foundations include encrypted local pairing, pinned device identities, account-connected devices, local-network connections with internet relay fallback, native permission guidance, and transport recovery.
 
+## Install
+
+Download the latest macOS release from [GitHub Releases](https://github.com/DaniGuardiola/extend.computer/releases/latest), or install it with Homebrew:
+
+```sh
+brew trust daniguardiola/tap
+brew install --cask daniguardiola/tap/extend-computer
+```
+
+The app updates itself after installation.
+
 ## Documentation
 
 **[Start reading the technical documentation →](docs/README.md)**
