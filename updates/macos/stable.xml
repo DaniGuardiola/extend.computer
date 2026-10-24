@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8" standalone="yes"?><!-- sparkle-sign-warning:
 IMPORTANT: This file was signed by Sparkle. Any modifications to this file requires re-signing this file with generate_appcast or sign_update! The signed signature will be embedded at the end of this file.
---><rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0"><channel><title>extend.computer updates</title><item><title>extend.computer 0.3.0</title><sparkle:version>9</sparkle:version><sparkle:shortVersionString>0.3.0</sparkle:shortVersionString><sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion><description>&lt;h3&gt;Minor Changes&lt;/h3&gt;
+--><rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0"><channel><title>extend.computer updates</title><item><title>extend.computer 0.3.1</title><sparkle:version>10</sparkle:version><sparkle:shortVersionString>0.3.1</sparkle:shortVersionString><sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion><description>&lt;h3&gt;Patch Changes&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href="https://github.com/DaniGuardiola/extend.computer/commit/8bec829e22b3cfea056b11ceecc2ed6849830586"&gt;&lt;code&gt;8bec829&lt;/code&gt;&lt;/a&gt; Thanks &lt;a href="https://github.com/DaniGuardiola"&gt;@DaniGuardiola&lt;/a&gt;! - Keep Wi-Fi optimization showing as allowed while a USB cable is connected. Background permission checks over a cable skip the Wi-Fi check, and they no longer reset its status, so the setting stops flipping to &amp;quot;Permission needed&amp;quot; and devices on the local network can keep connecting.&lt;/li&gt;
+&lt;/ul&gt;</description><enclosure url="https://github.com/DaniGuardiola/extend.computer/releases/download/v0.3.1/extend.computer-0.3.1-universal.dmg" length="23535114" type="application/octet-stream" sparkle:edSignature="k6s+0pIVcPIKEFnuvRdi2/apP1JinsxrwQELKlgeMpeufJEED3aoZEY3W5rpr75P5VetT1txvSbI2gV8UEh/DA=="></enclosure></item><item><title>extend.computer 0.3.0</title><sparkle:version>9</sparkle:version><sparkle:shortVersionString>0.3.0</sparkle:shortVersionString><sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion><description>&lt;h3&gt;Minor Changes&lt;/h3&gt;
 &lt;ul&gt;
 &lt;li&gt;
 &lt;p&gt;&lt;a href="https://github.com/DaniGuardiola/extend.computer/commit/3b1df1762d65ed629ab5192d00247eb1507a8b66"&gt;&lt;code&gt;3b1df17&lt;/code&gt;&lt;/a&gt; Thanks &lt;a href="https://github.com/DaniGuardiola"&gt;@DaniGuardiola&lt;/a&gt;! - Add experimental macOS display extension and screen mirroring over the local network. Authenticate paired and account devices before exchanging WebRTC setup, encode and decode video with native hardware codecs, present with Metal, and release display resources when the connection ends. Use Retina capture, bounded frame queues, keyframe recovery, and adaptive bitrate to reduce latency and keep text sharp.&lt;/p&gt;
@@ -40,6 +43,6 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
 &lt;li&gt;Pair Macs and share keyboard and mouse control over encrypted connections.&lt;/li&gt;
 &lt;li&gt;Manage accounts, device permissions, and local device settings.&lt;/li&gt;
 &lt;/ul&gt;</description><enclosure url="https://github.com/DaniGuardiola/extend.computer/releases/download/v0.1.0/extend.computer-0.1.0-universal.dmg" length="14141761" type="application/octet-stream" sparkle:edSignature="V4zFxK/Wkh2G2T0kNva1sHB34VuTcfCU36iA9LGGsgVllSIrelT9+cNo1pB1Hzi5IPYJ5C0dEwYGQQ3IxgAaAQ=="></enclosure></item></channel></rss><!-- sparkle-signatures:
-edSignature: UX2jaYwqyMOrvW96TpzY5gVm2viGx22pA0vpcbSFRbzl9kCRUTpSXRuku6Cigay7hDsy7pCtMphFyeeXJU0tCw==
-length: 8143
+edSignature: LswfEPWqaFlet9VU4hTif+rdhXt4+K33lCenvM0LOIb2RDB6doqYtqyun6s6AS+gHXEX8koPRYfKsVugVR+0Dw==
+length: 9302
 -->
