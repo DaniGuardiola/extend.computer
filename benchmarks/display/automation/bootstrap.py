@@ -98,6 +98,9 @@ def build_swift(extend):
     out=ROOT/'android-camera/tools';out.mkdir(parents=True,exist_ok=True)
     compiler=subprocess.run(['swiftc','--version'],check=True,capture_output=True,text=True).stdout.strip()
     sources=[('probe',ROOT/'android-camera/probe.swift'),('extract',ROOT/'android-camera/extract.swift'),('read-cells',ROOT/'android-camera/read_cells.swift'),('optical-patches',extend/'benchmarks/display/workloads/optical-patches.swift'),('campaign-workload',extend/'benchmarks/display/workloads/campaign-workload.swift')]
+    sources.append(('quality-fixture',extend/'benchmarks/display/workloads/quality-fixture.swift'))
+    sources.append(('cursor-fixture',extend/'benchmarks/display/workloads/cursor-fixture.swift'))
+    sources.append(('interaction-fixture',extend/'benchmarks/display/workloads/interaction-fixture.swift'))
     for name,source in sources:
         target=out/name
         record=out/f'{name}.build.json'

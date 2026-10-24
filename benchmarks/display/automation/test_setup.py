@@ -7,7 +7,7 @@ from bench import select_phone, repository
 class SetupTests(unittest.TestCase):
     def test_stale_ip_does_not_hide_working_mdns(self):
         def query(argv):
-            if argv[-1]=='devices':return 'List of devices attached\n10.0.0.1:1111\tdevice\nadb-unit._adb-tls-connect._tcp\tdevice\n'
+            if argv[1:]==['devices','-l']:return 'List of devices attached\n10.0.0.1:1111\tdevice\nadb-unit._adb-tls-connect._tcp\tdevice\n'
             if argv[2]=='10.0.0.1:1111':raise subprocess.CalledProcessError(1,argv)
             return 'same-physical-phone'
         with patch('bench.read',side_effect=query):
@@ -23,12 +23,20 @@ class SetupTests(unittest.TestCase):
             self.assertEqual(query.call_count,3)
     def test_duplicate_transports_one_phone(self):
         def query(argv):
-            if argv[-1]=='devices':return 'List of devices attached\n10.0.0.1:1111\tdevice\nadb-unit._adb-tls-connect._tcp\tdevice\n'
+            if argv[1:]==['devices','-l']:return 'List of devices attached\n10.0.0.1:1111\tdevice\nadb-unit._adb-tls-connect._tcp\tdevice\n'
             return 'same-physical-phone'
         with patch('bench.read',side_effect=query):self.assertEqual(select_phone('adb'),'adb-unit._adb-tls-connect._tcp')
+    def test_usb_preferred_over_wifi_for_same_phone(self):
+        def query(argv):
+            if argv[1:]==['devices','-l']:
+                return 'List of devices attached\nunit device usb:123 product:test\nadb-unit._adb-tls-connect._tcp device product:test\n'
+            return 'same-physical-phone'
+        with patch('bench.read',side_effect=query):
+            self.assertEqual(select_phone('adb'),'unit')
+            self.assertEqual(select_phone('adb',explicit='adb-unit._adb-tls-connect._tcp'),'adb-unit._adb-tls-connect._tcp')
     def test_two_phones_require_selection(self):
         def query(argv):
-            if argv[-1]=='devices':return 'List of devices attached\na\tdevice\nb\tdevice\n'
+            if argv[1:]==['devices','-l']:return 'List of devices attached\na\tdevice\nb\tdevice\n'
             return argv[2]
         with patch('bench.read',side_effect=query),self.assertRaises(RuntimeError):select_phone('adb')
     def test_offline_remembered_phone_not_replaced(self):

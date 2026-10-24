@@ -30,34 +30,63 @@ def optical(directory,source_index=0):
     rows=[json.loads(x) for x in (p/'optical-frames.jsonl').read_text().splitlines()]
     hz=summary['measured_sensor_hz'];playback=meta['nominal_playback_fps'];factor=playback/hz
     if not 20<=playback<=60 or hz<100:raise ValueError('Unverified camera timing scale')
-    first=[{},{}];updates=[[],[]];valid=[0,0];last=[None,None]
+    first=[{},{}];bounds=[{},{}];updates=[[],[]];valid=[0,0];last=[None,None]
+    prior_readable=[None,None];missing=[False,False];unreadable_gaps=[[],[]]
     for row in rows:
         if len(row['counter_ids'])!=2:raise ValueError('Two physical timing patches required')
         t=row['playback_s']*factor
         for i,value in enumerate(row['counter_ids']):
-            if value is None:continue
+            if value is None:
+                missing[i]=True;continue
             valid[i]+=1
+            if missing[i] and prior_readable[i] is not None:
+                unreadable_gaps[i].append((t-prior_readable[i])*1000)
+            missing[i]=False
             if value!=last[i]:
                 if value in first[i]:raise ValueError('Counter wrapped or moved backwards in one short recording')
                 first[i][value]=t;updates[i].append(t);last[i]=value
+                bounds[i][value]=(prior_readable[i],t)
+            prior_readable[i]=t
     if any(c<len(rows)*.5 for c in valid):raise ValueError('Insufficient optical coverage')
     a=source_index;b=1-a
     common=set(first[a])&set(first[b]);delays=[(first[b][v]-first[a][v])*1000 for v in sorted(common) if v not in {0,min(common,default=0)}]
     if len(delays)<20:raise ValueError('Insufficient matched physical transitions')
+    intervals_of_delay=[]
+    for value in sorted(common):
+        if value in {0,min(common,default=0)}:continue
+        s0,s1=bounds[a][value];r0,r1=bounds[b][value]
+        if s0 is not None and r0 is not None:
+            intervals_of_delay.append({'counter':value,'lower_ms':(r0-s1)*1000,'upper_ms':(r1-s0)*1000})
     if statistics.median(delays)<-1000/hz*2:raise ValueError('Source/receiver patches reversed or source reference invalid')
+    # Zero is the fixture's stationary preparation counter. It is already
+    # excluded from transition latency; including its hold in frame cadence
+    # would report setup time as a one-second display stall.
+    preparation_to_first_update=[]
+    for i in range(2):
+        positive=[t for value,t in first[i].items() if value!=0]
+        preparation_to_first_update.append((positive[0]-first[i][0])*1000
+            if positive and 0 in first[i] else None)
+        updates[i]=positive
     intervals=[(y-x)*1000 for x,y in zip(updates[b],updates[b][1:])]
     duration=rows[-1]['playback_s']*factor-rows[0]['playback_s']*factor
     sensor=[json.loads(x) for x in (p/'sensor.jsonl').read_text().splitlines()]
     exposure=[r.get('exposure_ns')/1e6 for r in sensor if isinstance(r.get('exposure_ns'),(int,float))]
     skew=[r.get('rolling_shutter_skew_ns')/1e6 for r in sensor if isinstance(r.get('rolling_shutter_skew_ns'),(int,float))]
     return {'camera_exposure_ms':stats(exposure),'reported_rolling_shutter_skew_ms':stats(skew),'source_visible_updates':len(updates[a]),'receiver_visible_updates':len(updates[b]),'recorded_seconds':duration,
+            'cadence_scope':'Positive workload counters only; stationary preparation counter zero excluded',
+            'preparation_to_first_update_ms':{'source':preparation_to_first_update[a],'receiver':preparation_to_first_update[b]},
             'source_visible_hz':(len(updates[a])-1)/(updates[a][-1]-updates[a][0]) if len(updates[a])>1 else None,
             'receiver_visible_hz':(len(updates[b])-1)/(updates[a][-1]-updates[a][0]) if len(updates[a])>1 else None,
             'terminal_receiver_stall_ms':max(0,(updates[a][-1]-updates[b][-1])*1000) if updates[b] else None,
             'receiver_update_intervals_ms':stats(intervals),'intervals_over_50ms':sum(v>50 for v in intervals),
             'screen_to_screen_transition_ms':stats(delays),'camera_quantization_bound_ms':2000/hz,
+            'transition_delay_bounds_ms':intervals_of_delay,
+            'transition_delay_interval_width_ms':stats([r['upper_ms']-r['lower_ms'] for r in intervals_of_delay]),
+            'unreadable_counter_intervals_ms':{'source':stats(unreadable_gaps[a]),'receiver':stats(unreadable_gaps[b])},
+            'detected_update_rate_is_lower_bound':True,
+            'counter_readable_coverage':{'source':valid[a]/len(rows),'receiver':valid[b]/len(rows)},
             'physical_latency_definition':'First readable occurrence of the same generated counter on receiver minus source, in one camera timeline',
-            'limits':['Includes physical panels and scanout; not input-to-photon latency.','Camera rolling-shutter row bias is not removed.','Ambiguous transitions are excluded; remaining sample count and coverage are retained.'],
+            'limits':['Includes physical panels and scanout; not input-to-photon latency.','Camera rolling-shutter row bias is not removed.','Ambiguous transitions are excluded; remaining sample count and coverage are retained.','Detected update rate is a lower bound when counter frames are unreadable.','Per-transition bounds use the preceding readable counter and first readable new counter; they exclude exposure and rolling-shutter bias. Camera sample quantization alone does not bound unreadable intervals.'],
             'readable_coverage':[c/len(rows) for c in valid]}
 
 def quality(image,patches):
@@ -110,6 +139,8 @@ def network_delta(before,after):
         for key in ['bytes_in','bytes_out','re-tx']:
             a,b=num(previous.get(key)),num(row.get(key))
             values[key]=max(0,b-a) if a is not None and b is not None else None
+        if row.get('selected_tuple_sha256')!=previous.get('selected_tuple_sha256'):
+            row={**row,'matches_peer':None}
         rates.append({**row,'delta':values})
     active=[r for r in rates if (r['delta']['bytes_in'] or 0)+(r['delta']['bytes_out'] or 0)>1024]
     primary=max(active,key=lambda r:(r['delta']['bytes_in'] or 0)+(r['delta']['bytes_out'] or 0)) if active else None

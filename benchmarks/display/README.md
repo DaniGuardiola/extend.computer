@@ -31,8 +31,8 @@ Python 3.10+; core analysis and sensors use the standard library.
 python3 -m benchmarks.display.cli analyze /path/to/normalized-run
 python3 -m benchmarks.display.cli compare /path/to/run-a /path/to/run-b
 python3 -m unittest discover -s benchmarks/display/tests -v
-python3 benchmarks/display/serve_controlled.py --output /private/tmp/new-phases.jsonl
-python3 benchmarks/display/sensors/collect.py --pid 123 --port 24800 --role source --duration 60 --output /private/tmp/new-resources.jsonl
+python3 benchmarks/display/serve_controlled.py --output out/phases.jsonl
+python3 benchmarks/display/sensors/collect.py --pid 123 --port 24800 --role source --duration 60 --output out/resources.jsonl
 ```
 
 Each normalized run has `manifest.json` and `events.jsonl`. Output is immutable:
@@ -75,8 +75,8 @@ valid. Static source cadence is intentionally not evaluated.
 | Encoded bitrate | Encoded payload bytes per measured second | Analyzer implemented |
 | Wire bitrate/RTT | Connection bytes and sampled transport estimate | Contract; adapter observations required |
 | Decode/render latency | Same-frame, same-host monotonic stage difference | Analyzer implemented |
-| Physical latency | Camera-observed source change to matching receiver change | Contract; camera calibration/decoder pending |
-| Image quality | Registered synthetic image PSNR/SSIM | Contract; image acquisition/registration pending |
+| Physical latency | Camera-observed source change to matching receiver change | Optical decoder and geometry gates implemented; camera timing limits recorded |
+| Image quality | Registered synthetic image PSNR/SSIM | Automated static 1:1 acquisition, four-corner registration and ICC normalization; see quality guide |
 | GPU load/energy | Device counters with declared sampling scope | Not yet in v1 contract |
 | Recovery | Controlled fault to resumed valid delivery | Phase invalidation exists; dedicated recovery protocol pending |
 
@@ -85,6 +85,20 @@ receive, decode and GPU-completion observations. Those hooks are useful, but do
 not yet provide a stable cross-host frame ID, verified clock mapping, physical
 scanout or all resource metrics. The private Extend adapter handles the current
 wire format; the public normalized schema is independent of that format.
+
+Native USB queue diagnostics use the same opt-in trace file. Existing desktop
+USB status polls append `usb_queue_snapshot` records at most once per second;
+there is no added polling thread. The USB popup polls while open, and the
+explicit USB benchmark helper also polls. A closed popup alone does not promise
+continuous samples. Records preserve the raw bounded queue snapshot, with a
+`mac-host-time-ns` timestamp, and omit device identities and packet contents.
+The trace writer requires a regular, single-link, owner-only (0600) file.
+
+Queue ages are process-local monotonic residence durations. The Mac timestamp
+locates an observed status poll; it does not timestamp every packet. Histograms,
+high-water depth and oldest-head age may expose queue pressure, but do not prove
+optical cursor latency or permit subtraction from Android clocks. Android's
+pending physical write age remains unavailable without a native write ACK.
 
 ## Suite policy
 

@@ -24,8 +24,9 @@ def repository(value,config):
     return path
 
 def select_phone(adb,explicit=None,remembered=None,_recovered=False):
-    listing=read([adb,'devices'])
+    listing=read([adb,'devices','-l'])
     transports=[line.split()[0] for line in listing.splitlines()[1:] if len(line.split())>=2 and line.split()[1]=='device']
+    usb={line.split()[0] for line in listing.splitlines()[1:] if len(line.split())>=2 and line.split()[1]=='device' and any(field.startswith('usb:') for field in line.split()[2:])}
     if explicit:
         if explicit not in transports:
             if ':' in explicit:run([adb,'connect',explicit])
@@ -51,7 +52,7 @@ def select_phone(adb,explicit=None,remembered=None,_recovered=False):
         devices={remembered:devices[remembered]}
     if len(devices)!=1:raise RuntimeError('Connect one phone, or select it explicitly with --phone SERIAL')
     candidates=next(iter(devices.values()))
-    return sorted(candidates,key=lambda name:('._adb-tls-connect.' not in name,name))[0]
+    return sorted(candidates,key=lambda name:(0 if name in usb else 1 if '._adb-tls-connect.' in name else 2,name))[0]
 
 def phone_identity(adb,serial):
     actual=read([adb,'-s',serial,'shell','getprop','ro.serialno'])
@@ -81,9 +82,9 @@ def main():
         dest.write_text(json.dumps(data));dest.chmod(0o600)
         print('Benchmark source paired. Run campaign --product PRODUCT --check after connecting.')
         return
-    if len(sys.argv)>1 and sys.argv[1] in {'host','campaign','compare','launch','classify-routes'}:
+    if len(sys.argv)>1 and sys.argv[1] in {'host','campaign','compare','launch','classify-routes','display-settings','settings-sweep','digital-quality','cursor-quality','source-interaction','interaction-visual','focus-camera'}:
         entry=sys.argv.pop(1)
-        if entry=='campaign' and Path(sys.prefix).resolve()!=(ROOT/'.venv').resolve():
+        if entry in {'campaign','digital-quality','cursor-quality','source-interaction','interaction-visual','focus-camera'} and Path(sys.prefix).resolve()!=(ROOT/'.venv').resolve():
             python=ROOT/'.venv/bin/python3'
             if not python.exists():raise RuntimeError('Run setup on the receiving Mac first')
             os.execv(str(python),[str(python),sys.argv[0],entry,*sys.argv[1:]])
@@ -96,7 +97,7 @@ def main():
         if entry=='host':
             import host as host_service
             host_service.main(tools/'campaign-workload',product_adapter(),ROOT/'.cache/campaign')
-        else:runpy.run_path(str(folder/({'campaign':'run.py','compare':'compare.py','launch':'launch.py'}[entry])),run_name='__main__')
+        else:runpy.run_path(str(folder/({'campaign':'run.py','compare':'compare.py','launch':'launch.py','display-settings':'settings.py','settings-sweep':'sweep.py','digital-quality':'digital_quality.py','cursor-quality':'cursor_quality.py','source-interaction':'interaction.py','interaction-visual':'interaction_visual.py','focus-camera':'focus_camera.py'}[entry])),run_name='__main__')
         return
     p=argparse.ArgumentParser(description=__doc__)
     sub=p.add_subparsers(dest='command',required=True)
