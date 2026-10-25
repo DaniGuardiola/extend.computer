@@ -5,14 +5,12 @@ impl Desktop {
         let weak = Arc::downgrade(self);
         std::thread::spawn(move || {
             use extend_computer_agent::discovery::PRESENCE_SERVICE;
-            let daemon = extend_computer_agent::discovery::ipv4_daemon().ok();
-            // Notice a new cable's interface within a second.
-            if let Some(daemon) = &daemon {
-                let _ = daemon.set_ip_check_interval(1);
-            }
-            let mut receiver = daemon
-                .as_ref()
-                .and_then(|d| d.browse(PRESENCE_SERVICE).ok());
+            let browse = || {
+                let daemon = extend_computer_agent::discovery::ipv4_daemon().ok()?;
+                let receiver = daemon.browse(PRESENCE_SERVICE).ok()?;
+                Some((daemon, receiver))
+            };
+            let mut browser = browse();
             let mut candidates = BTreeMap::<String, Vec<SocketAddr>>::new();
             let mut cable_candidates = Vec::<SocketAddr>::new();
             let mut tried_identity = false;
@@ -21,7 +19,7 @@ impl Desktop {
             let mut known = Vec::<SocketAddr>::new();
             let mut rebrowse_at = None::<Instant>;
             loop {
-                if let Some(receiver) = &receiver {
+                if let Some((_, receiver)) = &browser {
                     if let Ok(event) = receiver.recv_timeout(Duration::from_millis(200)) {
                         match event {
                             mdns_sd::ServiceEvent::ServiceResolved(info) => {
@@ -81,21 +79,22 @@ impl Desktop {
                 discovered_now.dedup();
                 if current != links || discovered_now != known {
                     if current != links {
-                        rebrowse_at = Some(Instant::now() + Duration::from_millis(1500));
+                        rebrowse_at = Some(Instant::now() + Duration::from_millis(500));
                     }
                     links = current;
                     known = discovered_now;
                     next_check = Instant::now();
                 }
                 *app.discovered_presence.lock().unwrap() = discovered;
-                // Ask again on every interface once mDNS has picked up the
-                // change: otherwise a new cable is only queried at its next retry.
+                // An interface that returns with a new address, such as a
+                // replugged cable, stays deaf in a running mDNS daemon. Start
+                // a fresh one, which also asks again on every interface.
                 if rebrowse_at.is_some_and(|at| Instant::now() >= at) {
                     rebrowse_at = None;
-                    if let Some(daemon) = &daemon {
-                        let _ = daemon.stop_browse(PRESENCE_SERVICE);
-                        receiver = daemon.browse(PRESENCE_SERVICE).ok();
+                    if let Some((daemon, _)) = browser.take() {
+                        let _ = daemon.shutdown();
                     }
+                    browser = browse();
                 }
                 if Instant::now() < next_check {
                     continue;
@@ -152,7 +151,7 @@ impl Desktop {
                     }
                 }
             }
-            if let Some(daemon) = daemon {
+            if let Some((daemon, _)) = browser {
                 let _ = daemon.shutdown();
             }
         });
