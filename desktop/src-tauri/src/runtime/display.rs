@@ -254,7 +254,7 @@ impl Desktop {
                     if app.store()?.is_account_peer(&peer)? {
                         let device = app.devices.lock().unwrap().get(&peer).cloned();
                         if let Some(device) = device {
-                            app.connect_display(peer.clone(), device, config.clone())?;
+                            app.connect_display(peer.clone(), device, config.clone(), Vec::new())?;
                             break;
                         }
                     }
@@ -453,7 +453,7 @@ impl Desktop {
             if config.auto_size {
                 let path = self.display_helper()?;
                 helper::Helper::screen_size(&path, config)?;
-                let viewer = helper::Helper::start(&path, config, false, false)?;
+                let viewer = helper::Helper::start(&path, config, false, false, &[])?;
                 viewer.fit_viewport(config)?;
                 viewer.configure(config)?;
                 prepared_viewer = Some(viewer);
@@ -567,8 +567,16 @@ impl Desktop {
         peer: String,
         device: Device,
         mut config: Config,
+        presets: Vec<(u32, u32)>,
     ) -> Result<()> {
         config.validate()?;
+        ensure!(
+            presets.len() <= 8
+                && presets
+                    .iter()
+                    .all(|&(w, h)| (640..=4096).contains(&w) && (480..=4096).contains(&h)),
+            "Invalid display sizes"
+        );
         if config.mode == extend_computer_agent::session::display::Mode::Mirror && config.auto_size
         {
             helper::Helper::screen_size(&self.display_helper()?, &mut config)?;
@@ -589,6 +597,16 @@ impl Desktop {
         let usb_route = self.selected_usb_route(&peer);
         let (id, cancelled) = self.reserve(SessionKind::Outgoing, Some(peer.clone()))?;
         self.set_display_mode(id, config.mode);
+        if let Some(job) = self
+            .inner
+            .lock()
+            .unwrap()
+            .job
+            .as_mut()
+            .filter(|j| j.view.id == id)
+        {
+            job.display_presets = presets;
+        }
         let app = self.clone();
         std::thread::spawn(move || {
             let result = (|| -> Result<()> {
@@ -948,11 +966,21 @@ impl Desktop {
                 Some(DisplayEvent::Connected) => {
                     connected_at.get_or_insert_with(Instant::now);
                     if helper.is_none() {
+                        let presets = self
+                            .inner
+                            .lock()
+                            .unwrap()
+                            .job
+                            .as_ref()
+                            .filter(|j| j.view.id == id)
+                            .map(|j| j.display_presets.clone())
+                            .unwrap_or_default();
                         helper = Some(helper::Helper::start(
                             &self.display_helper()?,
                             &config,
                             source,
                             physical_usb,
+                            &presets,
                         )?);
                         if fixed_bitrate {
                             helper.as_ref().unwrap().set_bitrate(config.bitrate)?;

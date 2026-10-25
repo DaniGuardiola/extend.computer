@@ -50,6 +50,8 @@ struct Job {
     quality: quality::Tracker,
     /// The peer's link as it reported in this session's handshake.
     peer_link: Option<extend_computer_agent::link::Link>,
+    /// Stream sizes an extended display offers, so size changes only switch modes.
+    display_presets: Vec<(u32, u32)>,
 }
 struct PairCode {
     window: PairingWindow,
@@ -717,6 +719,7 @@ impl Desktop {
             display_updates: None,
             quality: quality::Tracker::default(),
             peer_link: None,
+            display_presets: Vec::new(),
         });
         Ok((id, cancelled))
     }

@@ -25,7 +25,11 @@ import { Select } from "./Select";
 import { UsbConnection } from "./UsbConnection";
 import { Dialog } from "./Dialog";
 import { ExplainedButton } from "./ExplainedButton";
-import { displayConfig, readDisplayPreferences } from "./displayPreferences";
+import {
+  displayConfig,
+  presetDisplaySizes,
+  readDisplayPreferences,
+} from "./displayPreferences";
 import { DisplayConnectionSettings } from "./DisplayConnectionSettings";
 import {
   QualityBars,
@@ -307,6 +311,7 @@ export function DeviceRow({
                     peer,
                     "extend",
                     displayConfig("extend", readDisplayPreferences(peer.id)),
+                    presetDisplaySizes(peer.id),
                   );
                   await refresh();
                 } catch (e) {

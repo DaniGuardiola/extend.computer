@@ -209,7 +209,12 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate {
             defer { withExtendedLifetime(lease) {} }
             let address = UInt(bitPattern: virtual)
             let lifetime = lifecycle
-            let applied = await MainActor.run {
+            // A size the display already offers only needs a mode switch,
+            // which keeps macOS's saved display setup valid.
+            let preset = await MainActor.run {
+                lifetime?.isClosing != true && ECDisplaySelectMode(UnsafeMutableRawPointer(bitPattern: address), UInt32(width), UInt32(height), retina, UInt32(fps))
+            }
+            let applied = preset ? true : await MainActor.run {
                 lifetime?.isClosing != true && ECDisplayConfigure(UnsafeMutableRawPointer(bitPattern: address), UInt32(width), UInt32(height), retina, UInt32(fps))
             }
             try checkLifetime()

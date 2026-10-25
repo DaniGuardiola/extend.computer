@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   connectionDisplayOptions,
   largestDisplayProfile,
+  presetDisplaySizes,
   displayConfig,
   preferencesFromConfig,
 } from "../src/displayPreferences.ts";
@@ -102,5 +103,12 @@ test("the largest profile per device survives applying a smaller size", () => {
     connectionDisplayOptions(largest, smaller).sizes,
     connectionDisplayOptions(native).sizes,
   );
+  assert.deepEqual(presetDisplaySizes("peer"), [
+    [1512, 949],
+    [1324, 830],
+    [1134, 712],
+    [946, 594],
+  ]);
+  assert.deepEqual(presetDisplaySizes("unknown"), []);
   delete globalThis.localStorage;
 });

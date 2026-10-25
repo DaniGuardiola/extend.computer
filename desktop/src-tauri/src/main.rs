@@ -66,9 +66,11 @@ async fn connect_display(
     peer: String,
     device: Device,
     config: extend_computer_agent::session::display::Config,
+    presets: Option<Vec<(u32, u32)>>,
 ) -> Result<(), String> {
     let state = state.inner().clone();
-    background(move || state.connect_display(peer, device, config)).await
+    background(move || state.connect_display(peer, device, config, presets.unwrap_or_default()))
+        .await
 }
 #[tauri::command]
 async fn update_display(

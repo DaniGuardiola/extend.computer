@@ -392,7 +392,13 @@ impl Helper {
         let screen: Screen = serde_json::from_slice(&output.stdout)?;
         fit_screen(&screen, config)
     }
-    pub fn start(path: &Path, config: &Config, source: bool, physical_usb: bool) -> Result<Self> {
+    pub fn start(
+        path: &Path,
+        config: &Config,
+        source: bool,
+        physical_usb: bool,
+        presets: &[(u32, u32)],
+    ) -> Result<Self> {
         ensure!(
             path.is_file(),
             "Display helper is missing. Rebuild extend.computer."
@@ -415,6 +421,18 @@ impl Helper {
         }
         #[cfg(not(any(debug_assertions, feature = "display-benchmark")))]
         process.env_remove("EXTEND_DISPLAY_FIXED_BITRATE");
+        // An extended display offers these sizes from the start, so later
+        // size changes switch modes instead of rebuilding the display.
+        let presets = presets
+            .iter()
+            .map(|(w, h)| format!("{w}x{h}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        if presets.is_empty() {
+            process.env_remove("EXTEND_DISPLAY_PRESETS");
+        } else {
+            process.env("EXTEND_DISPLAY_PRESETS", presets);
+        }
         let mut child = process
             .args([
                 command,

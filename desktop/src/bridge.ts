@@ -100,10 +100,13 @@ export const api = {
     device: Device,
     mode: "extend" | "mirror",
     config?: DisplayConfig,
+    /** Sizes an extended display offers up front, so resizing only switches modes. */
+    presets?: [number, number][],
   ) =>
     invoke<void>("connect_display", {
       peer,
       device,
+      presets,
       config: config ?? {
         mode,
         width: 1440,

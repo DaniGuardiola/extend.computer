@@ -136,6 +136,29 @@ export function largestDisplayProfile(
   }
   return largest;
 }
+/**
+ * The stream sizes the settings will offer for this device, so an extended
+ * display can provide them all from the start. Empty until a size is known.
+ */
+export function presetDisplaySizes(peer: string): [number, number][] {
+  try {
+    const saved = JSON.parse(
+      localStorage.getItem(`display-largest:${peer}`) ?? "null",
+    );
+    if (!saved || ![saved.width, saved.height].every(Number.isInteger))
+      return [];
+    const largest = {
+      ...displayConfig("extend", displayDefaults),
+      width: saved.width,
+      height: saved.height,
+    };
+    return connectionDisplayOptions(largest).sizes.map(
+      (size) => size.split("x").map(Number) as [number, number],
+    );
+  } catch {
+    return [];
+  }
+}
 export function saveDisplayPreferences(
   peer: string,
   value: DisplayPreferences,

@@ -98,6 +98,28 @@ static ECTopologyBackend ECSystemTopology(void) {
     return (ECTopologyBackend){ECReadTopology, ECRepairTopology, NULL};
 }
 
+// Offer the app's other stream sizes from the start. Changing size then only
+// switches modes; rebuilding the mode list instead fails macOS's saved display
+// setup, and its fallback configuration resets other screens' color profiles
+// until the display goes away.
+static NSArray *ModesWithPresets(id mode, uint32_t width, uint32_t height, bool retina, uint32_t fps) {
+    SEL modeSelector = NSSelectorFromString(@"initWithWidth:height:refreshRate:");
+    NSMutableArray *modes = [NSMutableArray arrayWithObject:mode];
+    uint32_t scale = retina ? 2 : 1;
+    const char *presets = getenv("EXTEND_DISPLAY_PRESETS");
+    NSArray<NSString *> *entries = presets ? [@(presets) componentsSeparatedByString:@","] : @[];
+    for (NSString *entry in [entries subarrayWithRange:NSMakeRange(0, MIN(entries.count, 8u))]) {
+        NSArray<NSString *> *size = [entry componentsSeparatedByString:@"x"];
+        if (size.count != 2) continue;
+        NSInteger presetWidth = size[0].integerValue, presetHeight = size[1].integerValue;
+        if ((presetWidth == width && presetHeight == height) || presetWidth < 640 || presetHeight < 480 ||
+            presetWidth > 4096 / scale || presetHeight > 4096 / scale) continue;
+        id preset = ((id (*)(id, SEL, NSUInteger, NSUInteger, double))objc_msgSend)(
+            [NSClassFromString(@"CGVirtualDisplayMode") alloc], modeSelector, presetWidth, presetHeight, (double)fps);
+        if (preset) [modes addObject:preset];
+    }
+    return modes;
+}
 bool ECDisplaySupported(void) {
     for (NSString *name in @[@"CGVirtualDisplayDescriptor", @"CGVirtualDisplayMode", @"CGVirtualDisplaySettings", @"CGVirtualDisplay"])
         if (!NSClassFromString(name)) return false;
@@ -179,7 +201,8 @@ void *ECDisplayCreate(uint32_t width, uint32_t height, bool retina, uint32_t fps
         if (!mode) return Fail("mode rejected");
         id settings = [NSClassFromString(@"CGVirtualDisplaySettings") new];
         [settings setValue:@(retina) forKey:@"hiDPI"];
-        [settings setValue:@[mode] forKey:@"modes"];
+        NSArray *modes = ModesWithPresets(mode, width, height, retina, fps);
+        [settings setValue:modes forKey:@"modes"];
         id display = SendObject([NSClassFromString(@"CGVirtualDisplay") alloc], @"initWithDescriptor:", descriptor);
         if (!display) return Fail("display not created");
         BOOL applied = ((BOOL (*)(id, SEL, id))objc_msgSend)(display, NSSelectorFromString(@"applySettings:"), settings);
@@ -228,7 +251,7 @@ bool ECDisplayConfigure(void *handle, uint32_t width, uint32_t height, bool reti
         if (!mode) return false;
         id settings = [NSClassFromString(@"CGVirtualDisplaySettings") new];
         [settings setValue:@(retina) forKey:@"hiDPI"];
-        [settings setValue:@[mode] forKey:@"modes"];
+        [settings setValue:ModesWithPresets(mode, width, height, retina, fps) forKey:@"modes"];
         return ((BOOL (*)(id, SEL, id))objc_msgSend)(display, NSSelectorFromString(@"applySettings:"), settings);
     } @catch (NSException *exception) { return false; }
 }
