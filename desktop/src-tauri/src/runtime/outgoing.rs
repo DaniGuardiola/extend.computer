@@ -244,7 +244,10 @@ impl Desktop {
                         Some(&peer),
                         |_, _| Decision::Once,
                     ) {
-                        Ok(client) => client,
+                        Ok(client) => {
+                            app.set_peer_link(id, client.remote_link());
+                            client
+                        }
                         Err(error)
                             if error
                                 .downcast_ref::<extend_computer_agent::error::EngineError>()

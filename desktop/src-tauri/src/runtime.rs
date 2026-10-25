@@ -48,6 +48,8 @@ struct Job {
     socket: Option<TcpStream>,
     display_updates: Option<std::sync::mpsc::Sender<display::SettingsUpdate>>,
     quality: quality::Tracker,
+    /// The peer's link as it reported in this session's handshake.
+    peer_link: Option<extend_computer_agent::link::Link>,
 }
 struct PairCode {
     window: PairingWindow,
@@ -446,6 +448,9 @@ impl Desktop {
                     .find(|p| Some(&p.id) == job.view.peer.as_ref())
                 {
                     peer.availability = presence::Availability::Online;
+                    if job.peer_link.is_some() {
+                        peer.link = job.peer_link;
+                    }
                 }
             }
         }
@@ -711,6 +716,7 @@ impl Desktop {
             socket: None,
             display_updates: None,
             quality: quality::Tracker::default(),
+            peer_link: None,
         });
         Ok((id, cancelled))
     }
@@ -832,6 +838,20 @@ impl Desktop {
                     }
                 }
             }
+        }
+    }
+    /// The peer's link from this session's own handshake, which describes this
+    /// exact connection better than the last background presence check.
+    fn set_peer_link(&self, id: u64, link: Option<extend_computer_agent::link::Link>) {
+        if let Some(job) = self
+            .inner
+            .lock()
+            .unwrap()
+            .job
+            .as_mut()
+            .filter(|j| j.view.id == id)
+        {
+            job.peer_link = link;
         }
     }
     /// Add a live measurement to the session's connection quality.

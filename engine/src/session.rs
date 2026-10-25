@@ -264,6 +264,8 @@ pub trait CursorSink {
     fn supports_text_input(&self) -> bool {
         false
     }
+    /// The peer's own physical link for this connection, once authenticated.
+    fn peer_link(&mut self, _link: Option<crate::link::Link>) {}
     /// Whether the adapter can press right-hand modifier keys.
     fn supports_modifier_sides(&self) -> bool {
         false
@@ -412,6 +414,7 @@ fn serve_connection_pinned_inner(
         },
         expected,
     )?;
+    cursor.peer_link(channel.remote_link());
     if hello[8] == b'U' {
         // An authenticated identity can remove only its own record, never a
         // caller-supplied fingerprint. Unknown peers are idempotent no-ops.
@@ -857,6 +860,10 @@ impl Client {
     }
     pub fn peer(&self) -> &str {
         &self.peer
+    }
+    /// The peer's own physical link for this connection, if it reported one.
+    pub fn remote_link(&self) -> Option<crate::link::Link> {
+        self.channel.remote_link()
     }
     /// A peer that ends the session sends Close instead of the expected reply.
     fn reply(&mut self) -> Result<Message> {

@@ -332,6 +332,9 @@ impl CursorSink for GuiSink {
     fn supports_modifier_sides(&self) -> bool {
         self.inner.supports_modifier_sides()
     }
+    fn peer_link(&mut self, link: Option<extend_computer_agent::link::Link>) {
+        self.app.set_peer_link(self.job, link);
+    }
     fn device_name(&self) -> Option<String> {
         Some(self.app.local_name())
     }

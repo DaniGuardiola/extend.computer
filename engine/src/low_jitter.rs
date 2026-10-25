@@ -79,6 +79,9 @@ impl<S: CursorSink> CursorSink for ManagedCursor<S> {
     fn supports_modifier_sides(&self) -> bool {
         self.inner.supports_modifier_sides()
     }
+    fn peer_link(&mut self, link: Option<crate::link::Link>) {
+        self.inner.peer_link(link)
+    }
     fn device_name(&self) -> Option<String> {
         self.inner.device_name()
     }
