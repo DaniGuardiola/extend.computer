@@ -65,6 +65,8 @@ export type Snapshot = {
   code_seconds: number;
   approval: Request | null;
   error: string | null;
+  /** The device `error` belongs to; its card shows it instead of the banner. */
+  error_peer?: string | null;
   permissions: Permissions;
   permission_request: "receive" | "share" | null;
 };

@@ -146,12 +146,19 @@ if (id === "notification")
     id: 1,
     message: "Pairing was declined on the other device.",
   };
-if (id === "global-error")
+if (id === "global-error") {
   snapshot.error =
     "Could not connect to Studio Mac. Check that both devices are online and try again.";
-if (id === "long-error")
+  snapshot.error_peer = fingerprint(1);
+}
+if (id === "long-error") {
   snapshot.error =
     "Connection could not be established. The device at 192.168.1.21:48177 stopped responding during the encrypted handshake. Check your network, keep extend.computer open on both devices, and enable Allow connections on the receiving device before trying again.";
+  snapshot.error_peer = fingerprint(1);
+}
+if (id === "app-error")
+  snapshot.error =
+    "Could not verify macOS permissions. Retry Allow connections; if this continues, reopen or reinstall extend.computer.";
 if (id === "approve-code")
   snapshot.approval = {
     id: 1,

@@ -70,6 +70,9 @@ struct Inner {
     advertisement: Option<extend_computer_agent::discovery::Advertisement>,
     code: Option<PairCode>,
     error: Option<String>,
+    /// The device a session error belongs to, paired with that exact message
+    /// so a later unrelated error is never shown on its card.
+    error_peer: Option<(String, String)>,
     permissions: Permissions,
     permission_request: Option<String>,
     notification: Option<Notification>,
@@ -136,6 +139,7 @@ pub struct Snapshot {
     pub code_seconds: u64,
     pub approval: Option<Request>,
     pub error: Option<String>,
+    pub error_peer: Option<String>,
     pub permissions: Permissions,
     pub permission_request: Option<String>,
 }
@@ -232,6 +236,7 @@ impl Desktop {
                 advertisement: None,
                 code: None,
                 error: None,
+                error_peer: None,
                 permissions: Permissions::default(),
                 permission_request: None,
                 notification: None,
@@ -473,6 +478,11 @@ impl Desktop {
             code_seconds: seconds,
             approval: self.approvals.current(),
             error: inner.error.clone(),
+            error_peer: inner
+                .error_peer
+                .as_ref()
+                .filter(|(_, message)| inner.error.as_ref() == Some(message))
+                .map(|(peer, _)| peer.clone()),
             permissions: inner.permissions.clone(),
             permission_request: inner.permission_request.clone(),
         })
@@ -786,7 +796,10 @@ impl Desktop {
                             && job.view.phase == Phase::Connected
                             && is_connection_error(&e))
                         {
-                            i.error = Some(friendly_error(&e));
+                            let message = friendly_error(&e);
+                            i.error_peer =
+                                job.view.peer.clone().map(|peer| (peer, message.clone()));
+                            i.error = Some(message);
                         }
                     }
                 }

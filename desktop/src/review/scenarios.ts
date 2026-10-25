@@ -195,8 +195,15 @@ export const scenarios: Scenario[] = [
     "Devices",
     "global-error",
     "Connection error",
-    "Dismissible global error above device list.",
+    "A session failure appears on its device's card.",
     "Could not connect",
+  ),
+  s(
+    "Devices",
+    "app-error",
+    "App error",
+    "Dismissible error that is not about one device, above the list.",
+    "Could not verify macOS permissions",
   ),
   s(
     "Devices",
@@ -307,7 +314,7 @@ export const scenarios: Scenario[] = [
     "Sessions",
     "display-disconnecting",
     "Display · stopping",
-    "Stop display request is pending.",
+    "Stop request is pending.",
     "Disconnecting…",
   ),
   s(
@@ -683,7 +690,7 @@ export const scenarios: Scenario[] = [
     "Display settings while extending",
     "Live controls use the negotiated connection profile.",
     "Frame rate limit",
-    [details("Display settings")],
+    [details("Extended display settings")],
   ),
   s(
     "Device settings",
@@ -707,7 +714,7 @@ export const scenarios: Scenario[] = [
     "Live display update failed",
     "Live configuration save error.",
     "Display configuration could not be applied",
-    [details("Display settings"), button("Apply")],
+    [details("Extended display settings"), button("Apply")],
   ),
   s(
     "Device settings",

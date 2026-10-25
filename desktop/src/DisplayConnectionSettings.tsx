@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ChevronDown, SlidersHorizontal } from "lucide-react";
 import { api, type DisplayConfig } from "./bridge";
 import { DisplaySettings } from "./DisplaySettings";
 import {
@@ -26,16 +27,28 @@ export function DisplayConnectionSettings({
   const [value, setValue] = useState(() => preferencesFromConfig(current));
   const [busy, setBusy] = useState(false);
   return (
-    <details className="border-t border-line">
+    <details className="group border-t border-line">
       <summary
-        className="cursor-pointer px-5 py-3 text-xs font-medium"
+        className="flex cursor-pointer list-none items-center gap-2.5 px-5 py-3.5 text-sm font-medium hover:bg-line/30 focus-visible:bg-line/30 [&::-webkit-details-marker]:hidden"
         onClick={(event) => {
           if (busy) event.preventDefault();
           else if (!event.currentTarget.parentElement?.hasAttribute("open"))
             setValue(preferencesFromConfig(current));
         }}
       >
-        Display settings
+        <SlidersHorizontal
+          size={16}
+          aria-hidden="true"
+          className="text-muted"
+        />
+        {current.mode === "mirror"
+          ? "Mirrored display settings"
+          : "Extended display settings"}
+        <ChevronDown
+          size={16}
+          aria-hidden="true"
+          className="ms-auto text-muted motion-safe:transition-transform group-open:rotate-180"
+        />
       </summary>
       <form
         className="space-y-4 px-5 pb-4"
@@ -65,8 +78,15 @@ export function DisplayConnectionSettings({
           disabled={busy || pending}
         />
         <div className="flex items-center justify-between gap-3">
-          <p className="text-xs text-muted">Remembered for this device.</p>
-          <button className="button primary" disabled={busy || pending}>
+          <p className="text-xs text-muted">
+            Now: {current.width} × {current.height}
+            {current.retina ? " Retina" : ""} · {current.fps} FPS · up to{" "}
+            {current.bitrate / 1_000_000} Mbps
+          </p>
+          <button
+            className="button primary shrink-0"
+            disabled={busy || pending}
+          >
             {busy ? "Applying…" : "Apply"}
           </button>
         </div>

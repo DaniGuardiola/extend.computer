@@ -22,7 +22,10 @@ import { DisplayConnectionSettings } from "./DisplayConnectionSettings";
 const availabilityStyle = {
   update_required: { label: "Update required", dot: "bg-status-attention" },
   online: { label: "Online", dot: "bg-emerald-500" },
-  receiving_off: { label: "Not accepting connections", dot: "bg-status-attention" },
+  receiving_off: {
+    label: "Not accepting connections",
+    dot: "bg-status-attention",
+  },
   offline: { label: "Offline", dot: "bg-muted/60" },
   checking: {
     label: "Checking…",
@@ -40,6 +43,7 @@ export function DeviceRow({
   disconnect,
   changeEdge,
   refresh,
+  sessionError,
 }: {
   peer: Peer;
   platform?: string;
@@ -50,6 +54,8 @@ export function DeviceRow({
   changeEdge: (peer: string, device: Device) => void;
   connect: (peer: string, device: Device) => void;
   refresh: () => Promise<void>;
+  /** A session failure reported by the app for this device. */
+  sessionError?: string;
 }) {
   const connected = session?.phase === "connected";
   const active = connected && session?.kind === "outgoing";
@@ -70,6 +76,21 @@ export function DeviceRow({
     availabilityStyle[active ? "online" : peer.availability] ??
     availabilityStyle.checking;
   const route = session?.route ?? peer.route;
+  const sessionRoute = connected ? session?.route : undefined;
+  const routeLabel =
+    sessionRoute === "usb"
+      ? "USB"
+      : sessionRoute === "local"
+        ? "Local network"
+        : sessionRoute === "internet"
+          ? "Internet relay"
+          : undefined;
+  const routeExplanation =
+    sessionRoute === "usb"
+      ? `Connected to ${peer.name} directly over a USB cable.`
+      : sessionRoute === "local"
+        ? `Connected to ${peer.name} over your local network, by Wi-Fi or Ethernet.`
+        : `Connected to ${peer.name} through the internet relay. A local network or USB cable is faster.`;
   const canManageUsb =
     native &&
     navigator.platform.startsWith("Mac") &&
@@ -116,7 +137,7 @@ export function DeviceRow({
   );
   return (
     <li
-      className={`device-card overflow-hidden rounded-xl border ${connected ? "device-connected" : "border-line bg-surface/50"} ${error && !settings ? "device-card-error" : ""}`}
+      className={`device-card overflow-hidden rounded-xl border ${connected ? "device-connected" : "border-line bg-surface/50"} ${(error || sessionError) && !settings ? "device-card-error" : ""}`}
     >
       <div className="flex items-start gap-3 px-5 pt-4 pb-3">
         <DeviceIcon
@@ -153,23 +174,40 @@ export function DeviceRow({
           >
             {session ? (
               <>
-                <span
-                  className={`inline-flex items-center gap-1.5 rounded-full px-2 py-1 font-medium ${connected ? "bg-success/15" : "bg-line/50"}`}
-                >
-                  {transitioning ? (
-                    <LoaderCircle
-                      size={12}
-                      aria-hidden="true"
-                      className="motion-safe:animate-spin"
-                    />
-                  ) : (
-                    <span
-                      aria-hidden="true"
-                      className="size-1.5 rounded-full bg-success"
-                    />
+                <TooltipProvider timeout={400}>
+                  <TooltipAnchor
+                    render={
+                      <span
+                        tabIndex={routeLabel ? 0 : undefined}
+                        className={`inline-flex items-center gap-1.5 rounded-full px-2 py-1 font-medium ${connected ? "bg-success/15" : "bg-line/50"} ${routeLabel ? "cursor-help" : ""}`}
+                      />
+                    }
+                  >
+                    {transitioning ? (
+                      <LoaderCircle
+                        size={12}
+                        aria-hidden="true"
+                        className="motion-safe:animate-spin"
+                      />
+                    ) : (
+                      <span
+                        aria-hidden="true"
+                        className="size-1.5 rounded-full bg-success"
+                      />
+                    )}
+                    {connectionLabel}
+                    {routeLabel && (
+                      <span className="font-normal opacity-80">
+                        · {routeLabel}
+                      </span>
+                    )}
+                  </TooltipAnchor>
+                  {routeLabel && (
+                    <Tooltip className="explanation-tooltip">
+                      {routeExplanation}
+                    </Tooltip>
                   )}
-                  {connectionLabel}
-                </span>
+                </TooltipProvider>
                 <span className="inline-flex items-center gap-1.5">
                   {session.display ? (
                     <Monitor size={14} aria-hidden="true" />
@@ -182,13 +220,6 @@ export function DeviceRow({
                       ? "Mirrored display"
                       : "Keyboard & mouse"}
                 </span>
-                {connected && session.route && session.route !== "usb" && (
-                  <span>
-                    {session.route === "local"
-                      ? "Local network"
-                      : "Internet relay"}
-                  </span>
-                )}
               </>
             ) : (
               <span className="inline-flex items-center gap-1.5">
@@ -220,7 +251,7 @@ export function DeviceRow({
                 hasSession={disabled || !!session}
                 refresh={refresh}
               />
-            ) : route === "usb" ? (
+            ) : route === "usb" && !routeLabel ? (
               <span>USB</span>
             ) : null}
           </div>
@@ -354,9 +385,9 @@ export function DeviceRow({
           onError={setError}
         />
       )}
-      {error && !settings && (
+      {(error || sessionError) && !settings && (
         <p className="device-error" role="alert">
-          {error}
+          {error || sessionError}
         </p>
       )}
       {settings && (

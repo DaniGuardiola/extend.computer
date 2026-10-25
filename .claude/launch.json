@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "desktop-ui-review",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "ui:review", "--prefix", "desktop"],
+      "port": 1421
+    }
+  ]
+}

@@ -234,6 +234,10 @@ export function App() {
     };
   }, [notificationId]);
   const session = data?.session;
+  // A session error for a listed device belongs on that device's card.
+  const deviceError =
+    !!data?.error_peer &&
+    data.peers.some((peer) => peer.id === data.error_peer);
   const accountEmail = account.state?.email;
   const hasAccountDevices =
     !!account.state?.email &&
@@ -332,7 +336,7 @@ export function App() {
                   Desktop preview. Open extend.computer to connect devices.
                 </p>
               )}
-              {(error || data?.error) && (
+              {(error || (data?.error && !deviceError)) && (
                 <div
                   role="alert"
                   className="error mb-4 flex items-center justify-between gap-3"
@@ -418,6 +422,11 @@ export function App() {
                             void act(() => api.update(id, device))
                           }
                           refresh={refresh}
+                          sessionError={
+                            data.error_peer === peer.id
+                              ? (data.error ?? undefined)
+                              : undefined
+                          }
                         />
                       ),
                     )}
