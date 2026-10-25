@@ -73,16 +73,16 @@ impl Tracker {
         }
     }
 
+    /// Measured up to the latest sample: a session that stops sending (an
+    /// idle mouse) keeps the quality it last had instead of going blank, and
+    /// its degradation is only timed while measurements keep arriving.
     pub(super) fn view(&self) -> Option<Quality> {
-        self.view_at(Instant::now())
-    }
-
-    fn view_at(&self, now: Instant) -> Option<Quality> {
-        let mut quality = self.measure(now)?;
+        let latest = self.samples.back()?.0;
+        let mut quality = self.measure(latest)?;
         quality.degraded_seconds = self
             .degraded_since
             .filter(|_| quality.level != Level::Good)
-            .map_or(0, |since| now.duration_since(since).as_secs() as u32);
+            .map_or(0, |since| latest.duration_since(since).as_secs() as u32);
         Some(quality)
     }
 
@@ -169,7 +169,7 @@ mod tests {
             tracker.record_at(start + ms(i * 100), Sample::RoundTrip(ms(8)));
         }
         tracker.record_at(start + ms(1900), Sample::RoundTrip(ms(300)));
-        let quality = tracker.view_at(start + ms(1900)).unwrap();
+        let quality = tracker.view().unwrap();
         assert_eq!(quality.level, Level::Good);
         assert_eq!(quality.latency_ms, Some(8));
     }
@@ -180,14 +180,23 @@ mod tests {
         let start = Instant::now();
         tracker.record_at(start, Sample::RoundTrip(ms(10)));
         tracker.record_at(start + ms(100), Sample::Loss(0.02));
-        assert_eq!(tracker.view_at(start + ms(100)).unwrap().level, Level::Fair);
+        assert_eq!(tracker.view().unwrap().level, Level::Fair);
         tracker.record_at(start + ms(3100), Sample::Gap(ms(3000)));
-        let quality = tracker.view_at(start + ms(3100)).unwrap();
+        let quality = tracker.view().unwrap();
         assert_eq!(quality.level, Level::Poor);
         assert_eq!(quality.loss_percent, Some(2.0));
         assert_eq!(quality.degraded_seconds, 3);
     }
 
+    #[test]
+    fn an_idle_session_keeps_its_last_quality() {
+        let mut tracker = Tracker::default();
+        let start = Instant::now();
+        tracker.record_at(start, Sample::RoundTrip(ms(9)));
+        let quality = tracker.view().unwrap();
+        assert_eq!(quality.level, Level::Good);
+        assert_eq!(quality.latency_ms, Some(9));
+    }
     #[test]
     fn repeated_recoveries_are_poor_and_old_samples_expire() {
         let mut tracker = Tracker::default();
@@ -195,12 +204,9 @@ mod tests {
         for i in 0..3 {
             tracker.record_at(start + ms(i * 500), Sample::Recovery);
         }
-        assert_eq!(
-            tracker.view_at(start + ms(1000)).unwrap().level,
-            Level::Poor
-        );
+        assert_eq!(tracker.view().unwrap().level, Level::Poor);
         tracker.record_at(start + ms(7000), Sample::RoundTrip(ms(5)));
-        let quality = tracker.view_at(start + ms(7000)).unwrap();
+        let quality = tracker.view().unwrap();
         assert_eq!(quality.level, Level::Good);
         assert_eq!(quality.degraded_seconds, 0);
     }

@@ -119,7 +119,7 @@ fn run(
     session: Option<()>,
     ready: impl FnOnce(),
     desired_edge: impl Fn() -> Option<String>,
-    // Each acknowledged round trip, including the peer applying queued input.
+    // Each round trip that acknowledged input, including the peer applying it.
     round_trip: impl Fn(Duration),
 ) -> Result<()> {
     ensure!(
@@ -226,7 +226,12 @@ fn run(
                     crate::low_jitter::maintain(&mut lease);
                 }
                 trace.record("ack_start", count, 0);
-                round_trip(client.probe()?);
+                let trip = client.probe()?;
+                // Idle keepalives can wait on Wi-Fi power saving; only round
+                // trips that carried input describe what the user feels.
+                if pending > 0 {
+                    round_trip(trip);
+                }
                 trace.record("ack_end", count, 0);
                 writeln!(helper.0.stdin.as_mut().unwrap(), "ALIVE")?;
                 if let Some(edge) = desired_edge() {
