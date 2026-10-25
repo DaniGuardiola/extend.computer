@@ -175,6 +175,20 @@ impl Accounts {
         body: Option<Value>,
         token: Option<&str>,
     ) -> Result<Value> {
+        self.send(server, path, method, body, token, None)
+            .map(|(value, _)| value)
+    }
+    /// Passkey ceremonies pair options with verification through the
+    /// X-Extend-Challenge header, since this client keeps no cookies.
+    fn send(
+        &self,
+        server: &str,
+        path: &str,
+        method: &str,
+        body: Option<Value>,
+        token: Option<&str>,
+        challenge: Option<&str>,
+    ) -> Result<(Value, Option<String>)> {
         let mut req = self
             .client
             .request(method.parse()?, format!("{server}/v1{path}"))
@@ -183,11 +197,19 @@ impl Accounts {
         if let Some(token) = token {
             req = req.bearer_auth(token)
         }
+        if let Some(challenge) = challenge {
+            req = req.header("X-Extend-Challenge", challenge)
+        }
         if let Some(body) = body {
             req = req.json(&body)
         }
         let mut response = req.send().context("Could not reach your account server.")?;
         let status = response.status();
+        let issued = response
+            .headers()
+            .get("x-extend-challenge")
+            .and_then(|value| value.to_str().ok())
+            .map(String::from);
         let mut bytes = Vec::new();
         response
             .by_ref()
@@ -210,7 +232,7 @@ impl Accounts {
                     .unwrap_or("Account request failed. Try again.")
             );
         }
-        Ok(value)
+        Ok((value, issued))
     }
     pub fn view(&self) -> View {
         self.inner.lock().unwrap().view.clone()
@@ -319,6 +341,53 @@ impl Accounts {
             "POST",
             Some(json!({"email":email,"password":password.as_str()})),
             None,
+        )?;
+        self.accept_or_revoke(&mut inner, value)?;
+        drop(inner);
+        self.refresh()
+    }
+    /// Native passkeys exist only for the official relying party; other
+    /// servers sign in with passkeys through the browser.
+    pub fn passkey_options(&self) -> Result<(String, String)> {
+        let mut inner = self.inner.lock().unwrap();
+        Self::load(&mut inner)?;
+        ensure!(
+            inner.credential.is_none(),
+            "Sign out before using another account."
+        );
+        ensure!(
+            inner.view.server == OFFICIAL,
+            "Use browser sign-in for passkeys on this account server."
+        );
+        self.generation.fetch_add(1, Ordering::SeqCst);
+        inner.view.browser_pending = false;
+        let (options, handle) = self.send(
+            &inner.view.server,
+            "/passkeys/login/options",
+            "POST",
+            None,
+            None,
+            None,
+        )?;
+        ensure!(
+            options["rpId"].as_str() == Some("extend.computer"),
+            "The account server asked for a passkey from another website."
+        );
+        let challenge = options["challenge"]
+            .as_str()
+            .context("The account server did not send a passkey challenge.")?;
+        let handle = handle.context("The account server did not start a passkey sign-in.")?;
+        Ok((challenge.into(), handle))
+    }
+    pub fn passkey_login(&self, handle: String, credential: Value) -> Result<View> {
+        let mut inner = self.inner.lock().unwrap();
+        let (value, _) = self.send(
+            &inner.view.server,
+            "/passkeys/login/verify",
+            "POST",
+            Some(credential),
+            None,
+            Some(&handle),
         )?;
         self.accept_or_revoke(&mut inner, value)?;
         drop(inner);

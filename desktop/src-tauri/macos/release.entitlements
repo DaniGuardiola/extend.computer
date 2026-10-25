@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Restricted: valid only with the embedded Developer ID provisioning
+	     profile, which release-macos.sh adds alongside these entitlements. -->
+	<key>com.apple.application-identifier</key>
+	<string>59QTVLL4JP.computer.extend.desktop</string>
+	<key>com.apple.developer.team-identifier</key>
+	<string>59QTVLL4JP</string>
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>webcredentials:extend.computer</string>
+	</array>
+</dict>
+</plist>

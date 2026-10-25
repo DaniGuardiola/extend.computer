@@ -3,6 +3,8 @@ mod accounts;
 mod approval;
 mod discovery;
 mod native;
+#[cfg(target_os = "macos")]
+mod passkey;
 mod peers;
 mod permission_flow;
 mod relay;
@@ -211,6 +213,34 @@ async fn account_login(
     background(move || state.login(email, password)).await
 }
 #[tauri::command]
+fn account_passkey_available() -> bool {
+    #[cfg(target_os = "macos")]
+    return passkey::available();
+    #[cfg(not(target_os = "macos"))]
+    false
+}
+#[tauri::command]
+async fn account_passkey(
+    app: tauri::AppHandle,
+    state: AccountState<'_>,
+) -> Result<accounts::View, String> {
+    let state = state.inner().clone();
+    background(move || {
+        #[cfg(target_os = "macos")]
+        {
+            let (challenge, handle) = state.passkey_options()?;
+            let credential = passkey::sign_in(&app, &challenge)?;
+            state.passkey_login(handle, credential)
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = (app, state);
+            anyhow::bail!("Passkeys in the app are not available on this platform.")
+        }
+    })
+    .await
+}
+#[tauri::command]
 async fn account_verify(state: AccountState<'_>, code: String) -> Result<accounts::View, String> {
     let state = state.inner().clone();
     background(move || state.verify(code)).await
@@ -410,6 +440,8 @@ fn main() {
             account_refresh,
             account_configure,
             account_login,
+            account_passkey,
+            account_passkey_available,
             account_verify,
             account_logout,
             account_remove_device,

@@ -790,6 +790,14 @@ export const scenarios: Scenario[] = [
   ),
   s(
     "Account",
+    "account-passkey-error",
+    "Passkey sign-in failed",
+    "Native passkey error in login dialog.",
+    "Passkey sign-in was canceled",
+    [...account, button("Sign in with a passkey")],
+  ),
+  s(
+    "Account",
     "account-browser-error",
     "Browser sign-in failed",
     "Browser handoff error in login dialog.",

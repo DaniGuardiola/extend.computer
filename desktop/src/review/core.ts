@@ -625,6 +625,15 @@ export async function invoke<T>(
       accountState.device_id = "this-device";
       result = { ...accountState };
       break;
+    case "account_passkey_available":
+      result = true;
+      break;
+    case "account_passkey":
+      if (id === "account-passkey-error") fail("Passkey sign-in was canceled.");
+      accountState.email = "review@example.test";
+      accountState.device_id = "this-device";
+      result = { ...accountState };
+      break;
     case "account_browser_login":
       if (id === "account-browser-error")
         fail("Browser sign-in could not start. Try again.");

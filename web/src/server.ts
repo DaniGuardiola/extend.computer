@@ -7,6 +7,10 @@ import { heartbeat } from './lib/account-service'
 import { sessionLocation } from './lib/session-details'
 export { AccountService } from './lib/account-service'
 
+const APPLE_APP_SITE_ASSOCIATION = {
+  webcredentials: { apps: ['59QTVLL4JP.computer.extend.desktop'] },
+}
+
 export default {
   async scheduled(
     _event: ScheduledController,
@@ -43,6 +47,9 @@ export default {
     let response: Response
     if (url.pathname.startsWith('/v1/relay/')) return relayRequest(request, env)
     if (url.pathname === '/healthz') response = Response.json({ status: 'ok' })
+    // Lets the signed macOS app use this site's passkeys natively.
+    else if (url.pathname === '/.well-known/apple-app-site-association')
+      response = Response.json(APPLE_APP_SITE_ASSOCIATION)
     else if (
       url.pathname.startsWith('/api/v1/') ||
       url.pathname.startsWith('/v1/')

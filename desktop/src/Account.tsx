@@ -123,6 +123,19 @@ export function AccountPanel({ account }: { account: AccountFlow }) {
       return accounts.browser();
     });
   }
+  const [passkeys, setPasskeys] = useState(false);
+  useEffect(() => {
+    void accounts
+      .passkeyAvailable()
+      .then(setPasskeys)
+      .catch(() => setPasskeys(false));
+  }, []);
+  async function passkey() {
+    await act(async () => {
+      await useChosenServer();
+      return accounts.passkey();
+    });
+  }
   async function openPage(page: "signup" | "recover") {
     await act(async () => {
       await useChosenServer();
@@ -280,6 +293,16 @@ export function AccountPanel({ account }: { account: AccountFlow }) {
             or
             <span className="h-px flex-1 bg-line" />
           </div>
+          {passkeys && !custom && (
+            <button
+              className="button secondary w-full"
+              disabled={busy || !state}
+              onClick={() => void passkey()}
+            >
+              <Fingerprint size={15} aria-hidden="true" /> Sign in with a
+              passkey
+            </button>
+          )}
           <button
             className="button secondary w-full"
             disabled={busy || !state}

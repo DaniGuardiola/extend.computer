@@ -67,6 +67,7 @@ python3 - "$app" "$APPLE_SIGNING_IDENTITY" "$APPLE_TEAM_ID" "$RELEASE_BUILD" <<'
 from pathlib import Path
 import plistlib
 import re
+import shutil
 import subprocess
 import sys
 app = Path(sys.argv[1])
@@ -75,6 +76,13 @@ info = plistlib.loads((app / 'Contents/Info.plist').read_bytes())
 assert info['CFBundleIdentifier'] == 'computer.extend.desktop'
 assert info['CFBundleVersion'] == build, 'Build number was not merged into Info.plist'
 assert info['SUEnableSystemProfiling'] is False
+# Native passkeys need the Associated Domains entitlement, which macOS only
+# honors with the matching provisioning profile. Without the profile, sign
+# without it rather than produce an app the system refuses to launch.
+profile = Path('desktop/src-tauri/macos/extend-computer.provisionprofile')
+entitlements = Path('desktop/src-tauri/macos/release.entitlements')
+if profile.is_file():
+    shutil.copyfile(profile, app / 'Contents/embedded.provisionprofile')
 def sign(path):
     details = subprocess.run(['codesign', '-dv', str(path)], text=True, capture_output=True, check=True).stderr
     identifier = re.search(r'^Identifier=(.+)$', details, re.MULTILINE)
@@ -82,7 +90,8 @@ def sign(path):
     code_identifier = identifier.group(1)
     if path == app / 'Contents/Library/LaunchServices/ExtendComputerLowJitter':
         code_identifier = 'computer.extend.lowjitter.broker'
-    subprocess.run(['codesign', '--force', '--sign', identity, '--identifier', code_identifier, '--timestamp', '--options', 'runtime', str(path)], check=True)
+    extra = ['--entitlements', str(entitlements)] if path == app and profile.is_file() else []
+    subprocess.run(['codesign', '--force', '--sign', identity, '--identifier', code_identifier, '--timestamp', '--options', 'runtime', *extra, str(path)], check=True)
 # Sign executable images first, then nested bundles from the inside out.
 for path in app.rglob('*'):
     if path.is_file() and not path.is_symlink():
