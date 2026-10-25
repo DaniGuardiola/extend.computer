@@ -21,7 +21,8 @@ struct InputPacket: Codable {
         case "button": valid = (0...2).contains(button ?? -1) && down != nil && (1...3).contains(clicks ?? 0)
         case "scroll": valid = (-4096...4096).contains(dx ?? 99999) && (-4096...4096).contains(dy ?? 99999)
         case "mac_key": valid = (0..<128).contains(code ?? -1) && ![54,55,56,57,58,59,60,61,62,63].contains(code ?? -1) && down != nil && self.repeat != nil && (self.repeat != true || down == true)
-        case "modifiers": valid = (0..<16).contains(mask ?? -1)
+        // The high nibble marks held modifiers as their right-hand keys.
+        case "modifiers": valid = mask.map { (0..<256).contains($0) && ($0 >> 4) & ~($0 & 0xf) == 0 } ?? false
         case "text": valid = value.map { !$0.isEmpty && $0.utf8.count <= 256 && $0.unicodeScalars.count <= 64 && !$0.unicodeScalars.contains(where: { $0.value < 32 || (127...159).contains($0.value) }) } ?? false
         case "release": valid = true
         default: break
@@ -41,9 +42,11 @@ struct InputState {
     private(set) var keys = Set<Int>()
     private(set) var buttons = Set<Int>()
     private(set) var modifiers = 0
-    // Use left-side modifiers in this adapter. Right-side distinctions are not
-    // represented by the portable modifier mask.
+    private var modifierKeys = [Int?](repeating: nil, count: 4)
+    // Shift, control, option, command: left keys unless the mask marks the
+    // right-hand key.
     static let modifierCodes = [56, 59, 58, 55]
+    static let rightModifierCodes = [60, 62, 61, 54]
 
     mutating func apply(_ packet: InputPacket) throws -> [InputAction] {
         try packet.validate()
@@ -71,12 +74,20 @@ struct InputState {
     }
     mutating func updateModifiers(_ target: Int) -> [InputAction] {
         var actions = [InputAction]()
-        for (bit, code) in Self.modifierCodes.enumerated() {
+        for bit in 0..<4 {
             let flag = 1 << bit
-            if modifiers & flag != target & flag {
-                let down = target & flag != 0
-                modifiers = down ? modifiers | flag : modifiers & ~flag
-                actions.append(.key(code, down, false, modifiers))
+            let wanted = target & flag == 0 ? nil
+                : target & (flag << 4) != 0 ? Self.rightModifierCodes[bit] : Self.modifierCodes[bit]
+            guard modifierKeys[bit] != wanted else { continue }
+            // Switching sides releases the other key first.
+            if let held = modifierKeys[bit] {
+                modifiers &= ~flag
+                actions.append(.key(held, false, false, modifiers))
+            }
+            modifierKeys[bit] = wanted
+            if let wanted {
+                modifiers |= flag
+                actions.append(.key(wanted, true, false, modifiers))
             }
         }
         return actions

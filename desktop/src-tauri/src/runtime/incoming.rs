@@ -40,6 +40,7 @@ impl Desktop {
         );
         let (id, cancelled) = self.reserve(SessionKind::Incoming, Some(peer.to_owned()))?;
         let result = (|| {
+            let _activity = display::session_activity();
             self.set_socket_route(id, &socket, Some("usb"))?;
             ensure!(current(), "USB connection was cancelled");
             let mut sink = GuiSink {
@@ -151,6 +152,7 @@ impl Desktop {
                             continue;
                         };
                         let result = (|| -> Result<()> {
+                            let _activity = display::session_activity();
                             // macOS can inherit O_NONBLOCK from the listener. The encrypted engine uses deadline-bounded blocking reads.
                             socket.set_nonblocking(false)?;
                             extend_computer_agent::local_network::bind_stream_to_local_interface(
@@ -323,6 +325,9 @@ impl CursorSink for GuiSink {
     }
     fn supports_text_input(&self) -> bool {
         self.inner.supports_text_input()
+    }
+    fn supports_modifier_sides(&self) -> bool {
+        self.inner.supports_modifier_sides()
     }
     fn device_name(&self) -> Option<String> {
         Some(self.app.local_name())

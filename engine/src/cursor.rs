@@ -120,6 +120,10 @@ impl CursorSink for NativeSink {
     fn supports_text_input(&self) -> bool {
         self.helper.as_ref().is_some_and(|helper| helper.2)
     }
+    /// The bundled macOS helper presses right-hand modifier keys.
+    fn supports_modifier_sides(&self) -> bool {
+        self.helper.is_some()
+    }
     fn start_control(&mut self, _: &str) -> Result<bool> {
         let Some(path) = &self.path else {
             return Ok(false);

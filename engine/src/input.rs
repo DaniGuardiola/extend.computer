@@ -51,7 +51,20 @@ pub enum InputEvent {
     },
     Release,
 }
+/// The low nibble holds shift, control, option and command. The high nibble
+/// repeats them for the right-hand keys, which a held modifier may use.
+pub const RIGHT_MODIFIERS: u8 = 0xf0;
 impl InputEvent {
+    /// The same event without right-hand modifier detail, for peers that
+    /// predate it.
+    pub fn without_modifier_sides(self) -> Self {
+        match self {
+            Self::Modifiers { mask } => Self::Modifiers {
+                mask: mask & !RIGHT_MODIFIERS,
+            },
+            event => event,
+        }
+    }
     pub fn validate(&self) -> Result<()> {
         match self {
             Self::Button { button, clicks, .. } => {
@@ -68,7 +81,11 @@ impl InputEvent {
                 );
                 ensure!(!repeat || *down, "invalid key repeat");
             }
-            Self::Modifiers { mask } => ensure!(*mask < 16, "invalid modifier mask"),
+            // Bits 4..8 mark a held modifier as its right-hand key; they only
+            // reach peers that negotiated INPUT_SIDED_MODIFIERS.
+            Self::Modifiers { mask } => {
+                ensure!(mask >> 4 & !(mask & 0xf) == 0, "invalid modifier mask")
+            }
             Self::Text { value } => ensure!(
                 !value.is_empty()
                     && value.len() <= 256
@@ -85,6 +102,17 @@ impl InputEvent {
 #[cfg(test)]
 mod shortcut_tests {
     use super::*;
+    #[test]
+    fn right_modifiers_need_their_base_bit_and_strip_for_old_peers() {
+        let right_option = InputEvent::Modifiers { mask: 0x44 };
+        assert!(right_option.validate().is_ok());
+        assert!(InputEvent::Modifiers { mask: 0x40 }.validate().is_err());
+        assert!(InputEvent::Modifiers { mask: 0x10 }.validate().is_err());
+        assert_eq!(
+            right_option.without_modifier_sides(),
+            InputEvent::Modifiers { mask: 0x04 }
+        );
+    }
     #[test]
     fn shortcut_policy_is_typed_and_requires_negotiation() {
         for (policy, name, mask) in [

@@ -13,6 +13,8 @@ pub const CURSOR: &str = "cursor-v1";
 pub const CONTROL: &str = "control-v1";
 pub const DISPLAY_INPUT: &str = "display-input-v1";
 pub const RECEIVER_SETTINGS: &str = "receiver-settings-v1";
+/// Modifier masks may mark right-hand keys (see input::RIGHT_MODIFIERS).
+pub const INPUT_SIDED_MODIFIERS: &str = "input-sided-modifiers-v1";
 
 // Keep this envelope additive and bounded. Unknown fields are deliberately
 // accepted here; ordinary control messages remain strict and versioned.
@@ -66,6 +68,7 @@ pub(crate) fn exchange(channel: &mut Channel) -> Result<()> {
             INPUT_TEXT,
             INPUT_SHORTCUTS,
             RECEIVER_SETTINGS,
+            INPUT_SIDED_MODIFIERS,
         ]
         .into_iter()
         .map(String::from)

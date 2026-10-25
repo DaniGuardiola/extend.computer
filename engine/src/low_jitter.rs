@@ -76,6 +76,9 @@ impl<S: CursorSink> CursorSink for ManagedCursor<S> {
     fn supports_text_input(&self) -> bool {
         self.inner.supports_text_input()
     }
+    fn supports_modifier_sides(&self) -> bool {
+        self.inner.supports_modifier_sides()
+    }
     fn device_name(&self) -> Option<String> {
         self.inner.device_name()
     }

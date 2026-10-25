@@ -264,6 +264,10 @@ pub trait CursorSink {
     fn supports_text_input(&self) -> bool {
         false
     }
+    /// Whether the adapter can press right-hand modifier keys.
+    fn supports_modifier_sides(&self) -> bool {
+        false
+    }
     fn start_cursor(&mut self, peer: &str) -> Result<bool>;
     fn move_to(&mut self, x: f64, y: f64) -> Result<()>;
     fn start_control(&mut self, _peer: &str) -> Result<bool> {
@@ -590,6 +594,11 @@ fn serve_connection_pinned_inner(
                         "Text adapter unavailable"
                     );
                 }
+                let event = if cursor.supports_modifier_sides() {
+                    event
+                } else {
+                    event.without_modifier_sides()
+                };
                 cursor.input(&event)?;
                 pending_cursor += 1;
                 next_sequence += 1;
@@ -950,6 +959,14 @@ impl Client {
                 .require_capability(crate::protocol::INPUT_TEXT)?;
             ensure!(self.text_granted, "Peer text adapter unavailable");
         }
+        let event = if self
+            .channel
+            .supports_capability(crate::protocol::INPUT_SIDED_MODIFIERS)
+        {
+            event
+        } else {
+            event.without_modifier_sides()
+        };
         self.channel.send(&Message::Input {
             sequence: self.sequence,
             event,

@@ -8,10 +8,16 @@ final class InputCapture {
     var remoteButtons = Set<Int>()
     var lastModifiers = 0
     init(enabled: Bool) { self.enabled = enabled }
+    // Device flags (IOLLEvent.h) tell which side of each modifier is held.
+    static let leftFlags: [UInt64] = [0x02, 0x01, 0x20, 0x08]
+    static let rightFlags: [UInt64] = [0x04, 0x2000, 0x40, 0x10]
     static func modifiers(_ flags: CGEventFlags) -> Int {
         var mask = 0
         for (bit, flag) in [CGEventFlags.maskShift, .maskControl, .maskAlternate, .maskCommand].enumerated() {
-            if flags.contains(flag) { mask |= 1 << bit }
+            guard flags.contains(flag) else { continue }
+            mask |= 1 << bit
+            // Only the right key held: press the right key on the peer too.
+            if flags.rawValue & rightFlags[bit] != 0 && flags.rawValue & leftFlags[bit] == 0 { mask |= 1 << (bit + 4) }
         }
         return mask
     }

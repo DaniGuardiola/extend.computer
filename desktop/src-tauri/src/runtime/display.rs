@@ -153,10 +153,11 @@ fn validate_settings(previous: &Config, next: &Config) -> Result<()> {
     Ok(())
 }
 
-// Keep realtime transport scheduling active while the app is behind the viewer.
-// The activity ends with the session; it does not change system power settings.
-struct DisplayActivity<F: FnOnce()>(Option<F>);
-impl<F: FnOnce()> Drop for DisplayActivity<F> {
+// Keep realtime scheduling active while the app is in the background, where
+// App Nap would otherwise throttle input and display relaying. The activity
+// ends with the session; it does not change system power settings.
+struct SessionActivity<F: FnOnce()>(Option<F>);
+impl<F: FnOnce()> Drop for SessionActivity<F> {
     fn drop(&mut self) {
         if let Some(end) = self.0.take() {
             end();
@@ -164,18 +165,18 @@ impl<F: FnOnce()> Drop for DisplayActivity<F> {
     }
 }
 #[cfg(target_os = "macos")]
-fn display_activity() -> impl Drop {
+pub(super) fn session_activity() -> impl Drop {
     use objc2_foundation::{NSActivityOptions, NSProcessInfo, NSString};
     let process = NSProcessInfo::processInfo();
     let activity = process.beginActivityWithOptions_reason(
         NSActivityOptions::UserInitiated | NSActivityOptions::LatencyCritical,
-        &NSString::from_str("Display connection"),
+        &NSString::from_str("Device connection"),
     );
-    DisplayActivity(Some(move || unsafe { process.endActivity(&activity) }))
+    SessionActivity(Some(move || unsafe { process.endActivity(&activity) }))
 }
 #[cfg(not(target_os = "macos"))]
-fn display_activity() -> impl Drop {
-    DisplayActivity(Some(|| {}))
+pub(super) fn session_activity() -> impl Drop {
+    SessionActivity(Some(|| {}))
 }
 
 impl Desktop {
@@ -834,7 +835,7 @@ impl Desktop {
         if source {
             media.set_target_bitrate(config.bitrate)?;
         }
-        let _activity = display_activity();
+        let _activity = session_activity();
         let until = Instant::now() + Duration::from_secs(15);
         let mut waiting_keyframe = false;
         let mut announced = false;
