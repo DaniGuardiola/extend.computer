@@ -5,6 +5,7 @@ import type {
   DisplayConfig,
   DeviceInfo,
   Peer,
+  Quality,
   Snapshot,
   UsbDevice,
   UsbStatus,
@@ -221,6 +222,7 @@ const sessionIds = [
   "input-internet",
   "input-wifi",
   "input-ethernet",
+  "display-poor",
   "extend",
   "mirror",
   "display-incoming",
@@ -238,6 +240,7 @@ if (sessionIds.includes(id)) {
     "display-reconnecting",
     "display-disconnecting",
     "display-save-error",
+    "display-poor",
   ].includes(id)
     ? "extend"
     : ["mirror", "display-incoming"].includes(id)
@@ -279,6 +282,27 @@ if (sessionIds.includes(id)) {
   };
   if (id === "input-wifi" || id === "input-ethernet")
     snapshot.peers[0].link = "ethernet";
+  const quality: Record<string, Quality> = {
+    "input-local": { level: "good", latency_ms: 6, degraded_seconds: 0 },
+    "input-ethernet": { level: "good", latency_ms: 2, degraded_seconds: 0 },
+    "input-wifi": { level: "poor", latency_ms: 140, degraded_seconds: 12 },
+    "input-internet": { level: "fair", latency_ms: 70, degraded_seconds: 8 },
+    "input-usb": { level: "good", latency_ms: 1, degraded_seconds: 0 },
+    extend: {
+      level: "good",
+      latency_ms: 3,
+      loss_percent: 0,
+      degraded_seconds: 0,
+    },
+    "display-poor": {
+      level: "poor",
+      latency_ms: 24,
+      loss_percent: 6.4,
+      degraded_seconds: 10,
+    },
+  };
+  if (quality[id] && snapshot.session.phase === "connected")
+    snapshot.session.quality = quality[id];
 }
 if (id.startsWith("usb-")) {
   snapshot.peers[0].name = "Studio Mac";

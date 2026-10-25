@@ -782,6 +782,7 @@ impl Desktop {
         heartbeat: Arc<Mutex<Option<Instant>>>,
     ) -> Result<()> {
         let mut config = config.clone();
+        let mut connected_at = None::<Instant>;
         let fixed_bitrate = source
             && bitrate::fixed_bitrate_requested(
                 std::env::var("EXTEND_DISPLAY_FIXED_BITRATE")
@@ -945,6 +946,7 @@ impl Desktop {
             )?;
             match event {
                 Some(DisplayEvent::Connected) => {
+                    connected_at.get_or_insert_with(Instant::now);
                     if helper.is_none() {
                         helper = Some(helper::Helper::start(
                             &self.display_helper()?,
@@ -1009,6 +1011,11 @@ impl Desktop {
                     }
                 }
                 Some(DisplayEvent::Keyframe) => {
+                    // Keyframes are expected while the stream starts; later
+                    // ones mean data was lost and the picture had to recover.
+                    if connected_at.is_some_and(|at| at.elapsed() > Duration::from_secs(3)) {
+                        self.record_quality(id, super::quality::Sample::Recovery);
+                    }
                     if source {
                         if let Some(helper) = &helper {
                             helper.request_keyframe()?;
@@ -1016,6 +1023,14 @@ impl Desktop {
                     } else {
                         waiting_keyframe = true;
                         media.request_keyframe()?;
+                    }
+                }
+                Some(DisplayEvent::Stats { rtt, loss }) => {
+                    if let Some(rtt) = rtt {
+                        self.record_quality(id, super::quality::Sample::RoundTrip(rtt));
+                    }
+                    if let Some(loss) = loss {
+                        self.record_quality(id, super::quality::Sample::Loss(loss));
                     }
                 }
                 Some(DisplayEvent::Bitrate(estimate))

@@ -9,6 +9,7 @@ import {
   Square,
   Settings2,
   Unlink,
+  Lightbulb,
 } from "lucide-react";
 import {
   api,
@@ -26,6 +27,11 @@ import { Dialog } from "./Dialog";
 import { ExplainedButton } from "./ExplainedButton";
 import { displayConfig, readDisplayPreferences } from "./displayPreferences";
 import { DisplayConnectionSettings } from "./DisplayConnectionSettings";
+import {
+  QualityBars,
+  QualityDetails,
+  qualitySuggestion,
+} from "./ConnectionQuality";
 const availabilityStyle = {
   update_required: { label: "Update required", dot: "bg-status-attention" },
   online: { label: "Online", dot: "bg-emerald-500" },
@@ -100,6 +106,9 @@ export function DeviceRow({
       : sessionRoute === "local"
         ? localExplanation(peer.name, localLink, peerLink)
         : `Connected to ${peer.name} through the internet relay. A local network or USB cable is faster.`;
+  const quality = connected ? session?.quality : undefined;
+  const suggestion =
+    connected && session ? qualitySuggestion(peer, session) : undefined;
   const canManageUsb =
     native &&
     navigator.platform.startsWith("Mac") &&
@@ -210,10 +219,12 @@ export function DeviceRow({
                         · {routeLabel}
                       </span>
                     )}
+                    {quality && <QualityBars level={quality.level} />}
                   </TooltipAnchor>
                   {routeLabel && (
                     <Tooltip className="explanation-tooltip">
-                      {routeExplanation}
+                      {quality && <QualityDetails quality={quality} />}
+                      <span className="block">{routeExplanation}</span>
                     </Tooltip>
                   )}
                 </TooltipProvider>
@@ -393,6 +404,12 @@ export function DeviceRow({
           refresh={refresh}
           onError={setError}
         />
+      )}
+      {suggestion && !error && (
+        <p className="device-tip" role="status">
+          <Lightbulb size={14} aria-hidden="true" className="mt-0.5 shrink-0" />
+          {suggestion}
+        </p>
       )}
       {(error || sessionError) && !settings && (
         <p className="device-error" role="alert">

@@ -276,6 +276,7 @@ impl Desktop {
                                 .get(&peer)
                                 .map(|device| device.edge.clone())
                         },
+                        |trip| app.record_quality(id, quality::Sample::RoundTrip(trip)),
                     )
                 })();
                 match result {

@@ -298,6 +298,13 @@ export const scenarios: Scenario[] = [
   ),
   s(
     "Sessions",
+    "display-poor",
+    "Poor display connection",
+    "Extended display losing packets; quality bars and a suggestion.",
+    "Lowering the frame rate",
+  ),
+  s(
+    "Sessions",
     "input-internet",
     "Sharing via relay",
     "Internet relay route label.",

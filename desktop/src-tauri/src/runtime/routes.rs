@@ -228,12 +228,19 @@ mod tests {
         let usb = TcpListener::bind("127.0.0.1:0").unwrap();
         let wifi_address = wifi.local_addr().unwrap();
         let usb_address = usb.local_addr().unwrap();
+        // The cable answers only after Wi-Fi has verified, so Wi-Fi is always
+        // faster no matter how busy the machine running the test is.
+        let wifi_verified = std::sync::atomic::AtomicBool::new(false);
         let result = race_ranked(
             [wifi_address, usb_address],
             || false,
             |socket| {
                 if socket.peer_addr()? == usb_address {
-                    std::thread::sleep(Duration::from_millis(100));
+                    while !wifi_verified.load(std::sync::atomic::Ordering::SeqCst) {
+                        std::thread::sleep(Duration::from_millis(1));
+                    }
+                } else {
+                    wifi_verified.store(true, std::sync::atomic::Ordering::SeqCst);
                 }
                 Ok(())
             },

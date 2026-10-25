@@ -57,6 +57,7 @@ pub fn send(client: Client, path: &Path, low_jitter: bool, edge: &str, offset: f
         None,
         || {},
         || None,
+        |_| {},
     )
 }
 /// New capture helpers start locally, including after reconnect.
@@ -78,6 +79,7 @@ pub fn send_session(
         Some(()),
         || {},
         || None,
+        |_| {},
     )
 }
 /// GUI entry point: report readiness only after authentication and native capture startup.
@@ -91,6 +93,7 @@ pub fn send_session_with_ready(
     duration: Option<Duration>,
     ready: impl FnOnce(),
     desired_edge: impl Fn() -> Option<String>,
+    round_trip: impl Fn(Duration),
 ) -> Result<()> {
     run(
         client,
@@ -102,6 +105,7 @@ pub fn send_session_with_ready(
         Some(()),
         ready,
         desired_edge,
+        round_trip,
     )
 }
 #[allow(clippy::too_many_arguments)]
@@ -115,6 +119,8 @@ fn run(
     session: Option<()>,
     ready: impl FnOnce(),
     desired_edge: impl Fn() -> Option<String>,
+    // Each acknowledged round trip, including the peer applying queued input.
+    round_trip: impl Fn(Duration),
 ) -> Result<()> {
     ensure!(
         matches!(edge, "left" | "right") && offset.is_finite(),
@@ -220,7 +226,7 @@ fn run(
                     crate::low_jitter::maintain(&mut lease);
                 }
                 trace.record("ack_start", count, 0);
-                client.probe()?;
+                round_trip(client.probe()?);
                 trace.record("ack_end", count, 0);
                 writeln!(helper.0.stdin.as_mut().unwrap(), "ALIVE")?;
                 if let Some(edge) = desired_edge() {

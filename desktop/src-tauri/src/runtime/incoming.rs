@@ -49,6 +49,7 @@ impl Desktop {
                 job: id,
                 cancelled,
                 usb: true,
+                last_heartbeat: None,
             };
             session::serve_connection_with_cursor_pinned(
                 socket,
@@ -169,6 +170,7 @@ impl Desktop {
                                 job: id,
                                 cancelled: cancelled.clone(),
                                 usb: cable,
+                                last_heartbeat: None,
                             };
                             let mut sink = if cable {
                                 ManagedCursor::new(sink, address.ip(), false)
@@ -318,6 +320,7 @@ struct GuiSink {
     job: u64,
     cancelled: Arc<AtomicBool>,
     usb: bool,
+    last_heartbeat: Option<Instant>,
 }
 impl CursorSink for GuiSink {
     fn shortcut_policy(&self) -> Option<extend_computer_agent::input::ShortcutPolicy> {
@@ -367,6 +370,13 @@ impl CursorSink for GuiSink {
         self.inner.input(e)
     }
     fn heartbeat(&mut self) -> Result<()> {
+        // The sharing device pings at least every 500 ms, so longer gaps
+        // mean its input is arriving late.
+        let now = Instant::now();
+        if let Some(last) = self.last_heartbeat.replace(now) {
+            self.app
+                .record_quality(self.job, quality::Sample::Gap(now - last));
+        }
         self.inner.heartbeat()
     }
     fn ending(&self) -> bool {

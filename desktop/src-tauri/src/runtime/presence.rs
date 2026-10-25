@@ -283,14 +283,15 @@ impl Desktop {
                     .lock()
                     .unwrap()
                     .insert(peer.into(), address);
-                let mut health = self.health.lock().unwrap();
-                let health = health.entry(peer.into()).or_default();
-                let returned = if route == Some("usb") {
-                    health.usb_success(status.receiving)
-                } else {
-                    health.success(status.receiving)
+                let returned = {
+                    let mut health = self.health.lock().unwrap();
+                    let health = health.entry(peer.into()).or_default();
+                    if route == Some("usb") {
+                        health.usb_success(status.receiving)
+                    } else {
+                        health.success(status.receiving)
+                    }
                 };
-                drop(health);
                 if returned {
                     self.peer_returned(peer);
                 }

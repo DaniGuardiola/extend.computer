@@ -27,6 +27,9 @@ pub struct Session {
     /// This device's physical link for a local network session.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) link: Option<extend_computer_agent::link::Link>,
+    /// Live connection quality, filled in for snapshots of connected sessions.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) quality: Option<super::quality::Quality>,
     pub(super) reconnecting: bool,
     pub(super) display: Option<extend_computer_agent::session::display::Mode>,
     pub(super) display_config: Option<extend_computer_agent::session::display::Config>,
@@ -73,6 +76,7 @@ mod tests {
                 peer: None,
                 route: None,
                 link: None,
+                quality: None,
                 reconnecting: false,
                 display: None,
                 display_config: None,
@@ -92,6 +96,7 @@ mod tests {
             peer: None,
             route: None,
             link: None,
+            quality: None,
             reconnecting: false,
             display: None,
             display_config: None,
@@ -111,6 +116,7 @@ mod tests {
             peer: None,
             route: None,
             link: None,
+            quality: None,
             reconnecting: false,
             display: None,
             display_config: None,

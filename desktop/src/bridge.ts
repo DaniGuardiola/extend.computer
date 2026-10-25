@@ -29,6 +29,13 @@ export type DisplayConfig = {
   separate_cursor: boolean;
 };
 export type Link = "wifi" | "ethernet" | "other";
+/** Live connection quality over the last few seconds of a session. */
+export type Quality = {
+  level: "good" | "fair" | "poor";
+  latency_ms?: number;
+  loss_percent?: number;
+  degraded_seconds: number;
+};
 export type Peer = Device & {
   id: string;
   device_info?: DeviceInfo | null;
@@ -61,6 +68,7 @@ export type Snapshot = {
     route?: "local" | "internet" | "usb" | null;
     /** This device's physical link for a local network session. */
     link?: Link;
+    quality?: Quality;
     reconnecting?: boolean;
     display?: "extend" | "mirror" | null;
     display_config?: DisplayConfig | null;

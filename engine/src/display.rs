@@ -584,6 +584,12 @@ pub enum DisplayEvent {
     Frame(Frame),
     Keyframe,
     Bitrate(u64),
+    /// Periodic RTCP statistics: round-trip time and the fraction of media
+    /// packets lost (0 to 1), when the peer reported them.
+    Stats {
+        rtt: Option<Duration>,
+        loss: Option<f32>,
+    },
     Cursor(Vec<u8>),
     Input(input::Message),
     InputClosed,
@@ -807,7 +813,8 @@ impl Transport {
             // frame for the general video default of two seconds.
             .set_reordering_timeout_video(Some(reordering_timeout))
             .enable_bwe(Some(str0m::bwe::Bitrate::from(20_000_000)))
-            .set_stats_interval(diagnostic.then_some(Duration::from_secs(5)))
+            // Statistics also feed the live connection quality shown to users.
+            .set_stats_interval(Some(Duration::from_secs(if diagnostic { 5 } else { 2 })))
             .build(Instant::now());
         let ice_address =
             link_local_route.map_or(socket.local_addr()?, |route| route.local_candidate());
@@ -1430,19 +1437,31 @@ impl Transport {
                     }
                     self.events.push_back(DisplayEvent::Keyframe)
                 }
-                Output::Event(Event::MediaEgressStats(stats)) if self.diagnostics.is_some() => {
-                    eprintln!(
-                        "Display RTP sent: packets={} bytes={} nacks={} plis={} loss={:?} rtt_ms={:?} remote_lost={:?} lan={}",
-                        stats.packets, stats.bytes, stats.nacks, stats.plis, stats.loss,
-                        stats.rtt.map(|rtt| rtt.as_millis()),
-                        stats.remote.map(|remote| remote.packets_lost), self.lan_route
-                    );
+                Output::Event(Event::MediaEgressStats(stats)) => {
+                    if self.diagnostics.is_some() {
+                        eprintln!(
+                            "Display RTP sent: packets={} bytes={} nacks={} plis={} loss={:?} rtt_ms={:?} remote_lost={:?} lan={}",
+                            stats.packets, stats.bytes, stats.nacks, stats.plis, stats.loss,
+                            stats.rtt.map(|rtt| rtt.as_millis()),
+                            stats.remote.map(|remote| remote.packets_lost), self.lan_route
+                        );
+                    }
+                    self.events.push_back(DisplayEvent::Stats {
+                        rtt: stats.rtt,
+                        loss: stats.loss,
+                    });
                 }
-                Output::Event(Event::MediaIngressStats(stats)) if self.diagnostics.is_some() => {
-                    eprintln!(
-                        "Display RTP received: packets={} bytes={} nacks={} plis={} loss={:?} jitter_ticks={}",
-                        stats.packets, stats.bytes, stats.nacks, stats.plis, stats.loss, stats.jitter
-                    );
+                Output::Event(Event::MediaIngressStats(stats)) => {
+                    if self.diagnostics.is_some() {
+                        eprintln!(
+                            "Display RTP received: packets={} bytes={} nacks={} plis={} loss={:?} jitter_ticks={}",
+                            stats.packets, stats.bytes, stats.nacks, stats.plis, stats.loss, stats.jitter
+                        );
+                    }
+                    self.events.push_back(DisplayEvent::Stats {
+                        rtt: stats.rtt,
+                        loss: stats.loss,
+                    });
                 }
                 Output::Event(Event::EgressBitrateEstimate(estimate)) => {
                     let bitrate = match estimate {

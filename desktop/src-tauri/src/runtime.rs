@@ -25,6 +25,7 @@ mod outgoing;
 mod peer_health;
 mod preferences;
 mod presence;
+mod quality;
 mod routes;
 #[cfg(test)]
 mod tests;
@@ -46,6 +47,7 @@ struct Job {
     ended_locally: bool,
     socket: Option<TcpStream>,
     display_updates: Option<std::sync::mpsc::Sender<display::SettingsUpdate>>,
+    quality: quality::Tracker,
 }
 struct PairCode {
     window: PairingWindow,
@@ -476,7 +478,12 @@ impl Desktop {
                 .filter(|j| {
                     !(j.view.kind == SessionKind::Incoming && j.view.phase == Phase::Connecting)
                 })
-                .map(|j| j.view.clone()),
+                .map(|j| Session {
+                    quality: (j.view.phase == Phase::Connected)
+                        .then(|| j.quality.view())
+                        .flatten(),
+                    ..j.view.clone()
+                }),
             receiving: inner.receiving_enabled
                 && inner
                     .listener
@@ -694,6 +701,7 @@ impl Desktop {
                 peer,
                 route: None,
                 link: None,
+                quality: None,
                 reconnecting: false,
                 display: None,
                 display_config: None,
@@ -702,6 +710,7 @@ impl Desktop {
             ended_locally: false,
             socket: None,
             display_updates: None,
+            quality: quality::Tracker::default(),
         });
         Ok((id, cancelled))
     }
@@ -823,6 +832,19 @@ impl Desktop {
                     }
                 }
             }
+        }
+    }
+    /// Add a live measurement to the session's connection quality.
+    fn record_quality(&self, id: u64, sample: quality::Sample) {
+        if let Some(job) = self
+            .inner
+            .lock()
+            .unwrap()
+            .job
+            .as_mut()
+            .filter(|j| j.view.id == id)
+        {
+            job.quality.record(sample);
         }
     }
     /// An offline device answered again, so a failure to reach it is stale.
