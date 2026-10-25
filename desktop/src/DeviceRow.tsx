@@ -105,9 +105,11 @@ export function DeviceRow({
           : transitioning
             ? "Cancel"
             : active
-              ? session.display
-                ? "Stop display"
-                : "Stop sharing"
+              ? session.display === "mirror"
+                ? "Stop mirroring"
+                : session.display
+                  ? "Stop extending"
+                  : "Stop sharing"
               : "Disconnect"}
       </span>
     </ExplainedButton>

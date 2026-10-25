@@ -315,7 +315,7 @@ export const scenarios: Scenario[] = [
     "extend",
     "Extended display",
     "Display session and active stop action.",
-    "Stop display",
+    "Stop extending",
   ),
   s(
     "Sessions",
