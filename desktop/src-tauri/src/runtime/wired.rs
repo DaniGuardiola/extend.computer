@@ -133,6 +133,16 @@ pub(super) fn interfaces() -> Vec<Interface> {
         .collect()
 }
 
+/// The local addresses in use, to notice cables and networks coming and going.
+pub(super) fn local_links() -> std::collections::BTreeSet<IpAddr> {
+    if_addrs::get_if_addrs()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|i| !i.is_loopback())
+        .map(|i| i.ip())
+        .collect()
+}
+
 pub(super) fn socket_route(socket: &TcpStream) -> Option<&'static str> {
     let local = socket.local_addr().ok()?.ip();
     interfaces()

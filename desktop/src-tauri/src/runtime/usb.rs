@@ -270,12 +270,16 @@ impl Desktop {
                 if let Some(info) = reply.device_info {
                     let _ = self.update_peer_device_info(peer, info);
                 }
-                self.health
+                let returned = self
+                    .health
                     .lock()
                     .unwrap()
                     .entry(peer.into())
                     .or_default()
                     .usb_success(status.receiving);
+                if returned {
+                    self.peer_returned(peer);
+                }
                 Ok(true)
             }
             Ok(None) if route.current(self) => {

@@ -72,7 +72,7 @@ struct Inner {
     error: Option<String>,
     /// The device a session error belongs to, paired with that exact message
     /// so a later unrelated error is never shown on its card.
-    error_peer: Option<(String, String)>,
+    error_peer: Option<PeerError>,
     permissions: Permissions,
     permission_request: Option<String>,
     notification: Option<Notification>,
@@ -89,6 +89,12 @@ impl Inner {
             message,
         });
     }
+}
+struct PeerError {
+    peer: String,
+    message: String,
+    /// The device could not be reached, so reaching it again resolves this.
+    unreachable: bool,
 }
 #[derive(Serialize)]
 pub struct Peer {
@@ -487,8 +493,8 @@ impl Desktop {
             error_peer: inner
                 .error_peer
                 .as_ref()
-                .filter(|(_, message)| inner.error.as_ref() == Some(message))
-                .map(|(peer, _)| peer.clone()),
+                .filter(|e| inner.error.as_ref() == Some(&e.message))
+                .map(|e| e.peer.clone()),
             permissions: inner.permissions.clone(),
             permission_request: inner.permission_request.clone(),
         })
@@ -807,12 +813,28 @@ impl Desktop {
                             && is_connection_error(&e))
                         {
                             let message = friendly_error(&e);
-                            i.error_peer =
-                                job.view.peer.clone().map(|peer| (peer, message.clone()));
+                            i.error_peer = job.view.peer.clone().map(|peer| PeerError {
+                                peer,
+                                message: message.clone(),
+                                unreachable: is_connection_error(&e),
+                            });
                             i.error = Some(message);
                         }
                     }
                 }
+            }
+        }
+    }
+    /// An offline device answered again, so a failure to reach it is stale.
+    fn peer_returned(&self, peer: &str) {
+        let mut i = self.inner.lock().unwrap();
+        if i.error_peer
+            .as_ref()
+            .is_some_and(|e| e.unreachable && e.peer == peer)
+        {
+            let error = i.error_peer.take().unwrap();
+            if i.error.as_ref() == Some(&error.message) {
+                i.error = None;
             }
         }
     }

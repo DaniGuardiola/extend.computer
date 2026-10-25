@@ -5,6 +5,13 @@ use extend_computer_agent::{
     error::EngineError,
     session::{query_presence_with_device_info, serve_presence, Presence},
 };
+/// Cable links are found again from their neighbors whenever they are
+/// plugged in. Saving one would replace the network address the device needs
+/// once the cable is removed.
+fn replaces_saved_address(route: Option<&str>, saved: &str, endpoint: &str) -> bool {
+    route != Some("usb") && saved != endpoint
+}
+
 #[cfg(test)]
 use std::net::TcpListener;
 use std::sync::atomic::AtomicUsize;
@@ -26,15 +33,19 @@ pub(super) struct Health {
     route: Option<&'static str>,
 }
 impl Health {
-    pub(super) fn success(&mut self, receiving: bool) {
+    /// Returns whether the device was offline until now.
+    pub(super) fn success(&mut self, receiving: bool) -> bool {
+        let returned = self.state() == Availability::Offline;
         self.route = None;
         self.last = Some((Instant::now(), receiving));
         self.failures = 0;
         self.incompatible = false;
+        returned
     }
-    pub(super) fn usb_success(&mut self, receiving: bool) {
-        self.success(receiving);
+    pub(super) fn usb_success(&mut self, receiving: bool) -> bool {
+        let returned = self.success(receiving);
         self.route = Some("usb");
+        returned
     }
     pub(super) fn route(&self) -> Option<&'static str> {
         matches!(
@@ -83,11 +94,30 @@ impl Desktop {
             let mut advertisement = None;
             let mut advertised_at = Instant::now();
             let mut next_ad_check = Instant::now();
+            let mut links = wired::local_links();
+            let mut next_link_check = Instant::now();
+            let mut readvertise_at = None::<Instant>;
             let workers = Arc::new(AtomicUsize::new(0));
             loop {
                 let Some(app) = weak.upgrade() else { break };
                 if app.closing.load(Ordering::SeqCst) {
                     break;
+                }
+                // mDNS does not announce on an interface that comes back with
+                // a new address, such as a replugged cable. Announce again once
+                // the change has settled so peers find the new route quickly.
+                if Instant::now() >= next_link_check {
+                    next_link_check = Instant::now() + Duration::from_millis(500);
+                    let current = wired::local_links();
+                    if current != links {
+                        links = current;
+                        readvertise_at = Some(Instant::now() + Duration::from_millis(1500));
+                    }
+                }
+                if readvertise_at.is_some_and(|at| Instant::now() >= at) {
+                    readvertise_at = None;
+                    advertisement = None;
+                    next_ad_check = Instant::now();
                 }
                 if Instant::now() >= next_ad_check {
                     next_ad_check = Instant::now() + Duration::from_secs(5);
@@ -239,7 +269,10 @@ impl Desktop {
                 }
                 let endpoint = SocketAddr::new(address.ip(), status.port).to_string();
                 let mut devices = self.devices.lock().unwrap();
-                if devices.get(peer).is_some_and(|d| d.address != endpoint) {
+                if devices
+                    .get(peer)
+                    .is_some_and(|d| replaces_saved_address(route, &d.address, &endpoint))
+                {
                     let mut next = devices.clone();
                     next.get_mut(peer).unwrap().address = endpoint;
                     peers::save(&self.root, &next)?;
@@ -252,10 +285,14 @@ impl Desktop {
                     .insert(peer.into(), address);
                 let mut health = self.health.lock().unwrap();
                 let health = health.entry(peer.into()).or_default();
-                if route == Some("usb") {
-                    health.usb_success(status.receiving);
+                let returned = if route == Some("usb") {
+                    health.usb_success(status.receiving)
                 } else {
-                    health.success(status.receiving);
+                    health.success(status.receiving)
+                };
+                drop(health);
+                if returned {
+                    self.peer_returned(peer);
                 }
                 return Ok(true);
             }
@@ -307,12 +344,16 @@ impl Desktop {
                     if let Some(info) = reply.device_info {
                         let _ = self.update_peer_device_info(peer, info);
                     }
-                    self.health
+                    let returned = self
+                        .health
                         .lock()
                         .unwrap()
                         .entry(peer.into())
                         .or_default()
                         .success(status.receiving);
+                    if returned {
+                        self.peer_returned(peer);
+                    }
                     return Ok(true);
                 }
             }
@@ -514,6 +555,43 @@ mod route_race_tests {
     use super::*;
     use std::io::Read;
 
+    #[test]
+    fn only_a_returning_device_clears_its_unreachable_error() {
+        let root = tempfile::tempdir().unwrap();
+        let app = Desktop::new(root.path().into(), PathBuf::from("unused-helper")).unwrap();
+        let mut health = Health::default();
+        assert!(!health.success(true), "first answer is not a return");
+        for _ in 0..3 {
+            health.failure();
+        }
+        assert!(
+            health.success(true),
+            "answer after going offline is a return"
+        );
+        for (unreachable, cleared) in [(true, true), (false, false)] {
+            {
+                let mut inner = app.inner.lock().unwrap();
+                inner.error = Some("Host is down".into());
+                inner.error_peer = Some(PeerError {
+                    peer: "peer".into(),
+                    message: "Host is down".into(),
+                    unreachable,
+                });
+            }
+            app.peer_returned("other");
+            assert!(app.inner.lock().unwrap().error.is_some());
+            app.peer_returned("peer");
+            assert_eq!(app.inner.lock().unwrap().error.is_none(), cleared);
+        }
+    }
+    #[test]
+    fn cable_presence_keeps_the_saved_network_address() {
+        let lan = "10.0.100.23:48177";
+        let cable = "169.254.30.100:48177";
+        assert!(!replaces_saved_address(Some("usb"), lan, cable));
+        assert!(replaces_saved_address(None, cable, lan));
+        assert!(!replaces_saved_address(None, lan, lan));
+    }
     #[test]
     fn account_route_refresh_skips_stall_and_wrong_identity_without_manual_pairing() {
         let root = tempfile::tempdir().unwrap();
