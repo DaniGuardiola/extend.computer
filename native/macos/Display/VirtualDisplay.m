@@ -103,8 +103,17 @@ bool ECDisplaySupported(void) {
         if (!NSClassFromString(name)) return false;
     return true;
 }
+// Creation runs on the main actor; the caller reads the reason right after.
+static const char *lastFailure;
+static void *Fail(const char *reason) {
+    lastFailure = reason;
+    return NULL;
+}
+const char *ECDisplayLastFailure(void) { return lastFailure ? lastFailure : "unknown"; }
 void *ECDisplayCreate(uint32_t width, uint32_t height, bool retina, uint32_t fps, uint32_t *displayID) {
-    if (!ECDisplaySupported() || !displayID || width < 640 || height < 480 || width > 4096 / (retina ? 2 : 1) || height > 4096 / (retina ? 2 : 1) || fps < 30 || fps > 120) return NULL;
+    lastFailure = NULL;
+    if (!ECDisplaySupported()) return Fail("virtual displays unavailable");
+    if (!displayID || width < 640 || height < 480 || width > 4096 / (retina ? 2 : 1) || height > 4096 / (retina ? 2 : 1) || fps < 30 || fps > 120) return Fail("unsupported size or frame rate");
     CGRect mainBounds = CGDisplayBounds(CGMainDisplayID());
     CGFloat desktopRight = CGRectGetMaxX(mainBounds);
     CGDirectDisplayID existing[64]; uint32_t existingCount = 0;
@@ -129,19 +138,20 @@ void *ECDisplayCreate(uint32_t width, uint32_t height, bool retina, uint32_t fps
         SEL modeSelector = NSSelectorFromString(@"initWithWidth:height:refreshRate:");
         id mode = ((id (*)(id, SEL, NSUInteger, NSUInteger, double))objc_msgSend)(
             [NSClassFromString(@"CGVirtualDisplayMode") alloc], modeSelector, width, height, (double)fps);
-        if (!mode) return NULL;
+        if (!mode) return Fail("mode rejected");
         id settings = [NSClassFromString(@"CGVirtualDisplaySettings") new];
         [settings setValue:@(retina) forKey:@"hiDPI"];
         [settings setValue:@[mode] forKey:@"modes"];
         id display = SendObject([NSClassFromString(@"CGVirtualDisplay") alloc], @"initWithDescriptor:", descriptor);
-        if (!display) return NULL;
+        if (!display) return Fail("display not created");
         BOOL applied = ((BOOL (*)(id, SEL, id))objc_msgSend)(display, NSSelectorFromString(@"applySettings:"), settings);
         uint32_t identifier = ((uint32_t (*)(id, SEL))objc_msgSend)(display, NSSelectorFromString(@"displayID"));
-        if (!applied || identifier == 0) return NULL;
+        if (!applied) return Fail("settings not applied");
+        if (identifier == 0) return Fail("no display ID assigned");
         // macOS can restore a mirror group for a newly created monitor.
         // This adapter creates an extension; disable only its mirror links.
         CGDisplayConfigRef config = NULL;
-        if (CGBeginDisplayConfiguration(&config) != kCGErrorSuccess) return NULL;
+        if (CGBeginDisplayConfiguration(&config) != kCGErrorSuccess) return Fail("configuration not started");
         CGError result = CGConfigureDisplayMirrorOfDisplay(config, identifier, kCGNullDirectDisplay);
         CGDirectDisplayID online[64]; uint32_t count = 0;
         if (result == kCGErrorSuccess && CGGetOnlineDisplayList(64, online, &count) == kCGErrorSuccess) {
@@ -151,8 +161,8 @@ void *ECDisplayCreate(uint32_t width, uint32_t height, bool retina, uint32_t fps
         }
         if (result == kCGErrorSuccess)
             result = CGConfigureDisplayOrigin(config, identifier, (int32_t)ceil(desktopRight), (int32_t)mainBounds.origin.y);
-        if (result != kCGErrorSuccess) { CGCancelDisplayConfiguration(config); return NULL; }
-        if (CGCompleteDisplayConfiguration(config, kCGConfigureForAppOnly) != kCGErrorSuccess) return NULL;
+        if (result != kCGErrorSuccess) { CGCancelDisplayConfiguration(config); return Fail("placement rejected"); }
+        if (CGCompleteDisplayConfiguration(config, kCGConfigureForAppOnly) != kCGErrorSuccess) return Fail("placement not applied");
         *displayID = identifier;
         ECDisplayHandle *handle = [ECDisplayHandle new];
         handle.display = display;
@@ -160,7 +170,7 @@ void *ECDisplayCreate(uint32_t width, uint32_t height, bool retina, uint32_t fps
         handle.mainID = CGMainDisplayID();
         return (void *)CFBridgingRetain(handle);
     } @catch (NSException *exception) {
-        return NULL;
+        return Fail("private display API raised an exception");
     }
 }
 bool ECDisplayConfigure(void *handle, uint32_t width, uint32_t height, bool retina, uint32_t fps) {

@@ -202,6 +202,20 @@ fn drain_diagnostics(mut reader: impl Read, diagnostics: &Mutex<String>) {
     }
 }
 
+/// The helper writes its fatal error last, after any diagnostics. Show that
+/// line; keep the whole tail in the error chain for logs.
+fn helper_failure(diagnostics: &str) -> anyhow::Error {
+    match diagnostics
+        .lines()
+        .rev()
+        .find(|line| !line.trim().is_empty())
+    {
+        None => anyhow::anyhow!("Display helper stopped"),
+        Some(last) if last.len() == diagnostics.len() => anyhow::anyhow!(last.to_owned()),
+        Some(last) => anyhow::anyhow!(diagnostics.to_owned()).context(last.trim().to_owned()),
+    }
+}
+
 fn finish_helper_output(source: bool, diagnostics_done: &Receiver<()>, closed: &AtomicBool) {
     // The child closes stdout and stderr independently. Give the diagnostic
     // reader a bounded chance to retain its final failure before the source
@@ -751,12 +765,7 @@ impl Helper {
         enqueue_frame(send, &self.writer_wake, frame)
     }
     pub fn failure(&self) -> anyhow::Error {
-        let error = self.error.lock().unwrap().clone();
-        anyhow::anyhow!(if error.is_empty() {
-            "Display helper stopped".into()
-        } else {
-            error
-        })
+        helper_failure(&self.error.lock().unwrap())
     }
 }
 impl Drop for Helper {
@@ -1153,6 +1162,23 @@ mod diagnostic_tests {
         );
     }
 
+    #[test]
+    fn helper_failure_shows_the_final_line_and_keeps_diagnostics() {
+        let error = super::helper_failure(
+            "Display encoder: automatic low latency requested; applied=1\n\
+             2026-10-25 ExtendComputerDisplay[1:2] ApplePersistence=NO\n\
+             macOS could not create the extended display (settings not applied).\n",
+        );
+        assert_eq!(
+            error.to_string(),
+            "macOS could not create the extended display (settings not applied)."
+        );
+        assert!(format!("{error:#}").contains("Display encoder"));
+        assert_eq!(
+            super::helper_failure("").to_string(),
+            "Display helper stopped"
+        );
+    }
     #[test]
     fn source_eof_grace_is_bounded_and_viewer_eof_does_not_wait_for_stderr() {
         use std::sync::{

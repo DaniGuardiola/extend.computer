@@ -40,15 +40,15 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate {
         var selected = displayID
         if mode == "extend" {
             let lifetime = lifecycle
-            let created = await MainActor.run { () -> (UInt, UInt32) in
-                guard lifetime?.isClosing != true else { return (0, 0) }
+            let created = await MainActor.run { () -> (UInt, UInt32, String) in
+                guard lifetime?.isClosing != true else { return (0, 0, "closing") }
                 var identifier: UInt32 = 0
                 let pointer = ECDisplayCreate(UInt32(width), UInt32(height), retina, UInt32(fps), &identifier)
-                return (UInt(bitPattern: pointer), identifier)
+                return (UInt(bitPattern: pointer), identifier, pointer == nil ? String(cString: ECDisplayLastFailure()) : "")
             }
             virtual = UnsafeMutableRawPointer(bitPattern: created.0)
             try checkLifetime()
-            guard virtual != nil else { throw DisplayFailure("macOS could not create the extended display.") }
+            guard virtual != nil else { throw DisplayFailure("macOS could not create the extended display (\(created.2)).") }
             selected = created.1
         }
         var display: SCDisplay?
