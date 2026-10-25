@@ -42,6 +42,7 @@ pub(crate) fn friendly_error(error: &anyhow::Error) -> String {
             EngineError::PairingFailed => "Pairing failed. Show a new code on the other device and try again.",
             EngineError::HelperUnavailable => "extend.computer could not start its input helper. Check macOS Permissions and the installed extend.computer version.",
             EngineError::AuthenticationFailed => "The encrypted connection could not be verified. Disconnect and try again.",
+            EngineError::RemoteEnded => "The other device ended the session.",
         }.into();
     }
     if is_connection_error(error) {

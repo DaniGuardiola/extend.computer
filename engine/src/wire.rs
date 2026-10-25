@@ -197,6 +197,9 @@ impl Channel {
         self.read_budget = Duration::from_secs(120);
         Ok(())
     }
+    pub fn shutdown_write(&self) {
+        let _ = self.stream.shutdown(std::net::Shutdown::Write);
+    }
     pub fn active_timeout(&mut self) -> Result<()> {
         self.read_budget = Duration::from_secs(10);
         Ok(())

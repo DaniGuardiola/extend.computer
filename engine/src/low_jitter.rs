@@ -109,6 +109,9 @@ impl<S: CursorSink> CursorSink for ManagedCursor<S> {
     fn input(&mut self, event: &crate::input::InputEvent) -> Result<()> {
         self.inner.input(event)
     }
+    fn ending(&self) -> bool {
+        self.inner.ending()
+    }
     fn heartbeat(&mut self) -> Result<()> {
         self.inner.heartbeat()?;
         if self.required {

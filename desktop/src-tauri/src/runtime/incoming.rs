@@ -364,6 +364,9 @@ impl CursorSink for GuiSink {
     fn heartbeat(&mut self) -> Result<()> {
         self.inner.heartbeat()
     }
+    fn ending(&self) -> bool {
+        self.app.ended_locally(self.job)
+    }
     fn display_size(&self) -> Result<DisplaySize> {
         let size = self.inner.display_size()?;
         self.app.stage(self.job, Phase::Connected, None);

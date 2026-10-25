@@ -42,6 +42,8 @@ use state::{Phase, SessionKind};
 struct Job {
     view: Session,
     cancelled: Arc<AtomicBool>,
+    /// The local user pressed Disconnect, so the peer is told not to reconnect.
+    ended_locally: bool,
     socket: Option<TcpStream>,
     display_updates: Option<std::sync::mpsc::Sender<display::SettingsUpdate>>,
 }
@@ -674,6 +676,7 @@ impl Desktop {
                 display_config: None,
             },
             cancelled: cancelled.clone(),
+            ended_locally: false,
             socket: None,
             display_updates: None,
         });
@@ -833,6 +836,38 @@ impl Desktop {
             }
         }
         self.approvals.cancel();
+    }
+    /// The user's Disconnect. A receiving session wakes its read and keeps the
+    /// write side open so it can tell the sharing device not to reconnect;
+    /// other stops (receiving turned off, quitting) stay recoverable.
+    pub fn end_session(&self) {
+        {
+            let mut i = self.inner.lock().unwrap();
+            if let Some(j) = i
+                .job
+                .as_mut()
+                .filter(|j| j.view.kind == SessionKind::Incoming)
+            {
+                j.ended_locally = true;
+                j.cancelled.store(true, Ordering::SeqCst);
+                j.view.advance(Phase::Disconnecting);
+                if let Some(s) = &j.socket {
+                    let _ = s.shutdown(Shutdown::Read);
+                }
+                drop(i);
+                self.approvals.cancel();
+                return;
+            }
+        }
+        self.disconnect();
+    }
+    fn ended_locally(&self, id: u64) -> bool {
+        self.inner
+            .lock()
+            .unwrap()
+            .job
+            .as_ref()
+            .is_some_and(|j| j.view.id == id && j.ended_locally)
     }
     pub fn stop_receiving(&self) -> Result<()> {
         let mut preference = self.receiving_preference.lock().unwrap();

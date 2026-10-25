@@ -13,6 +13,8 @@ pub enum EngineError {
     FeatureUnavailable,
     HelperUnavailable,
     AuthenticationFailed,
+    /// The peer stopped the session on purpose; reconnecting would override it.
+    RemoteEnded,
 }
 impl fmt::Display for EngineError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -29,6 +31,7 @@ impl fmt::Display for EngineError {
                 "native helper unavailable or outdated; check permissions and rebuild both helpers"
             }
             Self::AuthenticationFailed => "encrypted message authentication failed",
+            Self::RemoteEnded => "The other device ended the session.",
         })
     }
 }

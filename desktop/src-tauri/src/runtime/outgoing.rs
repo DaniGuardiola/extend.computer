@@ -302,6 +302,13 @@ impl Desktop {
                             break Ok(());
                         }
                     }
+                    // Disconnecting on the other device is a normal stop, not a failure.
+                    Err(error)
+                        if error.downcast_ref::<extend_computer_agent::error::EngineError>()
+                            == Some(&extend_computer_agent::error::EngineError::RemoteEnded) =>
+                    {
+                        break Ok(())
+                    }
                     result => break result,
                 }
             };

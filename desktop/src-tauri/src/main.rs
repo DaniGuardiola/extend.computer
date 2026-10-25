@@ -107,7 +107,7 @@ fn usb_status(state: State<'_>) -> serde_json::Value {
 }
 #[tauri::command]
 fn disconnect(state: State<'_>) {
-    state.disconnect();
+    state.end_session();
 }
 #[tauri::command]
 async fn start_receiving(state: State<'_>, pairing: bool) -> Result<(), String> {

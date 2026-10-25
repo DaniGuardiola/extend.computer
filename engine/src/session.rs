@@ -278,6 +278,10 @@ pub trait CursorSink {
     fn heartbeat(&mut self) -> Result<()> {
         Ok(())
     }
+    /// The local user stopped this session, so the peer should not reconnect.
+    fn ending(&self) -> bool {
+        false
+    }
     fn device_name(&self) -> Option<String> {
         None
     }
@@ -485,7 +489,19 @@ fn serve_connection_pinned_inner(
     let mut session_control = false;
     let mut active_input = false;
     loop {
-        let message: Message = channel.receive()?;
+        let message: Message = match channel.receive() {
+            Ok(message) => message,
+            Err(_) if cursor.ending() => {
+                // Disconnect only shut our read side. Tell the peer this was
+                // intentional, then give it time to read that before the
+                // socket closes and a reset could discard it.
+                let _ = channel.send(&Message::Close);
+                channel.shutdown_write();
+                std::thread::sleep(Duration::from_secs(1));
+                return Ok(());
+            }
+            Err(error) => return Err(error),
+        };
         ensure!(
             session_control || Instant::now() < deadline,
             "session expired"
@@ -836,13 +852,20 @@ impl Client {
     pub fn peer(&self) -> &str {
         &self.peer
     }
+    /// A peer that ends the session sends Close instead of the expected reply.
+    fn reply(&mut self) -> Result<Message> {
+        match self.channel.receive()? {
+            Message::Close => Err(EngineError::RemoteEnded.into()),
+            message => Ok(message),
+        }
+    }
     pub fn probe(&mut self) -> Result<Duration> {
         ensure!(!self.store.is_revoked(&self.peer)?, "device revoked");
         let start = Instant::now();
         self.channel.send(&Message::Ping {
             sequence: self.sequence,
         })?;
-        match self.channel.receive()? {
+        match self.reply()? {
             Message::Pong { sequence } if sequence == self.sequence => {
                 self.sequence += 1;
                 Ok(start.elapsed())
@@ -858,7 +881,7 @@ impl Client {
             remembered_only: false,
         })?;
         self.channel.consent_timeout()?;
-        let display = match self.channel.receive()? {
+        let display = match self.reply()? {
             Message::ControlGranted {
                 display,
                 text_supported,
@@ -887,7 +910,7 @@ impl Client {
         ensure!(!self.store.is_revoked(&self.peer)?, "device revoked");
         self.channel.send(&Message::RequestInput)?;
         self.channel.consent_timeout()?;
-        let display = match self.channel.receive()? {
+        let display = match self.reply()? {
             Message::InputGranted {
                 display,
                 text_supported,
@@ -942,7 +965,7 @@ impl Client {
         ensure!(!self.store.is_revoked(&self.peer)?, "device revoked");
         self.channel.send(&Message::RequestCursor)?;
         self.channel.consent_timeout()?;
-        let display = match self.channel.receive()? {
+        let display = match self.reply()? {
             Message::CursorGranted { display } => display,
             Message::Denied => bail!(EngineError::RemoteConsentDenied),
             _ => bail!(EngineError::RequestRejected),
@@ -963,7 +986,7 @@ impl Client {
             y,
         })?;
         ensure!(
-            matches!(self.channel.receive()?, Message::Pong { sequence } if sequence == self.sequence),
+            matches!(self.reply()?, Message::Pong { sequence } if sequence == self.sequence),
             "invalid cursor acknowledgment"
         );
         self.sequence += 1;
@@ -987,6 +1010,85 @@ impl Client {
     }
     pub fn close(mut self) -> Result<()> {
         self.channel.send(&Message::Close)
+    }
+}
+
+#[cfg(test)]
+mod remote_end_tests {
+    use super::*;
+    use std::sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc, Arc,
+    };
+    struct Receiver(Arc<AtomicBool>);
+    impl CursorSink for Receiver {
+        fn start_cursor(&mut self, _: &str) -> Result<bool> {
+            Ok(false)
+        }
+        fn start_input(&mut self, _: &str) -> Result<bool> {
+            Ok(true)
+        }
+        fn move_to(&mut self, _: f64, _: f64) -> Result<()> {
+            Ok(())
+        }
+        fn ending(&self) -> bool {
+            self.0.load(Ordering::SeqCst)
+        }
+    }
+    #[test]
+    fn local_disconnect_tells_the_sharing_device_not_to_reconnect() {
+        let a = Identity::generate();
+        let b = Identity::generate();
+        let client_dir = tempfile::tempdir().unwrap();
+        let server_dir = tempfile::tempdir().unwrap();
+        let client_trust = TrustStore::open(client_dir.path()).unwrap();
+        let server_trust = TrustStore::open(server_dir.path()).unwrap();
+        let pin = b.fingerprint();
+        client_trust.remember(&pin).unwrap();
+        server_trust.remember(&a.fingerprint()).unwrap();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let ending = Arc::new(AtomicBool::new(false));
+        let (sockets, socket) = mpsc::channel();
+        let server_ending = ending.clone();
+        let worker = std::thread::spawn(move || {
+            let stream = listener.accept().unwrap().0;
+            sockets.send(stream.try_clone().unwrap()).unwrap();
+            serve_connection_with_cursor(
+                stream,
+                &b,
+                &server_trust,
+                &mut None,
+                |_, _| Decision::Deny,
+                &mut Receiver(server_ending),
+            )
+        });
+        let mut client = Client::connect(
+            TcpStream::connect(address).unwrap(),
+            &a,
+            &client_trust,
+            None,
+            Some(&pin),
+            |_, _| Decision::Deny,
+        )
+        .unwrap();
+        client.request_input().unwrap();
+        client.probe().unwrap();
+        // The receiving app's Disconnect: mark the session as ending and wake
+        // the blocked read without closing the write side.
+        ending.store(true, Ordering::SeqCst);
+        socket
+            .recv()
+            .unwrap()
+            .shutdown(std::net::Shutdown::Read)
+            .unwrap();
+        let error = client.probe().unwrap_err();
+        assert_eq!(
+            error.downcast_ref::<EngineError>(),
+            Some(&EngineError::RemoteEnded)
+        );
+        assert!(!crate::error::is_connection_failure(&error));
+        worker.join().unwrap().unwrap();
     }
 }
 

@@ -1171,3 +1171,70 @@ fn startup_receiving_retries_a_superseded_permission_result() {
     app.shutdown();
     wait(|| app.inner.lock().unwrap().listener.is_none());
 }
+
+#[test]
+#[cfg(unix)]
+fn receiving_disconnect_stops_the_sharing_device_without_reconnecting() {
+    use std::os::unix::fs::PermissionsExt;
+    let temp = tempfile::tempdir().unwrap();
+    let helper = temp.path().join("helper");
+    std::fs::write(
+        &helper,
+        r#"#!/bin/sh
+case "$1" in
+status) echo 'listen=true post=true wifi=true';;
+inject-control) echo 'READY 1728 1117'; while IFS= read -r line; do echo OK; done;;
+capture-control-*) echo 'READY 1512 982'; while IFS= read -r line; do :; done;;
+*) exit 1;;
+esac
+"#,
+    )
+    .unwrap();
+    std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let sender_helper_dir = temp.path().join("sender-helper");
+    std::fs::create_dir(&sender_helper_dir).unwrap();
+    let sender_helper = sender_helper_dir.join("helper");
+    std::fs::copy(&helper, &sender_helper).unwrap();
+    let receiver = Desktop::new(temp.path().join("receiver"), helper).unwrap();
+    let sender = Desktop::new(temp.path().join("sender"), sender_helper).unwrap();
+    receiver.set_test_identity(Identity::generate());
+    sender.set_test_identity(Identity::generate());
+    let receiver_id = receiver.identity().unwrap().fingerprint();
+    let sender_id = sender.identity().unwrap().fingerprint();
+    receiver.sync_account_peers("server/account",&[serde_json::json!({"id":"a".repeat(64),"fingerprint":sender_id,"name":"Sender","key_verified":true})]).unwrap();
+    sender.sync_account_peers("server/account",&[serde_json::json!({"id":"b".repeat(64),"fingerprint":receiver_id,"name":"Receiver","key_verified":true})]).unwrap();
+    let socket = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = socket.local_addr().unwrap().port();
+    drop(socket);
+    receiver.receive_at(false, port).unwrap();
+    let device = Device {
+        name: "Receiver".into(),
+        address: format!("127.0.0.1:{port}"),
+        edge: "left".into(),
+    };
+    sender.save_device(&receiver_id, device.clone()).unwrap();
+    sender.connect(receiver_id, device).unwrap();
+    wait(|| {
+        sender
+            .snapshot()
+            .unwrap()
+            .session
+            .is_some_and(|session| session.phase == Phase::Connected)
+            && receiver
+                .snapshot()
+                .unwrap()
+                .session
+                .is_some_and(|session| session.phase == Phase::Connected)
+    });
+    receiver.end_session();
+    // The sharing device ends quietly instead of reconnecting.
+    wait(|| sender.snapshot().unwrap().session.is_none());
+    let snapshot = sender.snapshot().unwrap();
+    assert!(snapshot.error.is_none());
+    std::thread::sleep(Duration::from_secs(2));
+    assert!(sender.snapshot().unwrap().session.is_none());
+    wait(|| receiver.snapshot().unwrap().session.is_none());
+    assert!(receiver.snapshot().unwrap().error.is_none());
+    receiver.shutdown();
+    sender.shutdown();
+}
