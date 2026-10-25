@@ -287,6 +287,7 @@ const signedIn = [
   "account-long-email",
   "settings-account",
   "account-signed-in",
+  "account-custom-server",
   "account-registration",
   "account-empty",
   "account-one",
@@ -306,6 +307,8 @@ export const accountState: AccountState = {
   browser_pending: id === "account-browser",
   error: null,
 };
+if (id === "account-custom-server")
+  accountState.server = "https://accounts.example.test";
 if (id === "account-long-email")
   accountState.email =
     "design.studio.shared.account+desktop.header.review@devices.example.test";

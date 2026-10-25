@@ -873,7 +873,15 @@ export const scenarios: Scenario[] = [
     "account-signed-in",
     "Account · signed in",
     "Registered device, manage security and sign out.",
-    "This computer is registered",
+    "This device is registered",
+    [label("Account for review@example.test")],
+  ),
+  s(
+    "Account",
+    "account-custom-server",
+    "Account · custom server",
+    "Signed in on a self-hosted account server, which the dialog names.",
+    "Using a custom account server: accounts.example.test",
     [label("Account for review@example.test")],
   ),
   s(

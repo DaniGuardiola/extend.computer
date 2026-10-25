@@ -157,10 +157,14 @@ export function AccountPanel({ account }: { account: AccountFlow }) {
       ) : state?.email ? (
         <>
           <p className="break-words">{state.email}</p>
-          <p className="text-xs text-muted break-words">{state.server}</p>
+          {state.server !== OFFICIAL_SERVER && (
+            <p className="text-xs text-muted break-words">
+              Using a custom account server: {displayServer(state.server)}
+            </p>
+          )}
           <p className="text-muted">
             {state.device_id
-              ? "This computer is registered to your account. Account presence updates while the app is open."
+              ? "This device is registered to your account."
               : "Signed in. Device registration will retry when the server is reachable."}
           </p>
           <div className="-mx-3.5 flex flex-wrap gap-2">
