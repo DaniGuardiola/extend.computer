@@ -315,6 +315,7 @@ if (
     "account-mfa-error",
     "account-recovery",
     "account-mfa-busy",
+    "account-mfa-key-error",
   ].includes(id)
 )
   accountState.pending = {
@@ -629,7 +630,9 @@ export async function invoke<T>(
       result = true;
       break;
     case "account_passkey":
-      if (id === "account-passkey-error") fail("Passkey sign-in was canceled.");
+      if (id === "account-passkey-error" || id === "account-mfa-key-error")
+        fail("Passkey sign-in was canceled.");
+      accountState.pending = null;
       accountState.email = "review@example.test";
       accountState.device_id = "this-device";
       result = { ...accountState };

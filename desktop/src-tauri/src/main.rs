@@ -223,18 +223,25 @@ fn account_passkey_available() -> bool {
 async fn account_passkey(
     app: tauri::AppHandle,
     state: AccountState<'_>,
+    second_factor: bool,
 ) -> Result<accounts::View, String> {
     let state = state.inner().clone();
     background(move || {
         #[cfg(target_os = "macos")]
         {
-            let (challenge, handle) = state.passkey_options()?;
-            let credential = passkey::sign_in(&app, &challenge)?;
-            state.passkey_login(handle, credential)
+            if second_factor {
+                let (ceremony, handle) = state.key_options()?;
+                let credential = passkey::sign_in(&app, &ceremony, false)?;
+                state.key_verify(handle, credential)
+            } else {
+                let (ceremony, handle) = state.passkey_options()?;
+                let credential = passkey::sign_in(&app, &ceremony, true)?;
+                state.passkey_login(handle, credential)
+            }
         }
         #[cfg(not(target_os = "macos"))]
         {
-            let _ = (app, state);
+            let _ = (app, state, second_factor);
             anyhow::bail!("Passkeys in the app are not available on this platform.")
         }
     })

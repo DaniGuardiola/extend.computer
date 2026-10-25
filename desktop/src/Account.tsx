@@ -201,7 +201,7 @@ export function AccountPanel({ account }: { account: AccountFlow }) {
             {state.pending.totp
               ? "one-time code or a recovery code"
               : "recovery code"}
-            .
+            {state.pending.keys && ", or a passkey or security key"}.
           </p>
           <form
             onSubmit={(event) => {
@@ -231,15 +231,24 @@ export function AccountPanel({ account }: { account: AccountFlow }) {
               Verify code
             </button>
           </form>
-          {state.pending.keys && (
-            <button
-              className="button quiet -ms-3.5"
-              disabled={busy}
-              onClick={() => void browser()}
-            >
-              <Fingerprint size={15} /> Use passkey or security key in browser
-            </button>
-          )}
+          {state.pending.keys &&
+            (passkeys && state.server === OFFICIAL_SERVER ? (
+              <button
+                className="button quiet -ms-3.5"
+                disabled={busy}
+                onClick={() => void act(() => accounts.passkey(true))}
+              >
+                <Fingerprint size={15} /> Use a passkey or security key
+              </button>
+            ) : (
+              <button
+                className="button quiet -ms-3.5"
+                disabled={busy}
+                onClick={() => void browser()}
+              >
+                <Fingerprint size={15} /> Use passkey or security key in browser
+              </button>
+            ))}
           <button
             className="button quiet -ms-3.5"
             disabled={busy}

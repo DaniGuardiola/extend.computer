@@ -5,6 +5,9 @@
 //! backed by an embedded provisioning profile, and the domain must list the
 //! app in its apple-app-site-association file. Builds without the profile
 //! (development builds, custom account servers) use browser sign-in instead.
+//!
+//! Each request offers both passkeys (iCloud Keychain, password managers,
+//! nearby phones) and hardware security keys, like a browser does.
 use anyhow::{bail, Context, Result};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use objc2::rc::Retained;
@@ -12,11 +15,19 @@ use objc2::runtime::{AnyObject, NSObject, NSObjectProtocol, ProtocolObject};
 use objc2::{define_class, msg_send, AllocAnyThread, DefinedClass, MainThreadOnly};
 use objc2_app_kit::NSWindow;
 use objc2_authentication_services::{
-    ASAuthorization, ASAuthorizationController, ASAuthorizationControllerDelegate,
+    ASAuthorization, ASAuthorizationAllSupportedPublicKeyCredentialDescriptorTransports,
+    ASAuthorizationController, ASAuthorizationControllerDelegate,
     ASAuthorizationControllerPresentationContextProviding,
     ASAuthorizationPlatformPublicKeyCredentialAssertion,
+    ASAuthorizationPlatformPublicKeyCredentialDescriptor,
     ASAuthorizationPlatformPublicKeyCredentialProvider,
-    ASAuthorizationPublicKeyCredentialAssertion, ASAuthorizationRequest, ASPublicKeyCredential,
+    ASAuthorizationPublicKeyCredentialAssertion,
+    ASAuthorizationPublicKeyCredentialAssertionRequest,
+    ASAuthorizationPublicKeyCredentialUserVerificationPreferencePreferred,
+    ASAuthorizationPublicKeyCredentialUserVerificationPreferenceRequired, ASAuthorizationRequest,
+    ASAuthorizationSecurityKeyPublicKeyCredentialAssertion,
+    ASAuthorizationSecurityKeyPublicKeyCredentialDescriptor,
+    ASAuthorizationSecurityKeyPublicKeyCredentialProvider, ASPublicKeyCredential,
 };
 use objc2_foundation::{MainThreadMarker, NSArray, NSData, NSError, NSString};
 use serde_json::{json, Value};
@@ -24,8 +35,7 @@ use std::cell::RefCell;
 use std::sync::mpsc;
 use tauri::Manager;
 
-/// The relying party the official account server registers passkeys under.
-pub const RELYING_PARTY: &str = "extend.computer";
+use crate::accounts::{Ceremony, RELYING_PARTY};
 
 /// Only builds signed with the Associated Domains profile can use passkeys;
 /// asking without it fails, so offer browser sign-in instead.
@@ -108,40 +118,74 @@ fn base64url(data: &NSData) -> String {
     URL_SAFE_NO_PAD.encode(data.to_vec())
 }
 
+fn assertion_json(
+    assertion: &ProtocolObject<dyn ASAuthorizationPublicKeyCredentialAssertion>,
+    attachment: &str,
+) -> Value {
+    let id = unsafe { base64url(&assertion.credentialID()) };
+    let user = unsafe { assertion.userID() };
+    let mut response = unsafe {
+        json!({
+            "authenticatorData": base64url(&assertion.rawAuthenticatorData()),
+            "clientDataJSON": base64url(&assertion.rawClientDataJSON()),
+            "signature": base64url(&assertion.signature()),
+        })
+    };
+    // Security keys used as a second factor need not store a user handle.
+    if !user.is_empty() {
+        response["userHandle"] = base64url(&user).into();
+    }
+    json!({
+        "id": id,
+        "rawId": id,
+        "type": "public-key",
+        "authenticatorAttachment": attachment,
+        "clientExtensionResults": {},
+        "response": response,
+    })
+}
+
 /// Shape the assertion like a browser's PublicKeyCredential JSON, which the
 /// account servers already verify.
 fn credential(authorization: &ASAuthorization) -> Result<Value, String> {
     let credential = unsafe { authorization.credential() };
     let object: &AnyObject = credential.as_ref();
-    let Some(assertion) =
+    if let Some(passkey) =
         object.downcast_ref::<ASAuthorizationPlatformPublicKeyCredentialAssertion>()
-    else {
-        return Err("The passkey response was not a sign-in assertion.".into());
-    };
-    let id = unsafe { base64url(&assertion.credentialID()) };
-    Ok(unsafe {
-        json!({
-            "id": id,
-            "rawId": id,
-            "type": "public-key",
-            "authenticatorAttachment": "platform",
-            "clientExtensionResults": {},
-            "response": {
-                "authenticatorData": base64url(&assertion.rawAuthenticatorData()),
-                "clientDataJSON": base64url(&assertion.rawClientDataJSON()),
-                "signature": base64url(&assertion.signature()),
-                "userHandle": base64url(&assertion.userID()),
-            },
-        })
-    })
+    {
+        return Ok(assertion_json(
+            ProtocolObject::from_ref(passkey),
+            "platform",
+        ));
+    }
+    if let Some(key) =
+        object.downcast_ref::<ASAuthorizationSecurityKeyPublicKeyCredentialAssertion>()
+    {
+        return Ok(assertion_json(
+            ProtocolObject::from_ref(key),
+            "cross-platform",
+        ));
+    }
+    Err("The passkey response was not a sign-in assertion.".into())
 }
 
-/// Ask the user to sign in with a passkey for `RELYING_PARTY`, answering the
-/// server's challenge. Blocks until the system sheet completes or is closed.
-pub fn sign_in(app: &tauri::AppHandle, challenge: &str) -> Result<Value> {
-    let challenge = URL_SAFE_NO_PAD
-        .decode(challenge.trim_end_matches('='))
+fn decode(value: &str) -> Option<Vec<u8>> {
+    URL_SAFE_NO_PAD.decode(value.trim_end_matches('=')).ok()
+}
+
+/// Ask the user to sign in with a passkey or security key for
+/// `RELYING_PARTY`, answering the server's challenge. Blocks until the system
+/// sheet completes or is closed. Second factors only need presence;
+/// first-factor passkeys must verify the user with a PIN or biometrics.
+pub fn sign_in(app: &tauri::AppHandle, request: &Ceremony, verify_user: bool) -> Result<Value> {
+    let challenge = decode(&request.challenge)
         .context("The account server sent an invalid passkey challenge.")?;
+    let allowed = request
+        .allowed
+        .iter()
+        .map(|id| decode(id))
+        .collect::<Option<Vec<_>>>()
+        .context("The account server sent an invalid credential.")?;
     let window = app
         .get_webview_window("main")
         .context("The app window is not available.")?;
@@ -161,14 +205,55 @@ pub fn sign_in(app: &tauri::AppHandle, challenge: &str) -> Result<Value> {
                 let _ = reply.send(Err("The app window is not available.".into()));
                 return;
             };
-            let provider =
-                ASAuthorizationPlatformPublicKeyCredentialProvider::initWithRelyingPartyIdentifier(
-                    ASAuthorizationPlatformPublicKeyCredentialProvider::alloc(),
-                    &NSString::from_str(RELYING_PARTY),
-                );
-            let request = provider
-                .createCredentialAssertionRequestWithChallenge(&NSData::with_bytes(&challenge));
-            let requests = NSArray::from_retained_slice(&[Retained::into_super(request)]);
+            let rp = NSString::from_str(RELYING_PARTY);
+            let challenge = NSData::with_bytes(&challenge);
+            let preference = if verify_user {
+                ASAuthorizationPublicKeyCredentialUserVerificationPreferenceRequired
+            } else {
+                ASAuthorizationPublicKeyCredentialUserVerificationPreferencePreferred
+            };
+            let passkeys = ASAuthorizationPlatformPublicKeyCredentialProvider::initWithRelyingPartyIdentifier(
+                ASAuthorizationPlatformPublicKeyCredentialProvider::alloc(),
+                &rp,
+            )
+            .createCredentialAssertionRequestWithChallenge(&challenge);
+            let keys = ASAuthorizationSecurityKeyPublicKeyCredentialProvider::initWithRelyingPartyIdentifier(
+                ASAuthorizationSecurityKeyPublicKeyCredentialProvider::alloc(),
+                &rp,
+            )
+            .createCredentialAssertionRequestWithChallenge(&challenge);
+            if let Some(preference) = preference {
+                passkeys.setUserVerificationPreference(preference);
+                keys.setUserVerificationPreference(preference);
+            }
+            if !allowed.is_empty() {
+                let transports = ASAuthorizationAllSupportedPublicKeyCredentialDescriptorTransports();
+                let platform: Vec<_> = allowed
+                    .iter()
+                    .map(|id| {
+                        ASAuthorizationPlatformPublicKeyCredentialDescriptor::initWithCredentialID(
+                            ASAuthorizationPlatformPublicKeyCredentialDescriptor::alloc(),
+                            &NSData::with_bytes(id),
+                        )
+                    })
+                    .collect();
+                let hardware: Vec<_> = allowed
+                    .iter()
+                    .map(|id| {
+                        ASAuthorizationSecurityKeyPublicKeyCredentialDescriptor::initWithCredentialID_transports(
+                            ASAuthorizationSecurityKeyPublicKeyCredentialDescriptor::alloc(),
+                            &NSData::with_bytes(id),
+                            &transports,
+                        )
+                    })
+                    .collect();
+                passkeys.setAllowedCredentials(&NSArray::from_retained_slice(&platform));
+                keys.setAllowedCredentials(&NSArray::from_retained_slice(&hardware));
+            }
+            let requests = NSArray::from_retained_slice(&[
+                Retained::into_super(passkeys),
+                Retained::into_super(keys),
+            ]);
             let controller = ASAuthorizationController::initWithAuthorizationRequests(
                 ASAuthorizationController::alloc(),
                 &requests as &NSArray<ASAuthorizationRequest>,

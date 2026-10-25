@@ -156,7 +156,9 @@ export const accounts = {
   remove: (id: string) => invoke<AccountState>("account_remove_device", { id }),
   cancel: () => invoke<AccountState>("account_cancel"),
   browser: () => invoke<AccountState>("account_browser_login"),
-  passkey: () => invoke<AccountState>("account_passkey"),
+  /** Sign in with a passkey, or answer the second-factor step with one. */
+  passkey: (secondFactor = false) =>
+    invoke<AccountState>("account_passkey", { secondFactor }),
   /** Only builds associated with extend.computer can use passkeys natively. */
   passkeyAvailable: () => invoke<boolean>("account_passkey_available"),
   open: (page: "signup" | "account" | "recover" | "account-servers") =>

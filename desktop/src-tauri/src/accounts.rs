@@ -20,6 +20,15 @@ use std::{
 use url::Url;
 use zeroize::Zeroizing;
 const OFFICIAL: &str = "https://extend.computer";
+/// The relying party the official account server registers passkeys under.
+pub const RELYING_PARTY: &str = "extend.computer";
+/// A passkey challenge from the account server.
+pub struct Ceremony {
+    pub challenge: String,
+    /// Credential IDs (base64url) the server accepts; empty lets the user
+    /// pick any passkey for the account.
+    pub allowed: Vec<String>,
+}
 // TODO(before release): point at the real custom account server documentation.
 const ACCOUNT_SERVER_DOCS: &str = "https://example.com/";
 #[derive(Clone, Default, Serialize)]
@@ -348,17 +357,43 @@ impl Accounts {
     }
     /// Native passkeys exist only for the official relying party; other
     /// servers sign in with passkeys through the browser.
-    pub fn passkey_options(&self) -> Result<(String, String)> {
+    fn native_passkeys(inner: &Inner) -> Result<()> {
+        ensure!(
+            inner.view.server == OFFICIAL,
+            "Use browser sign-in for passkeys on this account server."
+        );
+        Ok(())
+    }
+    /// Read the server's WebAuthn options: the challenge, the credentials it
+    /// accepts, and the handle that pairs them with the answer.
+    fn ceremony(options: Value, handle: Option<String>) -> Result<(Ceremony, String)> {
+        ensure!(
+            options["rpId"].as_str() == Some(RELYING_PARTY),
+            "The account server asked for a passkey from another website."
+        );
+        let challenge = options["challenge"]
+            .as_str()
+            .context("The account server did not send a passkey challenge.")?
+            .into();
+        let allowed = options["allowCredentials"]
+            .as_array()
+            .map(|list| {
+                list.iter()
+                    .filter_map(|c| c["id"].as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let handle = handle.context("The account server did not start a passkey sign-in.")?;
+        Ok((Ceremony { challenge, allowed }, handle))
+    }
+    pub fn passkey_options(&self) -> Result<(Ceremony, String)> {
         let mut inner = self.inner.lock().unwrap();
         Self::load(&mut inner)?;
         ensure!(
             inner.credential.is_none(),
             "Sign out before using another account."
         );
-        ensure!(
-            inner.view.server == OFFICIAL,
-            "Use browser sign-in for passkeys on this account server."
-        );
+        Self::native_passkeys(&inner)?;
         self.generation.fetch_add(1, Ordering::SeqCst);
         inner.view.browser_pending = false;
         let (options, handle) = self.send(
@@ -369,21 +404,44 @@ impl Accounts {
             None,
             None,
         )?;
-        ensure!(
-            options["rpId"].as_str() == Some("extend.computer"),
-            "The account server asked for a passkey from another website."
-        );
-        let challenge = options["challenge"]
-            .as_str()
-            .context("The account server did not send a passkey challenge.")?;
-        let handle = handle.context("The account server did not start a passkey sign-in.")?;
-        Ok((challenge.into(), handle))
+        Self::ceremony(options, handle)
     }
     pub fn passkey_login(&self, handle: String, credential: Value) -> Result<View> {
         let mut inner = self.inner.lock().unwrap();
         let (value, _) = self.send(
             &inner.view.server,
             "/passkeys/login/verify",
+            "POST",
+            Some(credential),
+            None,
+            Some(&handle),
+        )?;
+        self.accept_or_revoke(&mut inner, value)?;
+        drop(inner);
+        self.refresh()
+    }
+    /// Start the second-factor step with a passkey or security key.
+    pub fn key_options(&self) -> Result<(Ceremony, String)> {
+        let inner = self.inner.lock().unwrap();
+        Self::native_passkeys(&inner)?;
+        let ticket = inner.ticket.as_ref().context("Start sign-in again.")?;
+        let (options, handle) = self.send(
+            &inner.view.server,
+            "/auth/mfa/key/options",
+            "POST",
+            Some(json!({"ticket":ticket})),
+            None,
+            None,
+        )?;
+        Self::ceremony(options, handle)
+    }
+    pub fn key_verify(&self, handle: String, mut credential: Value) -> Result<View> {
+        let mut inner = self.inner.lock().unwrap();
+        let ticket = inner.ticket.clone().context("Start sign-in again.")?;
+        credential["ticket"] = ticket.into();
+        let (value, _) = self.send(
+            &inner.view.server,
+            "/auth/mfa/key/verify",
             "POST",
             Some(credential),
             None,
@@ -746,6 +804,31 @@ mod tests {
             assert!(response.contains("Cache-Control: no-store\r\n"));
             assert!(!response.contains("state=") && !response.contains("code="));
         }
+    }
+    #[test]
+    fn passkey_ceremony_keeps_allowed_credentials_for_the_official_site() {
+        let (ceremony, handle) = Accounts::ceremony(
+            json!({"rpId":"extend.computer","challenge":"abc","allowCredentials":[{"id":"key1"},{"id":"key2"}]}),
+            Some("handle".into()),
+        )
+        .unwrap();
+        assert_eq!(ceremony.challenge, "abc");
+        assert_eq!(ceremony.allowed, ["key1", "key2"]);
+        assert_eq!(handle, "handle");
+        let (discoverable, _) = Accounts::ceremony(
+            json!({"rpId":"extend.computer","challenge":"abc"}),
+            Some("handle".into()),
+        )
+        .unwrap();
+        assert!(discoverable.allowed.is_empty());
+        assert!(Accounts::ceremony(
+            json!({"rpId":"example.com","challenge":"abc"}),
+            Some("handle".into())
+        )
+        .is_err());
+        assert!(
+            Accounts::ceremony(json!({"rpId":"extend.computer","challenge":"abc"}), None).is_err()
+        );
     }
     #[test]
     fn server_origin_rejects_credentials_and_insecure_remote() {

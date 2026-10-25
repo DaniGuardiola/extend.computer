@@ -842,6 +842,14 @@ export const scenarios: Scenario[] = [
   ),
   s(
     "Account",
+    "account-mfa-key-error",
+    "Security key step failed",
+    "Native passkey or security key second factor was canceled.",
+    "Passkey sign-in was canceled",
+    [...account, button("Use a passkey or security key")],
+  ),
+  s(
+    "Account",
     "account-recovery",
     "Recovery code challenge",
     "Recovery-only challenge.",
