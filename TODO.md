@@ -36,3 +36,5 @@
 - [ ] Run `native/macos/tests/InputTests.swift` in a script and CI. It is not built anywhere; compiling it needs `InputModel.swift`, `EdgeLayout.swift`, `InputCapture.swift` and a stub for the helper's `output` function.
 
 - [ ] Take the peer's Wi-Fi/Ethernet link from the display session's own handshake, as keyboard and mouse sessions do. Display sessions still use the last background presence check, so the receiving Mac can lack the peer's link for a few seconds after a restart.
+
+- [ ] Confirm on hardware that changing an extended display's size keeps other monitors' color profiles (commit `4a804bac`): extend, change size, change back, and check that the LG ULTRAGEAR does not turn darker and warmer. A prototype with fixed sizes passed; the version that sends the settings' sizes is untested. If it still happens, fall back to recreating the virtual display on resize.
