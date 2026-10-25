@@ -753,7 +753,7 @@ export const scenarios: Scenario[] = [
     "account-server",
     "Custom account server",
     "Custom server address, shown when enabled.",
-    "Server address",
+    "accounts.example.com",
     [...account, { text: "Use a custom account server" }],
   ),
   s(

@@ -302,23 +302,25 @@ export function AccountPanel({ account }: { account: AccountFlow }) {
             or
             <span className="h-px flex-1 bg-line" />
           </div>
-          {passkeys && !custom && (
+          <div className="grid gap-2">
+            {passkeys && !custom && (
+              <button
+                className="button secondary w-full"
+                disabled={busy || !state}
+                onClick={() => void passkey()}
+              >
+                <Fingerprint size={15} aria-hidden="true" /> Sign in with a
+                passkey
+              </button>
+            )}
             <button
               className="button secondary w-full"
               disabled={busy || !state}
-              onClick={() => void passkey()}
+              onClick={() => void browser()}
             >
-              <Fingerprint size={15} aria-hidden="true" /> Sign in with a
-              passkey
+              <Globe size={15} aria-hidden="true" /> Sign in with your browser
             </button>
-          )}
-          <button
-            className="button secondary w-full"
-            disabled={busy || !state}
-            onClick={() => void browser()}
-          >
-            <Globe size={15} aria-hidden="true" /> Sign in with your browser
-          </button>
+          </div>
           <p className="text-center text-xs text-muted">
             Need an account?{" "}
             <button
@@ -352,9 +354,9 @@ export function AccountPanel({ account }: { account: AccountFlow }) {
               </button>
             </div>
             {custom && (
-              <label className="field grid gap-2">
-                Server address
+              <label className="field">
                 <input
+                  aria-label="Server address"
                   value={server}
                   onChange={(event) => setServer(event.target.value)}
                   placeholder="accounts.example.com"
