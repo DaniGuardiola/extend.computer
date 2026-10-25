@@ -26,3 +26,14 @@
 - [ ] Check whether display SRTP uses hardware AES in release builds. The `aes` 0.8 crate only enables ARMv8 AES instructions with `--cfg aes_armv8`, so str0m's rust-crypto SRTP may run software AES on Apple silicon and Android. Measure per-packet cost at high bitrates before changing build flags.
 
 - [ ] Before release: write documentation about custom account servers and point the desktop login's "Learn more" link at it (`ACCOUNT_SERVER_DOCS` in `desktop/src-tauri/src/accounts.rs`, currently `https://example.com/`).
+
+- [ ] Connection status, next steps after Wi-Fi/Ethernet detection: a live connection quality indicator (good/fair/poor from latency, loss and frame rate) with a friendlier detail view, suggestions only when quality drops (for example "Studio Mac is on Wi-Fi: try Ethernet or a USB cable"), and telling direct internet connections apart from the relay if the transport can.
+
+- [ ] Report the Android device's own link (Wi-Fi/Ethernet) in the Hello through `link::set_classifier`, so Mac explanations cover tablets too. Android currently reports none.
+
+- [ ] Use IPv6 link-local addresses for Mac-to-Mac cables. macOS takes about 20 seconds to self-assign an IPv4 address to a new cable (it waits for DHCP first), while `fe80::` addresses exist as soon as the link is up. Cable routes and mDNS are IPv4-only today, and IPv6 mDNS was disabled for a macOS issue that would need rechecking.
+
+- [ ] Run `native/macos/tests/InputTests.swift` in a script and CI. It is not built anywhere; compiling it needs `InputModel.swift`, `EdgeLayout.swift`, `InputCapture.swift` and a stub for the helper's `output` function.
+
+- [ ] `runtime::routes::tests::authenticated_usb_wins_over_faster_wifi` failed once under full-suite load (it passed when rerun). Its 100 ms simulated cable delay races the 400 ms fallback window; make it independent of scheduler load.
+
