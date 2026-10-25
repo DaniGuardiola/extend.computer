@@ -44,14 +44,18 @@ export function QualityDetails({ quality }: { quality: Quality }) {
     quality.latency_ms !== undefined &&
       `${quality.latency_ms < 1 ? "<1" : quality.latency_ms} ms round trip`,
     quality.loss_percent !== undefined &&
-      `${quality.loss_percent}% packets lost`,
+      (quality.loss_percent === 0
+        ? "no packets lost"
+        : `${quality.loss_percent}% packets lost`),
   ].filter(Boolean);
   return (
-    <span className="mb-1.5 flex items-center gap-1.5 font-medium">
-      <QualityBars level={quality.level} />
-      {levelText[quality.level]}
+    <span className="mb-2 block">
+      <span className="flex items-center gap-1.5 font-medium whitespace-nowrap">
+        <QualityBars level={quality.level} />
+        {levelText[quality.level]}
+      </span>
       {figures.length > 0 && (
-        <span className="font-normal opacity-80">· {figures.join(" · ")}</span>
+        <span className="mt-0.5 block opacity-80">{figures.join(" · ")}</span>
       )}
     </span>
   );
