@@ -65,7 +65,7 @@ export function Updates() {
           <span className="text-sm text-muted">Version {settings.version}</span>
         )}
         <button
-          className="button"
+          className="button outline"
           disabled={!settings?.available || busy}
           onClick={() => void check()}
         >

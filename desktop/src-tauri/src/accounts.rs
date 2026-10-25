@@ -20,6 +20,8 @@ use std::{
 use url::Url;
 use zeroize::Zeroizing;
 const OFFICIAL: &str = "https://extend.computer";
+// TODO(before release): point at the real custom account server documentation.
+const ACCOUNT_SERVER_DOCS: &str = "https://example.com/";
 #[derive(Clone, Default, Serialize)]
 pub struct View {
     pub server: String,
@@ -54,7 +56,14 @@ pub struct Accounts {
     settings: PathBuf,
 }
 fn origin(raw: &str) -> Result<String> {
-    let url = Url::parse(raw.trim()).context("Enter a valid account server URL.")?;
+    let raw = raw.trim();
+    // A bare host means HTTPS; full URLs keep their scheme.
+    let url = if raw.contains("://") {
+        Url::parse(raw)
+    } else {
+        Url::parse(&format!("https://{raw}"))
+    }
+    .context("Enter a valid account server address.")?;
     ensure!(
         url.username().is_empty()
             && url.password().is_none()
@@ -504,6 +513,10 @@ impl Accounts {
         inner.view.clone()
     }
     pub fn open_page(&self, page: String) -> Result<()> {
+        if page == "account-servers" {
+            open::that(ACCOUNT_SERVER_DOCS)?;
+            return Ok(());
+        }
         ensure!(
             matches!(page.as_str(), "signup" | "account" | "recover"),
             "Unknown account page."
@@ -668,6 +681,15 @@ mod tests {
     #[test]
     fn server_origin_rejects_credentials_and_insecure_remote() {
         assert!(origin("https://extend.computer").is_ok());
+        assert_eq!(
+            origin("accounts.example.test").unwrap(),
+            "https://accounts.example.test"
+        );
+        assert_eq!(
+            origin(" https://accounts.example.test/ ").unwrap(),
+            "https://accounts.example.test"
+        );
+        assert!(origin("http://accounts.example.test").is_err());
         assert!(origin("http://localhost:8080").is_ok());
         for url in [
             "http://example.com",

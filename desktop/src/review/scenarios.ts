@@ -36,7 +36,7 @@ const login = [
   ...account,
   { field: "Email", value: "review@example.test" },
   { field: "Password", value: "Review-only-password-2026" },
-  button("Log in"),
+  button("Sign in"),
 ] satisfies Step[];
 function s(
   group: string,
@@ -752,9 +752,9 @@ export const scenarios: Scenario[] = [
     "Account",
     "account-server",
     "Custom account server",
-    "Advanced server URL settings.",
-    "Server URL",
-    [...account, details("Account server")],
+    "Custom server address, shown when enabled.",
+    "Server address",
+    [...account, { text: "Use a custom account server" }],
   ),
   s(
     "Account",
@@ -794,7 +794,7 @@ export const scenarios: Scenario[] = [
     "Browser sign-in failed",
     "Browser handoff error in login dialog.",
     "Browser sign-in could not start",
-    [...account, button("Sign in with browser")],
+    [...account, button("Sign in with your browser")],
   ),
   s(
     "Account",

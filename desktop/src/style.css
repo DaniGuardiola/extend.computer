@@ -70,24 +70,32 @@
   .select-option svg {
     flex-shrink: 0;
   }
+  /* Every button variant has the same three states: hover, keyboard focus,
+     and a stronger pressed state. Buttons always use one of these variants. */
   .quiet {
-    @apply hover:bg-line/60 focus-visible:bg-line/60;
+    @apply enabled:hover:bg-line/60 enabled:focus-visible:bg-line/60 enabled:active:bg-line;
+  }
+  .outline {
+    @apply border border-control enabled:hover:bg-line/40 enabled:focus-visible:bg-line/40 enabled:active:bg-line/80;
   }
   .primary {
-    @apply bg-ink text-canvas hover:opacity-85 focus-visible:opacity-85;
+    @apply bg-ink text-canvas enabled:hover:opacity-85 enabled:focus-visible:opacity-85 enabled:active:opacity-70;
   }
   .destructive {
-    @apply bg-red-700 text-white enabled:hover:bg-red-800 enabled:focus-visible:bg-red-800;
+    @apply bg-red-700 text-white enabled:hover:bg-red-800 enabled:focus-visible:bg-red-800 enabled:active:bg-red-900;
   }
   .destructive-quiet {
-    @apply text-danger enabled:hover:bg-danger/10 enabled:focus-visible:bg-danger/10;
+    @apply text-danger enabled:hover:bg-danger/10 enabled:focus-visible:bg-danger/10 enabled:active:bg-danger/20;
   }
   .destructive:focus-visible,
   .destructive-quiet:focus-visible {
     outline-color: var(--color-danger);
   }
+  .link-button {
+    @apply inline-flex items-center gap-1 text-xs text-muted underline underline-offset-4 enabled:hover:text-ink enabled:focus-visible:text-ink enabled:active:opacity-70;
+  }
   .icon-button {
-    @apply flex size-8 items-center justify-center rounded-full hover:bg-line/60 focus-visible:bg-line/60;
+    @apply flex size-8 items-center justify-center rounded-full hover:bg-line/60 focus-visible:bg-line/60 enabled:active:bg-line;
   }
   @media (hover: hover) and (pointer: fine) {
     .device-card .device-settings {
@@ -114,7 +122,7 @@
     @apply min-w-0 rounded-lg border border-control bg-surface px-3 py-2.5 text-sm font-normal;
   }
   .device-action {
-    @apply flex min-h-20 flex-col items-center justify-center gap-2 rounded-lg px-2 py-3 text-center text-xs hover:bg-line/40 focus-visible:bg-line/40 disabled:cursor-default disabled:opacity-35 disabled:hover:bg-transparent disabled:focus-visible:bg-transparent;
+    @apply flex min-h-20 flex-col items-center justify-center gap-2 rounded-lg px-2 py-3 text-center text-xs hover:bg-line/40 focus-visible:bg-line/40 enabled:active:bg-line/80 disabled:cursor-default disabled:opacity-35 disabled:hover:bg-transparent disabled:focus-visible:bg-transparent;
   }
   .device-action[aria-disabled="true"] {
     @apply cursor-default opacity-35 hover:bg-transparent focus-visible:bg-transparent;

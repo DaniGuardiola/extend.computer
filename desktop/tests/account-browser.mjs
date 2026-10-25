@@ -97,7 +97,7 @@ await page
   .getByRole("button", { name: "Log in", exact: true })
   .click();
 const dialog = page.getByRole("dialog", { name: "Log in", exact: true });
-await dialog.getByRole("button", { name: /Create account on website/ }).click();
+await dialog.getByRole("button", { name: /Create an account/ }).click();
 assert.equal(
   await page.evaluate(() => window.__accountSmoke.calls.at(-1).page),
   "signup",
@@ -108,7 +108,7 @@ await dialog
 await dialog
   .getByLabel("Password", { exact: true })
   .fill("disposable-password");
-await dialog.getByRole("button", { name: "Log in", exact: true }).click();
+await dialog.getByRole("button", { name: "Sign in", exact: true }).click();
 await dialog
   .getByRole("textbox", { name: "Authenticator or recovery code", exact: true })
   .fill("123456");

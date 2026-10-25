@@ -5,6 +5,7 @@ import {
   RefreshCw,
   Trash2,
   ExternalLink,
+  Globe,
 } from "lucide-react";
 import {
   accounts,
@@ -14,6 +15,17 @@ import {
   type Peer,
 } from "./bridge";
 import { Dialog } from "./Dialog";
+
+const OFFICIAL_SERVER = "https://extend.computer";
+/** Matches the backend's origin check: a bare host means HTTPS. */
+function normalizeServer(value: string) {
+  const raw = value.trim().replace(/\/+$/, "");
+  return raw.includes("://") ? raw : `https://${raw}`;
+}
+/** HTTPS servers are shown as their host; others keep their scheme. */
+function displayServer(server: string) {
+  return server.replace(/^https:\/\//, "");
+}
 import { DeviceIcon } from "./DeviceIcon";
 import { TruncatedText } from "./TruncatedText";
 export function useAccount() {
@@ -74,26 +86,43 @@ export function AccountDialog({
 }
 export function AccountPanel({ account }: { account: AccountFlow }) {
   const { state, busy, error, act } = account;
+  const official = !state?.server || state.server === OFFICIAL_SERVER;
+  const [custom, setCustom] = useState(!official);
   const [server, setServer] = useState(
-    state?.server ?? "https://extend.computer",
+    official ? "" : displayServer(state.server),
   );
   useEffect(() => {
-    if (state?.server) setServer(state.server);
+    if (!state?.server) return;
+    const isOfficial = state.server === OFFICIAL_SERVER;
+    setCustom(!isOfficial);
+    setServer(isOfficial ? "" : displayServer(state.server));
   }, [state?.server]);
+  // The backend accepts a bare host (HTTPS assumed) or a full origin.
+  const chosen = custom && server.trim() ? server.trim() : OFFICIAL_SERVER;
+  async function useChosenServer() {
+    if (normalizeServer(chosen) !== state?.server)
+      await accounts.configure(chosen);
+  }
   async function login(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     const email = String(data.get("email"));
     const password = String(data.get("password"));
     await act(async () => {
-      if (server !== state?.server) await accounts.configure(server);
+      await useChosenServer();
       return accounts.login(email, password);
     });
   }
   async function browser() {
     await act(async () => {
-      if (server !== state?.server) await accounts.configure(server);
+      await useChosenServer();
       return accounts.browser();
+    });
+  }
+  async function openPage(page: "signup" | "recover") {
+    await act(async () => {
+      await useChosenServer();
+      return accounts.open(page);
     });
   }
   const problem = error || state?.error;
@@ -181,7 +210,7 @@ export function AccountPanel({ account }: { account: AccountFlow }) {
                 spellCheck={false}
               />
             </label>
-            <button className="button -ms-3.5" disabled={busy}>
+            <button className="button primary w-full" disabled={busy}>
               Verify code
             </button>
           </form>
@@ -211,71 +240,96 @@ export function AccountPanel({ account }: { account: AccountFlow }) {
                 name="email"
                 type="email"
                 autoComplete="username"
+                placeholder="you@example.com"
                 required
                 maxLength={254}
               />
             </label>
-            <label className="field grid gap-2">
-              Password
-              <input
-                name="password"
-                type="password"
-                autoComplete="current-password"
-                minLength={12}
-                maxLength={1024}
-                required
-              />
-            </label>
-            <button className="button -ms-3.5" disabled={busy || !state}>
-              {busy ? "Signing in…" : "Log in"}
+            <div className="grid gap-2">
+              <label className="field grid gap-2">
+                Password
+                <input
+                  name="password"
+                  type="password"
+                  autoComplete="current-password"
+                  minLength={12}
+                  maxLength={1024}
+                  required
+                />
+              </label>
+              <button
+                type="button"
+                className="link-button justify-self-end"
+                disabled={busy}
+                onClick={() => void openPage("recover")}
+              >
+                Forgot your password?
+                <ExternalLink size={12} aria-hidden="true" />
+              </button>
+            </div>
+            <button className="button primary w-full" disabled={busy || !state}>
+              {busy ? "Signing in…" : "Sign in"}
             </button>
           </form>
+          <div className="flex items-center gap-3 text-xs text-muted">
+            <span className="h-px flex-1 bg-line" />
+            or
+            <span className="h-px flex-1 bg-line" />
+          </div>
           <button
-            className="button quiet -ms-3.5"
+            className="button outline w-full"
             disabled={busy || !state}
             onClick={() => void browser()}
           >
-            <Fingerprint size={15} /> Sign in with browser
+            <Globe size={15} aria-hidden="true" /> Sign in with your browser
           </button>
-          <div className="flex flex-wrap gap-3">
+          <p className="text-center text-xs text-muted">
+            Need an account?{" "}
             <button
-              className="text-muted underline underline-offset-4"
+              type="button"
+              className="link-button"
               disabled={busy}
-              onClick={() => void act(() => accounts.open("signup"))}
+              onClick={() => void openPage("signup")}
             >
-              Create account on website{" "}
-              <ExternalLink className="inline" size={12} />
+              Create an account
+              <ExternalLink size={12} aria-hidden="true" />
             </button>
-            <button
-              className="text-muted underline underline-offset-4"
-              disabled={busy}
-              onClick={() => void act(() => accounts.open("recover"))}
-            >
-              Forgot password?
-            </button>
+          </p>
+          <div className="space-y-3 border-t border-line pt-4 text-xs">
+            <div className="flex items-center justify-between gap-3">
+              <label className="flex cursor-pointer items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={custom}
+                  disabled={busy}
+                  onChange={(event) => setCustom(event.target.checked)}
+                />
+                Use a custom account server
+              </label>
+              <button
+                type="button"
+                className="link-button"
+                onClick={() => void act(() => accounts.open("account-servers"))}
+              >
+                Learn more
+                <ExternalLink size={12} aria-hidden="true" />
+              </button>
+            </div>
+            {custom && (
+              <label className="field grid gap-2">
+                Server address
+                <input
+                  value={server}
+                  onChange={(event) => setServer(event.target.value)}
+                  placeholder="accounts.example.com"
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  disabled={busy}
+                />
+              </label>
+            )}
           </div>
-          <details className="text-xs text-muted">
-            <summary className="cursor-pointer">Account server</summary>
-            <label className="field mt-3 grid gap-2">
-              Server URL
-              <input
-                type="url"
-                value={server}
-                onChange={(e) => setServer(e.target.value)}
-                disabled={busy}
-              />
-            </label>
-            <button
-              className="button quiet -ms-3.5 mt-2"
-              disabled={busy}
-              onClick={() => void act(() => accounts.configure(server))}
-            >
-              Use server
-            </button>
-            <p className="mt-2">
-              Use your own HTTPS server, or localhost for development.
-            </p>
-          </details>
         </>
       )}
     </div>

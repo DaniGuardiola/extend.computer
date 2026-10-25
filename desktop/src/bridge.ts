@@ -156,7 +156,7 @@ export const accounts = {
   remove: (id: string) => invoke<AccountState>("account_remove_device", { id }),
   cancel: () => invoke<AccountState>("account_cancel"),
   browser: () => invoke<AccountState>("account_browser_login"),
-  open: (page: "signup" | "account" | "recover") =>
+  open: (page: "signup" | "account" | "recover" | "account-servers") =>
     invoke<void>("account_open_page", { page }),
 };
 
