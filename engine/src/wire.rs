@@ -197,8 +197,20 @@ impl Channel {
         self.read_budget = Duration::from_secs(120);
         Ok(())
     }
-    pub fn shutdown_write(&self) {
+    /// Half-close, then discard input until the peer closes or the limit passes.
+    pub fn close_after_peer(&mut self, limit: Duration) {
         let _ = self.stream.shutdown(std::net::Shutdown::Write);
+        let deadline = Instant::now() + limit;
+        let mut discard = [0; 4096];
+        while let Some(remaining) = deadline.checked_duration_since(Instant::now()) {
+            if self.stream.set_read_timeout(Some(remaining)).is_err() {
+                return;
+            }
+            match self.stream.read(&mut discard) {
+                Ok(0) | Err(_) => return,
+                Ok(_) => {}
+            }
+        }
     }
     pub fn active_timeout(&mut self) -> Result<()> {
         self.read_budget = Duration::from_secs(10);

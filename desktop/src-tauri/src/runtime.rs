@@ -837,29 +837,37 @@ impl Desktop {
         }
         self.approvals.cancel();
     }
-    /// The user's Disconnect. A receiving session wakes its read and keeps the
-    /// write side open so it can tell the sharing device not to reconnect;
+    /// The user's Disconnect. A receiving session ends at the sharing device's
+    /// next message (at most 500 ms apart) and tells it not to reconnect;
     /// other stops (receiving turned off, quitting) stay recoverable.
-    pub fn end_session(&self) {
-        {
+    pub fn end_session(self: &Arc<Self>) {
+        let id = {
             let mut i = self.inner.lock().unwrap();
-            if let Some(j) = i
+            match i
                 .job
                 .as_mut()
-                .filter(|j| j.view.kind == SessionKind::Incoming)
+                .filter(|j| j.view.kind == SessionKind::Incoming && j.socket.is_some())
             {
-                j.ended_locally = true;
-                j.cancelled.store(true, Ordering::SeqCst);
-                j.view.advance(Phase::Disconnecting);
-                if let Some(s) = &j.socket {
-                    let _ = s.shutdown(Shutdown::Read);
+                Some(j) => {
+                    j.ended_locally = true;
+                    j.view.advance(Phase::Disconnecting);
+                    j.view.id
                 }
-                drop(i);
-                self.approvals.cancel();
-                return;
+                None => {
+                    drop(i);
+                    return self.disconnect();
+                }
             }
-        }
-        self.disconnect();
+        };
+        self.approvals.cancel();
+        // A silent or stalled peer still ends here, without the notice.
+        let app = self.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_secs(3));
+            if app.ended_locally(id) {
+                app.disconnect();
+            }
+        });
     }
     fn ended_locally(&self, id: u64) -> bool {
         self.inner

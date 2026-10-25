@@ -489,19 +489,16 @@ fn serve_connection_pinned_inner(
     let mut session_control = false;
     let mut active_input = false;
     loop {
-        let message: Message = match channel.receive() {
-            Ok(message) => message,
-            Err(_) if cursor.ending() => {
-                // Disconnect only shut our read side. Tell the peer this was
-                // intentional, then give it time to read that before the
-                // socket closes and a reset could discard it.
-                let _ = channel.send(&Message::Close);
-                channel.shutdown_write();
-                std::thread::sleep(Duration::from_secs(1));
-                return Ok(());
-            }
-            Err(error) => return Err(error),
-        };
+        let message: Message = channel.receive()?;
+        if cursor.ending() {
+            // An active peer sends at least every 500 ms, so this is noticed
+            // promptly. Tell it the stop was intentional, then read until it
+            // hangs up: closing with unread input would reset the connection
+            // and discard the Close.
+            channel.send(&Message::Close)?;
+            channel.close_after_peer(Duration::from_secs(2));
+            return Ok(());
+        }
         ensure!(
             session_control || Instant::now() < deadline,
             "session expired"
@@ -1018,7 +1015,7 @@ mod remote_end_tests {
     use super::*;
     use std::sync::{
         atomic::{AtomicBool, Ordering},
-        mpsc, Arc,
+        Arc,
     };
     struct Receiver(Arc<AtomicBool>);
     impl CursorSink for Receiver {
@@ -1049,13 +1046,10 @@ mod remote_end_tests {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
         let ending = Arc::new(AtomicBool::new(false));
-        let (sockets, socket) = mpsc::channel();
         let server_ending = ending.clone();
         let worker = std::thread::spawn(move || {
-            let stream = listener.accept().unwrap().0;
-            sockets.send(stream.try_clone().unwrap()).unwrap();
             serve_connection_with_cursor(
-                stream,
+                listener.accept().unwrap().0,
                 &b,
                 &server_trust,
                 &mut None,
@@ -1073,21 +1067,31 @@ mod remote_end_tests {
         )
         .unwrap();
         client.request_input().unwrap();
-        client.probe().unwrap();
-        // The receiving app's Disconnect: mark the session as ending and wake
-        // the blocked read without closing the write side.
-        ending.store(true, Ordering::SeqCst);
-        socket
-            .recv()
-            .unwrap()
-            .shutdown(std::net::Shutdown::Read)
-            .unwrap();
-        let error = client.probe().unwrap_err();
+        // Stream cursor moves like a live session while the receiving user
+        // presses Disconnect, so unread input is in flight when it ends.
+        let started = std::time::Instant::now();
+        let error = loop {
+            if started.elapsed() > Duration::from_millis(200) {
+                ending.store(true, Ordering::SeqCst);
+            }
+            assert!(
+                started.elapsed() < Duration::from_secs(5),
+                "session never ended"
+            );
+            let result = (0..4)
+                .try_for_each(|_| client.queue_cursor(0.5, 0.5))
+                .and_then(|_| client.probe().map(|_| ()));
+            if let Err(error) = result {
+                break error;
+            }
+        };
         assert_eq!(
             error.downcast_ref::<EngineError>(),
-            Some(&EngineError::RemoteEnded)
+            Some(&EngineError::RemoteEnded),
+            "{error:#}"
         );
         assert!(!crate::error::is_connection_failure(&error));
+        drop(client);
         worker.join().unwrap().unwrap();
     }
 }
