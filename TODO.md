@@ -35,4 +35,4 @@
 
 - [ ] Run `native/macos/tests/InputTests.swift` in a script and CI. It is not built anywhere; compiling it needs `InputModel.swift`, `EdgeLayout.swift`, `InputCapture.swift` and a stub for the helper's `output` function.
 
-
+- [ ] Take the peer's Wi-Fi/Ethernet link from the display session's own handshake, as keyboard and mouse sessions do. Display sessions still use the last background presence check, so the receiving Mac can lack the peer's link for a few seconds after a restart.
