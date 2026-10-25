@@ -75,8 +75,8 @@
   .quiet {
     @apply enabled:hover:bg-line/60 enabled:focus-visible:bg-line/60 enabled:active:bg-line;
   }
-  .outline {
-    @apply border border-control enabled:hover:bg-line/40 enabled:focus-visible:bg-line/40 enabled:active:bg-line/80;
+  .secondary {
+    @apply border border-line enabled:hover:bg-line/40 enabled:focus-visible:bg-line/40 enabled:active:bg-line/80;
   }
   .primary {
     @apply bg-ink text-canvas enabled:hover:opacity-85 enabled:focus-visible:opacity-85 enabled:active:opacity-70;

@@ -77,7 +77,11 @@ export function AccountDialog({
     <Dialog
       title={account.state?.email ? "Your account" : "Log in"}
       onClose={() => {
-        if (!account.busy) onClose();
+        if (account.busy) return;
+        // Closing abandons an unfinished sign-in instead of leaving it waiting.
+        if (account.state?.browser_pending || account.state?.pending)
+          void account.act(() => accounts.cancel());
+        onClose();
       }}
     >
       <AccountPanel account={account} />
@@ -166,8 +170,8 @@ export function AccountPanel({ account }: { account: AccountFlow }) {
       ) : state?.browser_pending ? (
         <>
           <p>
-            Finish signing in in your browser. Passkeys, security keys, and
-            two-factor authentication work there.
+            Finish signing in in your browser. You'll be signed in here as soon
+            as you're done.
           </p>
           <button
             className="button quiet -ms-3.5"
@@ -277,7 +281,7 @@ export function AccountPanel({ account }: { account: AccountFlow }) {
             <span className="h-px flex-1 bg-line" />
           </div>
           <button
-            className="button outline w-full"
+            className="button secondary w-full"
             disabled={busy || !state}
             onClick={() => void browser()}
           >
@@ -295,7 +299,7 @@ export function AccountPanel({ account }: { account: AccountFlow }) {
               <ExternalLink size={12} aria-hidden="true" />
             </button>
           </p>
-          <div className="space-y-3 border-t border-line pt-4 text-xs">
+          <div className="space-y-3 pt-6 text-xs">
             <div className="flex items-center justify-between gap-3">
               <label className="flex cursor-pointer items-center gap-2">
                 <input
