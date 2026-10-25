@@ -76,7 +76,16 @@ pub fn query_presence(
     identity: &Identity,
     expected: &str,
 ) -> Result<Option<Presence>> {
-    Ok(query_presence_with_device_info(stream, identity, expected)?.map(|(status, _)| status))
+    Ok(query_presence_with_device_info(stream, identity, expected)?.map(|reply| reply.status))
+}
+
+/// Authenticated presence plus the peer's additive Hello metadata.
+#[derive(Debug)]
+pub struct PresenceReply {
+    pub status: Presence,
+    pub device_info: Option<crate::device_info::DeviceInfo>,
+    /// The peer's own physical link for this connection.
+    pub link: Option<crate::link::Link>,
 }
 
 /// Returns hardware metadata only after pinned identity and trusted presence succeed.
@@ -85,7 +94,7 @@ pub fn query_presence_with_device_info(
     mut stream: TcpStream,
     identity: &Identity,
     expected: &str,
-) -> Result<Option<(Presence, Option<crate::device_info::DeviceInfo>)>> {
+) -> Result<Option<PresenceReply>> {
     wire::configure(&stream)?;
     stream.write_all(MAGIC)?;
     stream.write_all(b"H")?;
@@ -109,7 +118,11 @@ pub fn query_presence_with_device_info(
         bail!(EngineError::RequestRejected)
     };
     status.validate()?;
-    Ok(Some((status, channel.remote_device_info().cloned())))
+    Ok(Some(PresenceReply {
+        status,
+        device_info: channel.remote_device_info().cloned(),
+        link: channel.remote_link(),
+    }))
 }
 
 #[cfg(test)]
@@ -148,10 +161,12 @@ mod tests {
         if !correct_pin {
             assert!(result.is_err());
         } else if known {
-            let (status, info) = result.unwrap().unwrap();
-            assert!(!status.receiving);
-            assert_eq!(status.name, "Remote");
-            assert_eq!(info, Some(crate::device_info::local_info()));
+            let reply = result.unwrap().unwrap();
+            assert!(!reply.status.receiving);
+            assert_eq!(reply.status.name, "Remote");
+            assert_eq!(reply.device_info, Some(crate::device_info::local_info()));
+            // Loopback connections report no physical link.
+            assert_eq!(reply.link, None);
         } else {
             assert!(result.unwrap().is_none());
         }

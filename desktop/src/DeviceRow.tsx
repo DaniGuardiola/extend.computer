@@ -10,7 +10,14 @@ import {
   Settings2,
   Unlink,
 } from "lucide-react";
-import { api, native, type Device, type Peer, type Snapshot } from "./bridge";
+import {
+  api,
+  native,
+  type Device,
+  type Link,
+  type Peer,
+  type Snapshot,
+} from "./bridge";
 import { DeviceIcon } from "./DeviceIcon";
 import { TruncatedText } from "./TruncatedText";
 import { Select } from "./Select";
@@ -77,11 +84,13 @@ export function DeviceRow({
     availabilityStyle.checking;
   const route = session?.route ?? peer.route;
   const sessionRoute = connected ? session?.route : undefined;
+  const localLink = sessionRoute === "local" ? session?.link : undefined;
+  const peerLink = sessionRoute === "local" ? peer.link : undefined;
   const routeLabel =
     sessionRoute === "usb"
       ? "USB"
       : sessionRoute === "local"
-        ? "Local network"
+        ? localLinkLabel(localLink, peerLink)
         : sessionRoute === "internet"
           ? "Internet relay"
           : undefined;
@@ -89,7 +98,7 @@ export function DeviceRow({
     sessionRoute === "usb"
       ? `Connected to ${peer.name} directly over a USB cable.`
       : sessionRoute === "local"
-        ? `Connected to ${peer.name} over your local network, by Wi-Fi or Ethernet.`
+        ? localExplanation(peer.name, localLink, peerLink)
         : `Connected to ${peer.name} through the internet relay. A local network or USB cable is faster.`;
   const canManageUsb =
     native &&
@@ -524,4 +533,31 @@ export function DeviceRow({
       )}
     </li>
   );
+}
+
+const linkName = { wifi: "Wi-Fi", ethernet: "Ethernet" } as const;
+/** Name the slowest known link; Wi-Fi on either end limits the session. */
+function localLinkLabel(local?: Link, remote?: Link) {
+  if (local === "wifi" || remote === "wifi") return "Wi-Fi";
+  if (local === "ethernet" && remote === "ethernet") return "Ethernet";
+  return "Local network";
+}
+function side(link?: Link) {
+  return link === "wifi" || link === "ethernet"
+    ? `on ${linkName[link]}`
+    : link === "other"
+      ? "on another network adapter"
+      : undefined;
+}
+function localExplanation(peer: string, local?: Link, remote?: Link) {
+  const mine = side(local);
+  const theirs = side(remote);
+  const base = `Connected to ${peer} over your local network.`;
+  if (mine && theirs)
+    return local === remote
+      ? `${base} Both devices are ${mine}.`
+      : `${base} This Mac is ${mine} and ${peer} is ${theirs}.`;
+  if (mine) return `${base} This Mac is ${mine}.`;
+  if (theirs) return `${base} ${peer} is ${theirs}.`;
+  return `${base} It may use Wi-Fi or Ethernet.`;
 }

@@ -130,6 +130,7 @@ pub struct Channel {
     protocol: u16,
     capabilities: Vec<String>,
     remote_device_info: Option<crate::device_info::DeviceInfo>,
+    remote_link: Option<crate::link::Link>,
 }
 
 impl Channel {
@@ -142,6 +143,7 @@ impl Channel {
             protocol: 0,
             capabilities: Vec::new(),
             remote_device_info: None,
+            remote_link: None,
         }
     }
     pub(crate) fn set_protocol(&mut self, protocol: u16, capabilities: Vec<String>) {
@@ -154,6 +156,16 @@ impl Channel {
     /// Remote presentation metadata from the authenticated compatibility exchange.
     pub fn remote_device_info(&self) -> Option<&crate::device_info::DeviceInfo> {
         self.remote_device_info.as_ref()
+    }
+    pub(crate) fn local_link(&self) -> Option<crate::link::Link> {
+        crate::link::of(&self.stream)
+    }
+    pub(crate) fn set_remote_link(&mut self, link: Option<crate::link::Link>) {
+        self.remote_link = link;
+    }
+    /// The peer's own physical link for this connection, if it reported one.
+    pub fn remote_link(&self) -> Option<crate::link::Link> {
+        self.remote_link
     }
     pub fn require_capability(&self, capability: &str) -> Result<()> {
         ensure!(

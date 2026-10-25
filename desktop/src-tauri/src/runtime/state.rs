@@ -24,6 +24,9 @@ pub struct Session {
     pub(super) phase: Phase,
     pub(super) peer: Option<String>,
     pub(super) route: Option<&'static str>,
+    /// This device's physical link for a local network session.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) link: Option<extend_computer_agent::link::Link>,
     pub(super) reconnecting: bool,
     pub(super) display: Option<extend_computer_agent::session::display::Mode>,
     pub(super) display_config: Option<extend_computer_agent::session::display::Config>,
@@ -69,6 +72,7 @@ mod tests {
                 phase: Phase::Connected,
                 peer: None,
                 route: None,
+                link: None,
                 reconnecting: false,
                 display: None,
                 display_config: None,
@@ -87,6 +91,7 @@ mod tests {
             phase: Phase::Connecting,
             peer: None,
             route: None,
+            link: None,
             reconnecting: false,
             display: None,
             display_config: None,
@@ -105,6 +110,7 @@ mod tests {
             phase: Phase::Connecting,
             peer: None,
             route: None,
+            link: None,
             reconnecting: false,
             display: None,
             display_config: None,

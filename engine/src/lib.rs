@@ -7,6 +7,7 @@ pub mod device_info;
 pub mod discovery;
 pub mod display;
 pub mod identity;
+pub mod link;
 pub mod local_network;
 pub mod low_jitter;
 pub mod pairing;

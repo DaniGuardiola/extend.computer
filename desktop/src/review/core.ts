@@ -219,6 +219,8 @@ const sessionIds = [
   "input-local",
   "input-incoming",
   "input-internet",
+  "input-wifi",
+  "input-ethernet",
   "extend",
   "mirror",
   "display-incoming",
@@ -266,9 +268,17 @@ if (sessionIds.includes(id)) {
         : ["usb-session", "input-usb"].includes(id)
           ? "usb"
           : "local",
+    link:
+      id === "input-wifi"
+        ? "wifi"
+        : id === "input-ethernet"
+          ? "ethernet"
+          : undefined,
     display,
     display_config: display ? config(display) : null,
   };
+  if (id === "input-wifi" || id === "input-ethernet")
+    snapshot.peers[0].link = "ethernet";
 }
 if (id.startsWith("usb-")) {
   snapshot.peers[0].name = "Studio Mac";

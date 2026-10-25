@@ -220,14 +220,22 @@ impl Desktop {
             |socket| query_presence_with_device_info(socket, identity, peer),
         );
         match result {
-            Ok((address, Some((status, info)), route)) => {
+            Ok((address, Some(reply), route)) => {
+                let status = reply.status;
                 // Re-check trust and update just the endpoint, preserving simultaneous UI edits.
                 if self.store()?.peer(peer)?.is_none() {
                     return Ok(false);
                 }
                 let _ = self.update_peer_name(peer, &status.name);
-                if let Some(info) = info {
+                if let Some(info) = reply.device_info {
                     let _ = self.update_peer_device_info(peer, info);
+                }
+                if route != Some("usb") {
+                    let mut links = self.peer_links.lock().unwrap();
+                    match reply.link {
+                        Some(link) => links.insert(peer.into(), link),
+                        None => links.remove(peer),
+                    };
                 }
                 let endpoint = SocketAddr::new(address.ip(), status.port).to_string();
                 let mut devices = self.devices.lock().unwrap();
@@ -293,9 +301,10 @@ impl Desktop {
                     .incompatible();
                 return Ok(false);
             }
-            if let Ok(Some((status, info))) = result {
+            if let Ok(Some(reply)) = result {
+                let status = reply.status;
                 if self.store()?.peer(peer)?.is_some() {
-                    if let Some(info) = info {
+                    if let Some(info) = reply.device_info {
                         let _ = self.update_peer_device_info(peer, info);
                     }
                     self.health

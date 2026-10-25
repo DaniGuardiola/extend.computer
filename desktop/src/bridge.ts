@@ -28,11 +28,14 @@ export type DisplayConfig = {
   codec: "h264" | "hevc";
   separate_cursor: boolean;
 };
+export type Link = "wifi" | "ethernet" | "other";
 export type Peer = Device & {
   id: string;
   device_info?: DeviceInfo | null;
   trust_source: "pairing" | "account";
   route?: "local" | "internet" | "usb" | null;
+  /** The peer's own physical link, reported over the local network. */
+  link?: Link;
   availability:
     "checking" | "online" | "receiving_off" | "offline" | "update_required";
 };
@@ -56,6 +59,8 @@ export type Snapshot = {
     phase: "connecting" | "approval" | "connected" | "disconnecting";
     peer: string | null;
     route?: "local" | "internet" | "usb" | null;
+    /** This device's physical link for a local network session. */
+    link?: Link;
     reconnecting?: boolean;
     display?: "extend" | "mirror" | null;
     display_config?: DisplayConfig | null;

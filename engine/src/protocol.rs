@@ -24,6 +24,9 @@ struct Hello {
     capabilities: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     device_info: Option<crate::device_info::DeviceInfo>,
+    /// The sender's physical link for this connection, for explanations only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    link: Option<crate::link::Link>,
 }
 fn negotiate(local: &Hello, remote: &Hello) -> Result<(u16, Vec<String>)> {
     if let Some(info) = &remote.device_info {
@@ -68,12 +71,14 @@ pub(crate) fn exchange(channel: &mut Channel) -> Result<()> {
         .map(String::from)
         .collect(),
         device_info: Some(crate::device_info::local_info()),
+        link: channel.local_link(),
     };
     channel.send(&local)?;
     let remote: Hello = channel.receive()?;
     let (version, capabilities) = negotiate(&local, &remote)?;
     channel.set_protocol(version, capabilities);
     channel.set_remote_device_info(remote.device_info);
+    channel.set_remote_link(remote.link);
     Ok(())
 }
 
@@ -87,6 +92,7 @@ mod tests {
             app_version: app.into(),
             capabilities: capabilities.iter().map(|c| (*c).into()).collect(),
             device_info: None,
+            link: None,
         }
     }
     #[test]

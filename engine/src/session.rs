@@ -11,7 +11,7 @@ use anyhow::{bail, ensure, Context, Result};
 use hkdf::Hkdf;
 pub use presence::{
     query_presence, query_presence_with_device_info, serve_presence, serve_presence_pinned,
-    Presence,
+    Presence, PresenceReply,
 };
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;

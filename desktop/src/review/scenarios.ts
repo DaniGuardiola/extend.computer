@@ -284,6 +284,20 @@ export const scenarios: Scenario[] = [
   ),
   s(
     "Sessions",
+    "input-wifi",
+    "Sharing over Wi-Fi",
+    "Local route where this Mac uses Wi-Fi and the other device Ethernet; hover the chip.",
+    "Wi-Fi",
+  ),
+  s(
+    "Sessions",
+    "input-ethernet",
+    "Sharing over Ethernet",
+    "Local route with both devices on Ethernet; hover the chip.",
+    "Ethernet",
+  ),
+  s(
+    "Sessions",
     "input-internet",
     "Sharing via relay",
     "Internet relay route label.",

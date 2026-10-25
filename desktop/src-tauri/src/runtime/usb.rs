@@ -264,9 +264,10 @@ impl Desktop {
                 }
                 Err(error)
             }
-            Ok(Some((status, info))) if route.current(self) => {
+            Ok(Some(reply)) if route.current(self) => {
+                let status = reply.status;
                 self.update_peer_name(peer, &status.name)?;
-                if let Some(info) = info {
+                if let Some(info) = reply.device_info {
                     let _ = self.update_peer_device_info(peer, info);
                 }
                 self.health

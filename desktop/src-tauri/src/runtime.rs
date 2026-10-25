@@ -101,6 +101,9 @@ pub struct Peer {
     pub trust_source: TrustSource,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub device_info: Option<extend_computer_agent::device_info::DeviceInfo>,
+    /// The peer's own physical link, as it reported over the local network.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub link: Option<extend_computer_agent::link::Link>,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -158,6 +161,7 @@ pub struct Desktop {
     device_info: Mutex<BTreeMap<String, extend_computer_agent::device_info::DeviceInfo>>,
     health: Mutex<BTreeMap<String, presence::Health>>,
     presence_addresses: Mutex<BTreeMap<String, SocketAddr>>,
+    peer_links: Mutex<BTreeMap<String, extend_computer_agent::link::Link>>,
     discovered_presence: Mutex<Vec<SocketAddr>>,
     inner: Mutex<Inner>,
     removals: Mutex<BTreeMap<String, String>>,
@@ -214,6 +218,7 @@ impl Desktop {
             devices: Mutex::new(devices),
             health: Mutex::new(BTreeMap::new()),
             presence_addresses: Mutex::new(BTreeMap::new()),
+            peer_links: Mutex::new(BTreeMap::new()),
             discovered_presence: Mutex::new(Vec::new()),
             approvals: Approvals::default(),
             removals: Mutex::new(removals),
@@ -419,6 +424,7 @@ impl Desktop {
                     route,
                     trust_source,
                     device_info: self.device_info.lock().unwrap().get(&id).cloned(),
+                    link: self.peer_links.lock().unwrap().get(&id).copied(),
                     id,
                 })
             })
@@ -681,6 +687,7 @@ impl Desktop {
                 phase: Phase::Connecting,
                 peer,
                 route: None,
+                link: None,
                 reconnecting: false,
                 display: None,
                 display_config: None,
@@ -719,6 +726,9 @@ impl Desktop {
                 None if socket.peer_addr()?.ip().is_loopback() => "internet",
                 None => "local",
             });
+            j.view.link = (j.view.route == Some("local"))
+                .then(|| extend_computer_agent::link::of(socket))
+                .flatten();
             eprintln!("Control transport: {}", j.view.route.unwrap());
         }
         Ok(())
