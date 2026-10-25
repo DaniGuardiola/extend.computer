@@ -19,7 +19,10 @@ const negotiated = {
 };
 
 test("changing quality preserves negotiated auto size, codec and cursor settings", () => {
-  const preferences = { ...preferencesFromConfig(negotiated), quality: "detail" };
+  const preferences = {
+    ...preferencesFromConfig(negotiated),
+    quality: "detail",
+  };
   assert.deepEqual(displayConfig("extend", preferences, negotiated), {
     ...negotiated,
     bitrate: 40_000_000,
@@ -39,7 +42,13 @@ test("connection choices do not advertise a larger size or higher frame rate", (
 });
 
 test("lowering settings does not lose the original profile during this connection", () => {
-  const lowered = { ...negotiated, width: 960, height: 540, fps: 30, retina: false };
+  const lowered = {
+    ...negotiated,
+    width: 960,
+    height: 540,
+    fps: 30,
+    retina: false,
+  };
   const options = connectionDisplayOptions(negotiated, lowered);
   assert.ok(options.sizes.includes("1920x1080"));
   assert.deepEqual(options.frameRates, [30, 60]);
@@ -47,13 +56,32 @@ test("lowering settings does not lose the original profile during this connectio
 });
 
 test("standard-density 30 FPS connections do not offer Retina or 60/120 FPS", () => {
-  const options = connectionDisplayOptions({ ...negotiated, fps: 30, retina: false });
+  const options = connectionDisplayOptions({
+    ...negotiated,
+    fps: 30,
+    retina: false,
+  });
   assert.deepEqual(options.frameRates, [30]);
   assert.equal(options.retina, false);
 });
 
 test("non-preset negotiated frame rates survive an unchanged apply", () => {
   const profile = { ...negotiated, fps: 50 };
-  assert.deepEqual(displayConfig("extend", preferencesFromConfig(profile), profile), profile);
+  assert.deepEqual(
+    displayConfig("extend", preferencesFromConfig(profile), profile),
+    profile,
+  );
   assert.deepEqual(connectionDisplayOptions(profile).frameRates, [30, 50]);
+});
+
+test("choosing a smaller size does not add new choices below it", () => {
+  const native = { ...negotiated, width: 1512, height: 949 };
+  const before = connectionDisplayOptions(native).sizes;
+  const chosen = before.find((size) => size !== "1512x949");
+  const [width, height] = chosen.split("x").map(Number);
+  assert.deepEqual(
+    connectionDisplayOptions(native, { ...native, width, height }).sizes,
+    before,
+  );
+  assert.deepEqual(before, ["1512x949", "1324x830", "1134x712", "946x594"]);
 });

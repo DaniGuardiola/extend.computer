@@ -43,23 +43,27 @@ export function connectionDisplayOptions(
   initial: DisplayConfig,
   current: DisplayConfig = initial,
 ) {
+  // A fixed ladder from the largest profile seen, so choosing a size never
+  // adds new choices below it.
+  const largest = [initial, current].reduce((a, b) =>
+    b.width * b.height > a.width * a.height ? b : a,
+  );
   const sizes = new Set<string>();
-  for (const profile of [initial, current]) {
-    for (const ratio of [1, 0.75, 0.5]) {
-      const width =
-        ratio === 1
-          ? profile.width
-          : Math.round((profile.width * ratio) / 2) * 2;
-      const height =
-        ratio === 1
-          ? profile.height
-          : Math.round((profile.height * ratio) / 2) * 2;
-      if (width >= 640 && height >= 480) sizes.add(`${width}x${height}`);
-    }
+  for (const ratio of [1, 0.875, 0.75, 0.625, 0.5]) {
+    // Scaled sizes stay even for the encoder; the full size is kept as is.
+    const even = (value: number) =>
+      ratio === 1 ? value : Math.round((value * ratio) / 2) * 2;
+    const width = even(largest.width);
+    const height = even(largest.height);
+    if (width >= 640 && height >= 480) sizes.add(`${width}x${height}`);
   }
+  for (const profile of [initial, current])
+    sizes.add(`${profile.width}x${profile.height}`);
   const maxFPS = Math.max(initial.fps, current.fps);
   return {
-    sizes: [...sizes],
+    sizes: [...sizes].sort(
+      (a, b) => Number(b.split("x")[0]) - Number(a.split("x")[0]),
+    ),
     frameRates: [...new Set([30, 60, 120, initial.fps, current.fps])]
       .filter((fps) => fps <= maxFPS)
       .sort((a, b) => a - b),
