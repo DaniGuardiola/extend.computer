@@ -105,9 +105,47 @@ bool ECDisplaySupported(void) {
 }
 // Creation runs on the main actor; the caller reads the reason right after.
 static const char *lastFailure;
+static char failureDetail[96];
 static void *Fail(const char *reason) {
     lastFailure = reason;
     return NULL;
+}
+static void *FailWithError(const char *reason, CGError error) {
+    snprintf(failureDetail, sizeof failureDetail, "%s, error %d", reason, (int)error);
+    return Fail(failureDetail);
+}
+static bool DisplayOnline(CGDirectDisplayID identifier) {
+    CGDirectDisplayID online[64]; uint32_t count = 0;
+    if (CGGetOnlineDisplayList(64, online, &count) != kCGErrorSuccess) return false;
+    for (uint32_t i = 0; i < count; i++) if (online[i] == identifier) return true;
+    return false;
+}
+// The new display's events arrive on this (main) run loop, so wait by running
+// it rather than sleeping.
+static void RunMainLoop(CFTimeInterval seconds) {
+    CFRunLoopRunInMode(kCFRunLoopDefaultMode, seconds, false);
+}
+// Turn off any restored mirror links and place the display right of the desktop.
+static CGError PlaceDisplay(CGDirectDisplayID identifier, CGFloat right, CGFloat top, const char **step) {
+    CGDisplayConfigRef config = NULL;
+    *step = "configuration not started";
+    CGError result = CGBeginDisplayConfiguration(&config);
+    if (result != kCGErrorSuccess) return result;
+    *step = "mirroring not cleared";
+    result = CGConfigureDisplayMirrorOfDisplay(config, identifier, kCGNullDirectDisplay);
+    CGDirectDisplayID online[64]; uint32_t count = 0;
+    if (result == kCGErrorSuccess && CGGetOnlineDisplayList(64, online, &count) == kCGErrorSuccess) {
+        for (uint32_t i = 0; i < count && result == kCGErrorSuccess; i++)
+            if (online[i] != identifier && CGDisplayMirrorsDisplay(online[i]) == identifier)
+                result = CGConfigureDisplayMirrorOfDisplay(config, online[i], kCGNullDirectDisplay);
+    }
+    if (result == kCGErrorSuccess) {
+        *step = "placement rejected";
+        result = CGConfigureDisplayOrigin(config, identifier, (int32_t)ceil(right), (int32_t)top);
+    }
+    if (result != kCGErrorSuccess) { CGCancelDisplayConfiguration(config); return result; }
+    *step = "placement not applied";
+    return CGCompleteDisplayConfiguration(config, kCGConfigureForAppOnly);
 }
 const char *ECDisplayLastFailure(void) { return lastFailure ? lastFailure : "unknown"; }
 void *ECDisplayCreate(uint32_t width, uint32_t height, bool retina, uint32_t fps, uint32_t *displayID) {
@@ -148,21 +186,19 @@ void *ECDisplayCreate(uint32_t width, uint32_t height, bool retina, uint32_t fps
         uint32_t identifier = ((uint32_t (*)(id, SEL))objc_msgSend)(display, NSSelectorFromString(@"displayID"));
         if (!applied) return Fail("settings not applied");
         if (identifier == 0) return Fail("no display ID assigned");
+        // macOS brings a new display online asynchronously; configuring it
+        // before then fails, which made the first attempt fail at random.
+        for (int i = 0; i < 100 && !DisplayOnline(identifier); i++) RunMainLoop(0.02);
         // macOS can restore a mirror group for a newly created monitor.
         // This adapter creates an extension; disable only its mirror links.
-        CGDisplayConfigRef config = NULL;
-        if (CGBeginDisplayConfiguration(&config) != kCGErrorSuccess) return Fail("configuration not started");
-        CGError result = CGConfigureDisplayMirrorOfDisplay(config, identifier, kCGNullDirectDisplay);
-        CGDirectDisplayID online[64]; uint32_t count = 0;
-        if (result == kCGErrorSuccess && CGGetOnlineDisplayList(64, online, &count) == kCGErrorSuccess) {
-            for (uint32_t i = 0; i < count && result == kCGErrorSuccess; i++)
-                if (online[i] != identifier && CGDisplayMirrorsDisplay(online[i]) == identifier)
-                    result = CGConfigureDisplayMirrorOfDisplay(config, online[i], kCGNullDirectDisplay);
+        const char *step = NULL;
+        CGError result = kCGErrorFailure;
+        for (int attempt = 0; attempt < 5; attempt++) {
+            if (attempt) RunMainLoop(0.1);
+            result = PlaceDisplay(identifier, desktopRight, mainBounds.origin.y, &step);
+            if (result == kCGErrorSuccess) break;
         }
-        if (result == kCGErrorSuccess)
-            result = CGConfigureDisplayOrigin(config, identifier, (int32_t)ceil(desktopRight), (int32_t)mainBounds.origin.y);
-        if (result != kCGErrorSuccess) { CGCancelDisplayConfiguration(config); return Fail("placement rejected"); }
-        if (CGCompleteDisplayConfiguration(config, kCGConfigureForAppOnly) != kCGErrorSuccess) return Fail("placement not applied");
+        if (result != kCGErrorSuccess) return FailWithError(step, result);
         *displayID = identifier;
         ECDisplayHandle *handle = [ECDisplayHandle new];
         handle.display = display;
