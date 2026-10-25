@@ -4,6 +4,7 @@ import { api, type DisplayConfig } from "./bridge";
 import { DisplaySettings } from "./DisplaySettings";
 import {
   displayConfig,
+  largestDisplayProfile,
   preferencesFromConfig,
   saveDisplayPreferences,
 } from "./displayPreferences";
@@ -23,7 +24,7 @@ export function DisplayConnectionSettings({
   refresh: () => Promise<void>;
   onError: (message: string) => void;
 }) {
-  const [initial] = useState(current);
+  const [initial] = useState(() => largestDisplayProfile(peer, current));
   const [value, setValue] = useState(() => preferencesFromConfig(current));
   const [busy, setBusy] = useState(false);
   return (

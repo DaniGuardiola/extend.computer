@@ -98,6 +98,44 @@ export function readDisplayPreferences(peer: string): DisplayPreferences {
   }
   return { ...displayDefaults };
 }
+/**
+ * The largest profile seen with this device. Applying a new size restarts the
+ * display session, so the choices are anchored here rather than to the
+ * session's first profile, which would be whatever size was last applied.
+ */
+export function largestDisplayProfile(
+  peer: string,
+  current: DisplayConfig,
+): DisplayConfig {
+  const key = `display-largest:${peer}`;
+  let largest = current;
+  try {
+    const saved = JSON.parse(localStorage.getItem(key) ?? "null");
+    if (
+      saved &&
+      [saved.width, saved.height, saved.fps].every(Number.isInteger) &&
+      typeof saved.retina === "boolean"
+    )
+      largest = {
+        ...current,
+        width:
+          saved.width * saved.height > current.width * current.height
+            ? saved.width
+            : current.width,
+        height:
+          saved.width * saved.height > current.width * current.height
+            ? saved.height
+            : current.height,
+        fps: Math.max(saved.fps, current.fps),
+        retina: saved.retina || current.retina,
+      };
+    const { width, height, fps, retina } = largest;
+    localStorage.setItem(key, JSON.stringify({ width, height, fps, retina }));
+  } catch {
+    /* Without storage, choices follow this session's profile. */
+  }
+  return largest;
+}
 export function saveDisplayPreferences(
   peer: string,
   value: DisplayPreferences,

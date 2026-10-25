@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   connectionDisplayOptions,
+  largestDisplayProfile,
   displayConfig,
   preferencesFromConfig,
 } from "../src/displayPreferences.ts";
@@ -84,4 +85,22 @@ test("choosing a smaller size does not add new choices below it", () => {
     before,
   );
   assert.deepEqual(before, ["1512x949", "1324x830", "1134x712", "946x594"]);
+});
+
+test("the largest profile per device survives applying a smaller size", () => {
+  const store = new Map();
+  globalThis.localStorage = {
+    getItem: (key) => store.get(key) ?? null,
+    setItem: (key, value) => store.set(key, String(value)),
+  };
+  const native = { ...negotiated, width: 1512, height: 949 };
+  assert.equal(largestDisplayProfile("peer", native).width, 1512);
+  const smaller = { ...native, width: 1134, height: 712, fps: 30 };
+  const largest = largestDisplayProfile("peer", smaller);
+  assert.deepEqual([largest.width, largest.height, largest.fps], [1512, 949, 60]);
+  assert.deepEqual(
+    connectionDisplayOptions(largest, smaller).sizes,
+    connectionDisplayOptions(native).sizes,
+  );
+  delete globalThis.localStorage;
 });
