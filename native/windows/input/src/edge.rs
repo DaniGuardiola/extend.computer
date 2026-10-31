@@ -1,5 +1,5 @@
 //! Edge crossing between this display and the peer's, a port of
-//! native/macos/EdgeLayout.swift. Coordinates are logical display points,
+//! native/macos/Input/EdgeLayout.swift. Coordinates are logical display points,
 //! not pixels. The remote top is `offset_y` points below the local top.
 use anyhow::{ensure, Result};
 

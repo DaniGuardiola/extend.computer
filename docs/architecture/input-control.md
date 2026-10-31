@@ -21,7 +21,7 @@ Release held keys and buttons before crossing. A remote drag stays on the receiv
 
 The wire window permits four pending input events. A probe acknowledges preceding events after four updates or when pending work reaches the acknowledgement interval. Sequence checks on the receiver reject unexpected ordering. Acknowledgement confirms receiver processing, not display presentation or input-to-photon latency.
 
-[`engine/src/session.rs`](../../engine/src/session.rs) owns authorization, messages, and pinned session behavior. [`engine/src/cursor.rs`](../../engine/src/cursor.rs) owns native helper startup and command acknowledgement. The native implementation is in [`InputReceiver.swift`](../../native/macos/InputReceiver.swift) and [`EdgeCapture.swift`](../../native/macos/EdgeCapture.swift).
+[`engine/src/session.rs`](../../engine/src/session.rs) owns authorization, messages, and pinned session behavior. [`engine/src/cursor.rs`](../../engine/src/cursor.rs) owns native helper startup and command acknowledgement. The native implementation is in [`InputReceiver.swift`](../../native/macos/Input/InputReceiver.swift) and [`EdgeCapture.swift`](../../native/macos/Input/EdgeCapture.swift).
 
 ## Liveness and recovery
 

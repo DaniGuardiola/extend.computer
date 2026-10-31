@@ -9,7 +9,7 @@ for arch in arm64 x86_64; do
     xcrun swiftc -O -module-cache-path "$PWD/target/DisplayModuleCache" -parse-as-library -sdk "$sdk" -target "$arch-apple-macosx13.0" \
         -import-objc-header native/macos/Display/VirtualDisplay.h "target/VirtualDisplay-$arch.o" \
         native/macos/Display/Metrics.swift native/macos/Display/BenchmarkMarker.swift native/macos/Display/VideoCodec.swift native/macos/Display/CaptureDiagnostics.swift native/macos/Display/CaptureStartupDeadline.swift native/macos/Display/CaptureLifecycle.swift native/macos/Display/Capture.swift \
-        native/macos/Display/Cursor.swift native/macos/Display/PresentationQueue.swift native/macos/Display/RenderReadiness.swift native/macos/InputModel.swift \
+        native/macos/Display/Cursor.swift native/macos/Display/PresentationQueue.swift native/macos/Display/RenderReadiness.swift native/macos/Input/InputModel.swift \
         native/macos/Display/ViewerInput.swift native/macos/Display/Viewer.swift native/macos/Display/Main.swift \
         -o "target/ExtendComputerDisplay-$arch"
 done
