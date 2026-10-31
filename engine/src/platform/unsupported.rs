@@ -1,10 +1,41 @@
-//! Explicit fallbacks until persistent identity and Wi-Fi adapters are implemented.
-use crate::identity::Identity;
+//! Explicit fallbacks until an OS implements an adapter. Unscoped sockets keep
+//! the normal system routing policy; unknown links and hardware stay neutral.
+use crate::{device_info::DeviceKind, identity::Identity, link::Link};
 use anyhow::Result;
+use std::net::IpAddr;
 
 #[cfg_attr(windows, allow(dead_code))]
 pub(crate) fn load_identity(_: &str) -> Result<Identity> {
     anyhow::bail!("persistent identity adapter not implemented on this OS")
+}
+
+#[cfg_attr(windows, allow(dead_code))]
+pub(crate) fn classify_link(_: IpAddr) -> Option<Link> {
+    None
+}
+
+#[cfg_attr(windows, allow(dead_code))]
+pub(crate) fn device_kind() -> Option<DeviceKind> {
+    None
+}
+
+pub mod local_network {
+    use socket2::SockRef;
+    use std::{
+        io,
+        net::{SocketAddr, TcpListener, TcpStream},
+        time::Duration,
+    };
+
+    pub fn connect_attached(_: &SocketAddr, _: Duration) -> io::Result<Option<TcpStream>> {
+        Ok(None)
+    }
+    pub fn scope_to_local_interface(_: SockRef<'_>) -> io::Result<()> {
+        Ok(())
+    }
+    pub fn bind_shared_listener(address: SocketAddr) -> io::Result<TcpListener> {
+        TcpListener::bind(address)
+    }
 }
 
 pub mod low_jitter {

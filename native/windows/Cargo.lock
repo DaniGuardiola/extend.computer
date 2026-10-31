@@ -644,6 +644,7 @@ dependencies = [
  "spake2",
  "str0m",
  "tempfile",
+ "windows-sys 0.61.2",
  "x25519-dalek",
  "zeroize",
 ]

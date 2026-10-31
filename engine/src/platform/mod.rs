@@ -7,8 +7,10 @@ mod unsupported;
 mod windows;
 
 #[cfg(target_os = "macos")]
-pub(crate) use macos::{load_identity, low_jitter};
+pub(crate) use macos::{classify_link, device_kind, load_identity, local_network, low_jitter};
 #[cfg(not(any(target_os = "macos", windows)))]
-pub(crate) use unsupported::{load_identity, low_jitter};
+pub(crate) use unsupported::{
+    classify_link, device_kind, load_identity, local_network, low_jitter,
+};
 #[cfg(windows)]
-pub(crate) use windows::{load_identity, low_jitter};
+pub(crate) use windows::{classify_link, device_kind, load_identity, local_network, low_jitter};
