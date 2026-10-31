@@ -130,6 +130,7 @@ mod windows_main {
         let frame_interval = AtomicU32::new(1_000_000 / fps);
         let mut force_keyframe = true;
         let mut last_encode = Instant::now() - IDLE_REFRESH;
+        let mut dirty = false;
         loop {
             loop {
                 match control.try_recv() {
@@ -176,13 +177,22 @@ mod windows_main {
                 }
             }
             let interval = Duration::from_micros(frame_interval.load(Ordering::SeqCst) as u64);
-            let changed = capture.next_frame(interval)?;
+            // A change seen before the frame interval is up waits for the next slot,
+            // so a fast-refreshing screen is still encoded at the configured rate.
+            let wait = if dirty {
+                interval.saturating_sub(last_encode.elapsed())
+            } else {
+                interval
+            };
+            dirty |= capture.next_frame(wait)?;
             if paused.load(Ordering::SeqCst) {
                 continue;
             }
-            if !changed && !force_keyframe && last_encode.elapsed() < IDLE_REFRESH {
+            let due = last_encode.elapsed() >= interval;
+            if !force_keyframe && !(dirty && due) && last_encode.elapsed() < IDLE_REFRESH {
                 continue;
             }
+            let started = Instant::now();
             let Some(slot) = capture.convert()? else {
                 continue;
             };
@@ -195,7 +205,9 @@ mod windows_main {
             for frame in encoder.encode(input, timestamp, std::mem::take(&mut force_keyframe))? {
                 output.packet(Kind::Frame, &frame::encode(&frame))?;
             }
-            last_encode = Instant::now();
+            // Pace from the start of the encode so its cost doesn't lower the rate.
+            last_encode = started;
+            dirty = false;
         }
     }
 
