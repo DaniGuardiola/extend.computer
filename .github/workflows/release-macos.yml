@@ -52,7 +52,7 @@ jobs:
   release:
     needs: version
     if: needs.version.outputs.changed == 'true'
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 45
     environment: desktop-release
     env:
