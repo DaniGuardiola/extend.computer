@@ -117,7 +117,7 @@ private final class InputReceiver {
             }
             if line == "ALIVE" { }
             else if line.hasPrefix("{") {
-                let packet = try JSONDecoder().decode(InputPacket.self, from: Data(line.utf8))
+                let packet = try InputPacket.decode(Data(line.utf8))
                 perform(try state.apply(packet))
             } else {
                 let parts = line.split(separator: " ")

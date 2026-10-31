@@ -15,6 +15,20 @@ struct InputPacket: Codable {
     var mask: Int? = nil
     var value: String? = nil
 
+    private static let fields: [String: Set<String>] = ["button": ["button", "down", "clicks"], "scroll": ["dx", "dy"],
+        "mac_key": ["code", "down", "repeat"], "modifiers": ["mask"], "text": ["value"], "release": []]
+
+    // Like the engine's InputEvent, a line carries exactly its kind's fields.
+    static func decode(_ line: Data) throws -> Self {
+        guard let object = try JSONSerialization.jsonObject(with: line) as? [String: Any],
+              let kind = object["kind"] as? String, let keys = fields[kind],
+              Set(object.keys) == keys.union(["kind"]),
+              // JSONDecoder reads 1.0 or 1e2 into an Int; the engine rejects them.
+              !object.values.contains(where: { ($0 as? NSNumber).map { CFNumberIsFloatType($0) } ?? false })
+        else { throw NSError(domain: "ExtendComputerInput", code: 1) }
+        return try JSONDecoder().decode(Self.self, from: line)
+    }
+
     func validate() throws {
         var valid = false
         switch kind {

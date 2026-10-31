@@ -1,6 +1,51 @@
 import Foundation
 import CoreGraphics
 
+extension EdgeSide: Decodable {}
+
+// native/shared/fixtures/edge-layout.json; native/windows/input/src/edge.rs
+// replays the same file through its port.
+struct EdgeFixture: Decodable {
+    struct Layout: Decodable {
+        let local: [Double]
+        let remote: [Double]
+        let side: EdgeSide
+        let offset_y: Double
+        func make() throws -> EdgeLayout {
+            try EdgeLayout(localWidth: local[0], localHeight: local[1], remoteWidth: remote[0],
+                           remoteHeight: remote[1], side: side, offsetY: offset_y)
+        }
+    }
+    struct Step: Decodable {
+        let motion: [Double]?
+        let exposed: Bool?
+        let allow_return: Bool?
+        let set_side: EdgeSide?
+        let cancel: Bool?
+        let expect: String?
+        let at: [Double]?
+        let side: EdgeSide?
+    }
+    struct Case: Decodable {
+        let name: String
+        let layout: Layout
+        let steps: [Step]
+    }
+    let invalid_layouts: [Layout]
+    let cases: [Case]
+}
+
+func matches(_ outcome: EdgeMotion, _ step: EdgeFixture.Step) -> Bool {
+    let (kind, point): (String, EdgePoint?) = switch outcome {
+    case .local: ("local", nil)
+    case .remote(let point): ("remote", point)
+    case .returned(let point): ("returned", point)
+    }
+    guard kind == step.expect else { return false }
+    guard let point, let at = step.at else { return point == nil && step.at == nil }
+    return abs(point.x - at[0]) < 1e-9 && abs(point.y - at[1]) < 1e-9
+}
+
 @main struct LayoutTests {
     static func main() throws {
         // Main external display above/right of the built-in laptop display.
@@ -14,58 +59,32 @@ import CoreGraphics
         precondition(edgeIsExposed(display: external, side: .left, y: 200, in: displays))
         precondition(!edgeIsExposed(display: laptop, side: .right, y: 127, in: displays))
         precondition(edgeIsExposed(display: laptop, side: .right, y: 1000, in: displays))
-        var secondary = try EdgeLayout(localWidth: laptop.bounds.width, localHeight: laptop.bounds.height,
-                                       remoteWidth: 1512, remoteHeight: 982, side: .left, offsetY: 0)
-        precondition(secondary.motion(local: EdgePoint(x: 0, y: 127), dx: -2, dy: 0, exposed: true) == .remote(EdgePoint(x: 1, y: 127.0 / 981)))
-        precondition(secondary.motion(local: EdgePoint(x: 0, y: 127), dx: 1, dy: 0, exposed: true) == .returned(EdgePoint(x: 4, y: 127)))
-        print("PASS secondary display selection, external/laptop seams, exposed outer edges, secondary handoff and return")
-        var left = try EdgeLayout(localWidth: 1920, localHeight: 1080, remoteWidth: 1280, remoteHeight: 800, side: .left, offsetY: 100)
-        precondition(left.motion(local: EdgePoint(x: 0, y: 50), dx: -2, dy: 0, exposed: true) == .local)
-        precondition(left.motion(local: EdgePoint(x: 0, y: 150), dx: -2, dy: 0, exposed: false) == .local)
-        precondition(left.motion(local: EdgePoint(x: 0, y: 150), dx: 2, dy: 0, exposed: true) == .local)
-        precondition(left.motion(local: EdgePoint(x: 0, y: 150), dx: -2, dy: 0, exposed: true) == .remote(EdgePoint(x: 1, y: 50.0 / 799)))
-        precondition(left.motion(local: EdgePoint(x: 0, y: 150), dx: -1279, dy: 0, exposed: true) == .remote(EdgePoint(x: 0, y: 50.0 / 799)))
-        precondition(left.motion(local: EdgePoint(x: 0, y: 150), dx: -50, dy: -1000, exposed: true) == .remote(EdgePoint(x: 0, y: 0)))
-        precondition(left.motion(local: EdgePoint(x: 0, y: 150), dx: 1280, dy: 60, exposed: true) == .returned(EdgePoint(x: 4, y: 160)))
-        precondition(left.motion(local: EdgePoint(x: 0, y: 160), dx: -2, dy: 0, exposed: true) == .local)
-        _ = left.motion(local: EdgePoint(x: 10, y: 160), dx: 10, dy: 0, exposed: true)
-        precondition(left.motion(local: EdgePoint(x: 0, y: 160), dx: -10, dy: 0, exposed: true) == .remote(EdgePoint(x: 1, y: 60.0 / 799)))
-        precondition(left.cancel() == EdgePoint(x: 4, y: 160))
-        precondition(left.cancel() == nil)
-        print("PASS left edge, unequal sizes, offset gap, exposed-edge check, direction, far-edge clamp, return height, hysteresis, cancel")
+        print("PASS secondary display selection, external/laptop seams, exposed outer edges")
 
-        var right = try EdgeLayout(localWidth: 1000, localHeight: 600, remoteWidth: 800, remoteHeight: 1200, side: .right, offsetY: -300)
-        precondition(right.motion(local: EdgePoint(x: 999, y: 200), dx: 2, dy: 0, exposed: true) == .remote(EdgePoint(x: 0, y: 500.0 / 1199)))
-        _ = right.motion(local: EdgePoint(x: 999, y: 200), dx: 10, dy: 600, exposed: true)
-        precondition(right.motion(local: EdgePoint(x: 999, y: 200), dx: -20, dy: 0, exposed: true) == .remote(EdgePoint(x: 0, y: 1100.0 / 1199)))
-        precondition(right.motion(local: EdgePoint(x: 999, y: 200), dx: -1, dy: -700, exposed: true) == .returned(EdgePoint(x: 995, y: 100)))
-        print("PASS right edge, negative offset, blocked return through non-overlap, valid return")
-
-        var live = try EdgeLayout(localWidth: 1000, localHeight: 600, remoteWidth: 800, remoteHeight: 600, side: .left, offsetY: 0)
-        live.setSide(.right)
-        precondition(live.side == .right)
-        _ = live.motion(local: EdgePoint(x: 999, y: 200), dx: 2, dy: 0, exposed: true)
-        let position = live.remotePosition
-        live.setSide(.left)
-        precondition(live.side == .right && live.remotePosition == position)
-        // Returning still uses the old edge; only subsequent crossings use the new one.
-        precondition(live.motion(local: EdgePoint(x: 999, y: 200), dx: -1, dy: 0, exposed: true) == .returned(EdgePoint(x: 995, y: 200)))
-        precondition(live.side == .left && live.remotePosition == nil)
-        _ = live.motion(local: EdgePoint(x: 990, y: 200), dx: -5, dy: 0, exposed: true)
-        _ = live.motion(local: EdgePoint(x: 0, y: 200), dx: -5, dy: 0, exposed: true)
-        precondition(live.remotePosition != nil)
-        live.setSide(.right)
-        live.setSide(.left)
-        _ = live.motion(local: EdgePoint(x: 0, y: 200), dx: 1, dy: 0, exposed: true)
-        precondition(live.side == .left && live.remotePosition == nil)
-        print("PASS live edge changes, deferred remote edits, unchanged return route, latest edit wins")
-
-        for sizes in [(0.0, 600.0, 800.0, 1200.0, 0.0), (1000, 600, 800, 1200, 600), (1000, 600, 800, 1200, -1200), (1000, 600, Double.nan, 1200, 0)] {
-            do {
-                _ = try EdgeLayout(localWidth: sizes.0, localHeight: sizes.1, remoteWidth: sizes.2, remoteHeight: sizes.3, side: .left, offsetY: sizes.4)
-                fatalError("Invalid layout accepted")
-            } catch {}
+        let decoder = JSONDecoder()
+        decoder.nonConformingFloatDecodingStrategy = .convertFromString(positiveInfinity: "inf", negativeInfinity: "-inf", nan: "nan")
+        let fixture = try decoder.decode(EdgeFixture.self, from: Data(contentsOf: URL(fileURLWithPath: "native/shared/fixtures/edge-layout.json")))
+        for layout in fixture.invalid_layouts {
+            do { _ = try layout.make(); fatalError("Invalid layout accepted: \(layout)") } catch {}
         }
-        print("PASS invalid and nonoverlapping layouts rejected")
+        for test in fixture.cases {
+            var layout = try test.layout.make()
+            for (index, step) in test.steps.enumerated() {
+                let outcome: EdgeMotion?
+                if let side = step.set_side {
+                    layout.setSide(side)
+                    outcome = nil
+                } else if step.cancel == true {
+                    outcome = layout.cancel().map(EdgeMotion.returned) ?? .local
+                } else {
+                    let m = step.motion!
+                    outcome = layout.motion(local: EdgePoint(x: m[0], y: m[1]), dx: m[2], dy: m[3],
+                                            exposed: step.exposed ?? true, allowReturn: step.allow_return ?? true)
+                }
+                if let outcome { precondition(matches(outcome, step), "\(test.name) step \(index): \(outcome)") }
+                if let side = step.side { precondition(layout.side == side, "\(test.name) step \(index): \(layout.side)") }
+            }
+        }
+        print("PASS \(fixture.cases.count) shared edge layout cases and \(fixture.invalid_layouts.count) invalid layouts")
     }
 }

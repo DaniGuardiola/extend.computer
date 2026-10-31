@@ -185,66 +185,102 @@ impl Layout {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::Value;
 
-    fn layout(side: Side) -> Layout {
-        Layout::new(1000.0, 800.0, 1201.0, 801.0, side, 0.0).unwrap()
+    /// Fixture numbers, with non-finite values written as strings.
+    fn number(value: &Value) -> f64 {
+        match value.as_str() {
+            Some("nan") => f64::NAN,
+            Some("inf") => f64::INFINITY,
+            Some("-inf") => f64::NEG_INFINITY,
+            _ => value.as_f64().unwrap(),
+        }
     }
 
-    #[test]
-    fn crosses_left_and_returns_on_the_far_side() {
-        let mut l = layout(Side::Left);
-        let at = Point { x: 1.0, y: 400.0 };
-        assert_eq!(l.motion(at, 3.0, 0.0, true, true), Motion::Local);
-        assert_eq!(
-            l.motion(at, -3.0, 0.0, true, true),
-            Motion::Remote(Point { x: 1.0, y: 0.5 })
-        );
-        assert_eq!(
-            l.motion(at, -600.0, 0.0, true, true),
-            Motion::Remote(Point { x: 0.5, y: 0.5 })
-        );
-        assert_eq!(
-            l.motion(at, 700.0, 0.0, true, true),
-            Motion::Returned(Point { x: 4.0, y: 400.0 })
-        );
-        // Re-entry waits until the pointer has moved away from the edge.
-        assert_eq!(l.motion(at, -3.0, 0.0, true, true), Motion::Local);
-        assert_eq!(
-            l.motion(Point { x: 10.0, y: 400.0 }, 0.0, 0.0, true, true),
-            Motion::Local
-        );
-        assert!(matches!(
-            l.motion(at, -3.0, 0.0, true, true),
-            Motion::Remote(_)
-        ));
+    fn layout(value: &Value) -> Result<Layout> {
+        let size = |key: &str, index: usize| number(&value[key][index]);
+        let side = Side::parse(value["side"].as_str().unwrap()).unwrap();
+        Layout::new(
+            size("local", 0),
+            size("local", 1),
+            size("remote", 0),
+            size("remote", 1),
+            side,
+            number(&value["offset_y"]),
+        )
     }
 
-    #[test]
-    fn right_edge_hidden_edges_and_held_buttons_stay_local() {
-        let mut l = layout(Side::Right);
-        let at = Point { x: 998.0, y: 10.0 };
-        assert_eq!(l.motion(at, 5.0, 0.0, false, true), Motion::Local);
-        assert!(matches!(
-            l.motion(at, 5.0, 0.0, true, true),
-            Motion::Remote(_)
-        ));
-        assert!(matches!(
-            l.motion(at, -50.0, 0.0, true, false),
-            Motion::Remote(_)
-        ));
-        assert_eq!(
-            l.motion(at, -50.0, 0.0, true, true),
-            Motion::Returned(Point { x: 995.0, y: 10.0 })
-        );
+    /// Plays one step; side changes have no outcome.
+    fn play(l: &mut Layout, step: &Value) -> Option<Motion> {
+        if let Some(side) = step["set_side"].as_str() {
+            l.set_side(Side::parse(side).unwrap());
+            return None;
+        }
+        if step["cancel"] == true {
+            return Some(l.cancel().map_or(Motion::Local, Motion::Returned));
+        }
+        let m: Vec<f64> = step["motion"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(number)
+            .collect();
+        Some(l.motion(
+            Point { x: m[0], y: m[1] },
+            m[2],
+            m[3],
+            step["exposed"].as_bool().unwrap_or(true),
+            step["allow_return"].as_bool().unwrap_or(true),
+        ))
     }
 
+    fn expected(step: &Value) -> Motion {
+        let at = || Point {
+            x: number(&step["at"][0]),
+            y: number(&step["at"][1]),
+        };
+        match step["expect"].as_str().unwrap() {
+            "local" => Motion::Local,
+            "remote" => Motion::Remote(at()),
+            "returned" => Motion::Returned(at()),
+            other => panic!("unknown outcome {other}"),
+        }
+    }
+
+    fn close(a: &Motion, b: &Motion) -> bool {
+        match (a, b) {
+            (Motion::Remote(a), Motion::Remote(b)) | (Motion::Returned(a), Motion::Returned(b)) => {
+                (a.x - b.x).abs() < 1e-9 && (a.y - b.y).abs() < 1e-9
+            }
+            _ => a == b,
+        }
+    }
+
+    /// native/macos/tests/LayoutTests.swift replays the same file through the
+    /// original EdgeLayout.swift.
     #[test]
-    fn side_changes_wait_for_return() {
-        let mut l = layout(Side::Left);
-        l.motion(Point { x: 0.0, y: 5.0 }, -1.0, 0.0, true, true);
-        l.set_side(Side::Right);
-        assert_eq!(l.side, Side::Left);
-        assert_eq!(l.cancel(), Some(Point { x: 4.0, y: 5.0 }));
-        assert!(Layout::new(10.0, 800.0, 1200.0, 800.0, Side::Left, 0.0).is_err());
+    fn replays_shared_fixture() {
+        let fixture: Value =
+            serde_json::from_str(include_str!("../../../shared/fixtures/edge-layout.json"))
+                .unwrap();
+        for value in fixture["invalid_layouts"].as_array().unwrap() {
+            assert!(layout(value).is_err(), "accepted {value}");
+        }
+        for case in fixture["cases"].as_array().unwrap() {
+            let mut l = layout(&case["layout"]).unwrap();
+            for (index, step) in case["steps"].as_array().unwrap().iter().enumerate() {
+                let name = format!("{} step {index}", case["name"]);
+                if let Some(outcome) = play(&mut l, step) {
+                    let expected = expected(step);
+                    assert!(
+                        close(&outcome, &expected),
+                        "{name}: {outcome:?}, expected {expected:?}"
+                    );
+                }
+                if let Some(side) = step["side"].as_str() {
+                    assert_eq!(Some(l.side), Side::parse(side), "{name}");
+                }
+            }
+        }
     }
 }

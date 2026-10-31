@@ -1,0 +1,200 @@
+{
+  "about": "EdgeLayout cases. native/macos/Input/EdgeLayout.swift is the reference; native/macos/tests/LayoutTests.swift and native/windows/input/src/edge.rs replay this file. Layouts are logical points: local and remote are [width, height] and the remote top is offset_y below the local top. A step is a motion [x, y, dx, dy] (exposed and allow_return default to true), a set_side or a cancel. expect is local, remote (at is the normalized remote position) or returned (at is the local point); a cancel with nothing to cancel expects local. side, when present, is checked after the step. Non-finite numbers are written as \"nan\", \"inf\" or \"-inf\"; positions compare within 1e-9.",
+  "invalid_layouts": [
+    {"local": [0, 600], "remote": [800, 1200], "side": "left", "offset_y": 0},
+    {"local": [10, 800], "remote": [1200, 800], "side": "left", "offset_y": 0},
+    {"local": [1000, 600], "remote": [32769, 1200], "side": "left", "offset_y": 0},
+    {"local": [1000, 600], "remote": ["nan", 1200], "side": "left", "offset_y": 0},
+    {"local": [1000, "inf"], "remote": [800, 1200], "side": "left", "offset_y": 0},
+    {"local": [1000, 600], "remote": [800, 1200], "side": "left", "offset_y": "inf"},
+    {"local": [1000, 600], "remote": [800, 1200], "side": "left", "offset_y": 600},
+    {"local": [1000, 600], "remote": [800, 1200], "side": "left", "offset_y": -1200}
+  ],
+  "cases": [
+    {
+      "name": "laptop left edge hands off to a secondary Mac and returns",
+      "layout": {"local": [1728, 1117], "remote": [1512, 982], "side": "left", "offset_y": 0},
+      "steps": [
+        {"motion": [0, 127, -2, 0], "expect": "remote", "at": [1, 0.12945973496432212]},
+        {"motion": [0, 127, 1, 0], "expect": "returned", "at": [4, 127]}
+      ]
+    },
+    {
+      "name": "left edge with an offset gap, direction, exposure, clamps, return height, re-arming and cancel",
+      "layout": {"local": [1920, 1080], "remote": [1280, 800], "side": "left", "offset_y": 100},
+      "steps": [
+        {"motion": [0, 50, -2, 0], "expect": "local"},
+        {"motion": [0, 150, -2, 0], "exposed": false, "expect": "local"},
+        {"motion": [0, 150, 2, 0], "expect": "local"},
+        {"motion": [0, 150, -2, 0], "expect": "remote", "at": [1, 0.0625782227784731]},
+        {"motion": [0, 150, -1279, 0], "expect": "remote", "at": [0, 0.0625782227784731]},
+        {"motion": [0, 150, -50, -1000], "expect": "remote", "at": [0, 0]},
+        {"motion": [0, 150, 1280, 60], "expect": "returned", "at": [4, 160]},
+        {"motion": [0, 160, -2, 0], "expect": "local"},
+        {"motion": [10, 160, 10, 0], "expect": "local"},
+        {"motion": [0, 160, -10, 0], "expect": "remote", "at": [1, 0.07509386733416772]},
+        {"cancel": true, "expect": "returned", "at": [4, 160]},
+        {"cancel": true, "expect": "local"}
+      ]
+    },
+    {
+      "name": "right edge with a negative offset blocks returning outside the local display",
+      "layout": {"local": [1000, 600], "remote": [800, 1200], "side": "right", "offset_y": -300},
+      "steps": [
+        {"motion": [999, 200, 2, 0], "expect": "remote", "at": [0, 0.4170141784820684]},
+        {"motion": [999, 200, 10, 600], "expect": "remote", "at": [0.012515644555694618, 0.9174311926605505]},
+        {"motion": [999, 200, -20, 0], "expect": "remote", "at": [0, 0.9174311926605505]},
+        {"motion": [999, 200, -1, -700], "expect": "returned", "at": [995, 100]}
+      ]
+    },
+    {
+      "name": "side changes apply at once while local and wait for the return while remote; the latest edit wins",
+      "layout": {"local": [1000, 600], "remote": [800, 600], "side": "left", "offset_y": 0},
+      "steps": [
+        {"set_side": "right", "side": "right"},
+        {"motion": [999, 200, 2, 0], "expect": "remote", "at": [0, 0.333889816360601]},
+        {"set_side": "left", "side": "right"},
+        {"motion": [999, 200, 0, 0], "expect": "remote", "at": [0, 0.333889816360601]},
+        {"motion": [999, 200, -1, 0], "expect": "returned", "at": [995, 200], "side": "left"},
+        {"motion": [990, 200, -5, 0], "expect": "local"},
+        {"motion": [0, 200, -5, 0], "expect": "remote", "at": [1, 0.333889816360601]},
+        {"set_side": "right", "side": "left"},
+        {"set_side": "left", "side": "left"},
+        {"motion": [0, 200, 1, 0], "expect": "returned", "at": [4, 200], "side": "left"}
+      ]
+    },
+    {
+      "name": "cancel returns through the edge the pointer left by",
+      "layout": {"local": [1000, 800], "remote": [1201, 801], "side": "left", "offset_y": 0},
+      "steps": [
+        {"motion": [0, 5, -1, 0], "expect": "remote", "at": [1, 0.00625]},
+        {"set_side": "right", "side": "left"},
+        {"cancel": true, "expect": "returned", "at": [4, 5]}
+      ]
+    },
+    {
+      "name": "left edge crosses outward only, returns past the far side and re-arms after moving away",
+      "layout": {"local": [1000, 800], "remote": [1201, 801], "side": "left", "offset_y": 0},
+      "steps": [
+        {"motion": [1, 400, 3, 0], "expect": "local"},
+        {"motion": [1, 400, -3, 0], "expect": "remote", "at": [1, 0.5]},
+        {"motion": [1, 400, -600, 0], "expect": "remote", "at": [0.5, 0.5]},
+        {"motion": [1, 400, 700, 0], "expect": "returned", "at": [4, 400]},
+        {"motion": [1, 400, -3, 0], "expect": "local"},
+        {"motion": [10, 400, 0, 0], "expect": "local"},
+        {"motion": [1, 400, -3, 0], "expect": "remote", "at": [1, 0.5]}
+      ]
+    },
+    {
+      "name": "left edge arms again only past 6 points",
+      "layout": {"local": [1000, 800], "remote": [1201, 801], "side": "left", "offset_y": 0},
+      "steps": [
+        {"motion": [2, 400, -1, 0], "expect": "local"},
+        {"motion": [1, 400, -1, 0], "expect": "remote", "at": [1, 0.5]},
+        {"cancel": true, "expect": "returned", "at": [4, 400]},
+        {"motion": [6, 400, -1, 0], "expect": "local"},
+        {"motion": [1, 400, -1, 0], "expect": "local"},
+        {"motion": [7, 400, 0, 0], "expect": "local"},
+        {"motion": [1, 400, -1, 0], "expect": "remote", "at": [1, 0.5]}
+      ]
+    },
+    {
+      "name": "right edge arms again only 7 points inside",
+      "layout": {"local": [1000, 800], "remote": [1201, 801], "side": "right", "offset_y": 0},
+      "steps": [
+        {"motion": [997, 400, 1, 0], "expect": "local"},
+        {"motion": [998, 400, 1, 0], "expect": "remote", "at": [0, 0.5]},
+        {"motion": [998, 400, -1, 0], "expect": "returned", "at": [995, 400]},
+        {"motion": [999, 400, 1, 0], "expect": "local"},
+        {"motion": [993, 400, 0, 0], "expect": "local"},
+        {"motion": [998, 400, 1, 0], "expect": "local"},
+        {"motion": [992, 400, 0, 0], "expect": "local"},
+        {"motion": [998, 400, 1, 0], "expect": "remote", "at": [0, 0.5]}
+      ]
+    },
+    {
+      "name": "hidden right edge stays local and a held button keeps the pointer remote",
+      "layout": {"local": [1000, 800], "remote": [1201, 801], "side": "right", "offset_y": 0},
+      "steps": [
+        {"motion": [998, 10, 5, 0], "exposed": false, "expect": "local"},
+        {"motion": [998, 10, 5, 0], "expect": "remote", "at": [0, 0.0125]},
+        {"motion": [998, 10, -50, 0], "allow_return": false, "expect": "remote", "at": [0, 0.0125]},
+        {"motion": [998, 10, -50, 0], "expect": "returned", "at": [995, 10]}
+      ]
+    },
+    {
+      "name": "a held button keeps the pointer remote at the far edge",
+      "layout": {"local": [1512, 982], "remote": [1728, 1117], "side": "left", "offset_y": 0},
+      "steps": [
+        {"motion": [0, 400, -1, 0], "expect": "remote", "at": [1, 0.35842293906810035]},
+        {"motion": [0, 400, 100, 0], "allow_return": false, "expect": "remote", "at": [1, 0.35842293906810035]},
+        {"motion": [0, 400, 1, 0], "expect": "returned", "at": [4, 400]}
+      ]
+    },
+    {
+      "name": "exposure only gates entering, and non-finite motion is ignored",
+      "layout": {"local": [1000, 800], "remote": [1201, 801], "side": "left", "offset_y": 0},
+      "steps": [
+        {"motion": [0, 400, -1, 0], "exposed": false, "expect": "local"},
+        {"motion": [0, 400, "-inf", 0], "expect": "local"},
+        {"motion": [0, 400, -1, 0], "expect": "remote", "at": [1, 0.5]},
+        {"motion": [0, 400, "nan", 0], "expect": "local"},
+        {"motion": [0, 400, -600, 0], "exposed": false, "expect": "remote", "at": [0.5, 0.5]},
+        {"motion": [0, 400, 601, 0], "exposed": false, "expect": "returned", "at": [4, 400]}
+      ]
+    },
+    {
+      "name": "the vertical overlap is half-open and cancel keeps the remote height",
+      "layout": {"local": [1920, 1080], "remote": [1280, 800], "side": "left", "offset_y": 100},
+      "steps": [
+        {"motion": [0, 99, -1, 0], "expect": "local"},
+        {"motion": [0, 900, -1, 0], "expect": "local"},
+        {"motion": [0, 100, -1, 0], "expect": "remote", "at": [1, 0]},
+        {"cancel": true, "expect": "returned", "at": [4, 100]},
+        {"motion": [10, 100, 0, 0], "expect": "local"},
+        {"motion": [0, 899, -1, 0], "expect": "remote", "at": [1, 1]},
+        {"motion": [0, 899, 0, 5000], "expect": "remote", "at": [1, 1]},
+        {"cancel": true, "expect": "returned", "at": [4, 899]}
+      ]
+    },
+    {
+      "name": "a remote display taller than the local one enters only within the local display and cancel clamps into it",
+      "layout": {"local": [1000, 600], "remote": [800, 1200], "side": "right", "offset_y": -300},
+      "steps": [
+        {"motion": [999, 600, 1, 0], "expect": "local"},
+        {"motion": [999, -1, 1, 0], "expect": "local"},
+        {"motion": [999, 0, 1, 0], "expect": "remote", "at": [0, 0.25020850708924103]},
+        {"motion": [999, 0, 0, -400], "expect": "remote", "at": [0, 0]},
+        {"cancel": true, "expect": "returned", "at": [995, 0]},
+        {"motion": [990, 0, 0, 0], "expect": "local"},
+        {"motion": [999, 599, 1, 0], "expect": "remote", "at": [0, 0.749791492910759]},
+        {"motion": [999, 599, 0, 1000], "expect": "remote", "at": [0, 1]},
+        {"cancel": true, "expect": "returned", "at": [995, 599]}
+      ]
+    },
+    {
+      "name": "a one-point overlap at the local bottom is enough",
+      "layout": {"local": [1000, 600], "remote": [800, 1200], "side": "left", "offset_y": 599},
+      "steps": [
+        {"motion": [0, 598, -1, 0], "expect": "local"},
+        {"motion": [0, 599, -1, 0], "expect": "remote", "at": [1, 0]}
+      ]
+    },
+    {
+      "name": "a one-point overlap at the local top is enough",
+      "layout": {"local": [1000, 600], "remote": [800, 1200], "side": "left", "offset_y": -1199},
+      "steps": [
+        {"motion": [0, 1, -1, 0], "expect": "local"},
+        {"motion": [0, 0, -1, 0], "expect": "remote", "at": [1, 1]}
+      ]
+    },
+    {
+      "name": "display sizes from 16 to 32768 points are accepted",
+      "layout": {"local": [16, 16], "remote": [32768, 32768], "side": "left", "offset_y": 0},
+      "steps": [
+        {"motion": [0, 8, -1, 0], "expect": "remote", "at": [1, 0.00024414807580797754]},
+        {"motion": [0, 8, 1, 0], "expect": "returned", "at": [4, 8]}
+      ]
+    }
+  ]
+}

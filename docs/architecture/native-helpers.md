@@ -11,6 +11,8 @@ The app does capture, encoding and input through two helper executables per plat
 
 Every helper exits on stdin EOF and releases anything it holds first: pressed keys and buttons, a virtual display.
 
+Wire input events and edge-crossing cases are pinned by `native/shared/fixtures/`, which the engine, the Windows input helper and the macOS Swift tests all replay.
+
 ## Input helper
 
 Spawned by [`engine/src/cursor.rs`](../../engine/src/cursor.rs). A command writes one line and waits for exactly one reply line.

@@ -67,6 +67,7 @@ jobs:
             windows:
               - 'desktop/src-tauri/**'
               - 'engine/**'
+              - 'native/shared/**'
               - 'native/windows/**'
               - '.cargo/**'
               - 'Cargo.toml'
@@ -75,6 +76,7 @@ jobs:
               - '.github/workflows/checks.yml'
             core:
               - 'engine/**'
+              - 'native/shared/**'
               - 'native/android/engine/**'
               - '.cargo/**'
               - 'Cargo.toml'
@@ -197,6 +199,8 @@ jobs:
           cargo test --locked
           cargo test --manifest-path desktop/src-tauri/Cargo.toml --locked
           python3 scripts/test-release.py
+          sh scripts/macos/test-edge-layout.sh
+          sh scripts/macos/test-input-model.sh
   result:
     # Preserve the existing required check name, including validation failures
     # and intentional skips when a PR does not affect the desktop app.

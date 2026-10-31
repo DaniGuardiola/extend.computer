@@ -100,7 +100,7 @@ impl InputEvent {
 }
 
 #[cfg(test)]
-mod shortcut_tests {
+mod tests {
     use super::*;
     #[test]
     fn right_modifiers_need_their_base_bit_and_strip_for_old_peers() {
@@ -112,6 +112,33 @@ mod shortcut_tests {
             right_option.without_modifier_sides(),
             InputEvent::Modifiers { mask: 0x04 }
         );
+    }
+    #[test]
+    fn shared_fixture_events_parse_and_validate() {
+        // native/macos/tests/InputTests.swift replays the same file.
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../native/shared/fixtures/input-events.json"
+        ))
+        .unwrap();
+        let parse = |event: &serde_json::Value| -> Result<InputEvent> {
+            let event: InputEvent = serde_json::from_str(&event.to_string())?;
+            event.validate()?;
+            Ok(event)
+        };
+        for event in fixture["valid"].as_array().unwrap() {
+            let parsed = parse(event).unwrap_or_else(|error| panic!("{event} rejected: {error}"));
+            assert_eq!(&serde_json::to_value(parsed).unwrap(), event);
+        }
+        for entry in fixture["invalid"].as_array().unwrap() {
+            let event = &entry["event"];
+            assert!(parse(event).is_err(), "{event} accepted: {}", entry["why"]);
+        }
+        for entry in fixture["invalid_lines"].as_array().unwrap() {
+            let line = entry["line"].as_str().unwrap();
+            let accepted =
+                serde_json::from_str::<InputEvent>(line).is_ok_and(|e| e.validate().is_ok());
+            assert!(!accepted, "{line} accepted: {}", entry["why"]);
+        }
     }
     #[test]
     fn shortcut_policy_is_typed_and_requires_negotiation() {

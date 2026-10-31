@@ -52,10 +52,23 @@ import CoreGraphics
         require(InputCapture.modifiers(rightOption) == 0x44)
         require(InputCapture.modifiers(bothOptions) == 0x04)
         require(InputCapture.modifiers(CGEventFlags(rawValue: CGEventFlags.maskAlternate.rawValue | 0x20)) == 0x04)
-        var layout = try EdgeLayout(localWidth: 1512, localHeight: 982, remoteWidth: 1728, remoteHeight: 1117, side: .left, offsetY: 0)
-        _ = layout.motion(local: EdgePoint(x: 0,y: 400),dx: -1,dy: 0,exposed: true)
-        require(layout.motion(local: EdgePoint(x: 0,y: 400),dx: 100,dy: 0,exposed: true,allowReturn: false) == .remote(EdgePoint(x: 1,y: 400.0/1116)))
-        require(layout.motion(local: EdgePoint(x: 0,y: 400),dx: 1,dy: 0,exposed: true) == .returned(EdgePoint(x: 4,y: 400)))
-        print("PASS input validation, owned releases, modifier cleanup, repeat ownership, idempotent teardown, drag confinement")
+        // The engine's InputEvent decides these lines (engine/src/input.rs replays
+        // the same file). Valid packets must also encode back to the same object.
+        let fixture = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: "native/shared/fixtures/input-events.json"))) as! [String: Any]
+        for event in fixture["valid"] as! [[String: Any]] {
+            do {
+                let packet = try InputPacket.decode(JSONSerialization.data(withJSONObject: event))
+                try packet.validate()
+                require(try JSONSerialization.jsonObject(with: JSONEncoder().encode(packet)) as! NSDictionary == event as NSDictionary)
+            } catch { fatalError("valid input rejected: \(event)") }
+        }
+        for entry in fixture["invalid"] as! [[String: Any]] {
+            do { try InputPacket.decode(JSONSerialization.data(withJSONObject: entry["event"]!)).validate(); fatalError("invalid input accepted: \(entry["why"]!)") } catch { }
+        }
+        // Exact bytes, decoded the way InputReceiver decodes each stdin line.
+        for entry in fixture["invalid_lines"] as! [[String: Any]] {
+            do { try InputPacket.decode(Data((entry["line"] as! String).utf8)).validate(); fatalError("invalid input accepted: \(entry["why"]!)") } catch { }
+        }
+        print("PASS input validation, shared wire fixture, owned releases, modifier cleanup, repeat ownership, idempotent teardown")
     }
 }
