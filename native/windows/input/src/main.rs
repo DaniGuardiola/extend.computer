@@ -7,8 +7,18 @@
 //!   input event, or a normalized `x y` pointer position. They release all
 //!   held input and print `STOP` on any error, on stdin EOF, and after 2 s
 //!   without a line.
+//! - `capture-{edge,input,control}-{left,right} <remoteW> <remoteH> <offsetY>`
+//!   prints `READY <w> <h>`, then `REMOTE`, normalized `x y` positions,
+//!   JSON input events and `LOCAL` as the pointer crosses the shared edge,
+//!   and `STOP <reason>` when it ends. Stdin carries `ALIVE` at least every
+//!   2 s and `EDGE left|right`.
+#[cfg(windows)]
+mod capture;
+#[cfg_attr(not(windows), allow(dead_code))]
+mod edge;
 #[cfg(windows)]
 mod inject;
+#[cfg_attr(not(windows), allow(dead_code))]
 mod keys;
 
 #[cfg(not(windows))]
@@ -31,7 +41,11 @@ fn main() {
 
 #[cfg(windows)]
 mod windows_main {
-    use crate::inject::{primary, Injector};
+    use crate::{
+        capture::{self, Mode},
+        edge::Side,
+        inject::{primary, Injector},
+    };
     use anyhow::{bail, ensure, Context, Result};
     use std::{
         io::{BufRead, Write},
@@ -58,6 +72,19 @@ mod windows_main {
             }
             Some("inject-control") => receive(true),
             Some("inject-input") => receive(false),
+            Some(mode) if mode.starts_with("capture-") => {
+                let (kind, side) = mode["capture-".len()..]
+                    .split_once('-')
+                    .context("Unsupported input helper mode")?;
+                let kind = match kind {
+                    "edge" => Mode::Edge,
+                    "input" => Mode::Input,
+                    "control" => Mode::Control,
+                    _ => bail!("Unsupported input helper mode: {mode}"),
+                };
+                let side = Side::parse(side).context("Unsupported input helper mode")?;
+                capture::run(kind, side, &args[1..])
+            }
             Some(mode) => bail!("Unsupported input helper mode: {mode}"),
             None => bail!("Choose an input helper mode."),
         }

@@ -144,8 +144,6 @@ pub fn mac_to_scan(code: u16) -> Option<u16> {
         .map(|&(_, scan)| scan)
 }
 
-// Capture (Windows as the sending side) will translate back to the wire.
-#[cfg_attr(not(test), allow(dead_code))]
 pub fn scan_to_mac(scan: u16) -> Option<u16> {
     MAC_TO_SCAN
         .iter()
@@ -154,7 +152,6 @@ pub fn scan_to_mac(scan: u16) -> Option<u16> {
 }
 
 /// Which modifier a scancode is, as (bit, is right-hand key).
-#[cfg_attr(not(test), allow(dead_code))]
 pub fn modifier_of(scan: u16) -> Option<(u8, bool)> {
     MODIFIERS.iter().find_map(|&(bit, left, right)| {
         if scan == left {
