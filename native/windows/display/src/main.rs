@@ -28,7 +28,10 @@ fn main() {
 
 #[cfg(windows)]
 mod windows_main {
-    use crate::{capture::Capture, encoder::Encoder};
+    use crate::{
+        capture::Capture,
+        encoder::{Encoder, Input},
+    };
     use anyhow::{bail, ensure, Context, Result};
     use std::{
         io::{BufRead, Write},
@@ -128,7 +131,8 @@ mod windows_main {
         spawn_stdin(controls);
 
         let mut capture = Capture::new(width, height)?;
-        let mut encoder = Encoder::new(width, height, fps, bitrate)?;
+        let mut encoder = Encoder::new(capture.device(), width, height, fps, bitrate)?;
+        eprintln!("Display encoder: {}", encoder.name);
         output.packet(
             0,
             &serde_json::to_vec(&serde_json::json!({
@@ -162,8 +166,9 @@ mod windows_main {
                                 w <= 4096 && h <= 4096,
                                 "Video capture size exceeds supported limit."
                             );
-                            capture = Capture::new(w, h)?;
-                            encoder = Encoder::new(w, h, f, b)?;
+                            let next = Capture::new(w, h)?;
+                            encoder = Encoder::new(next.device(), w, h, f, b)?;
+                            capture = next;
                             frame_interval.store(1_000_000 / f, Ordering::SeqCst);
                             Ok(())
                         })();
@@ -187,11 +192,16 @@ mod windows_main {
             if !changed && !force_keyframe && last_encode.elapsed() < IDLE_REFRESH {
                 continue;
             }
-            let Some(nv12) = capture.read_nv12()? else {
+            let Some(slot) = capture.convert()? else {
                 continue;
             };
             let timestamp = crate::capture::monotonic_ns();
-            for frame in encoder.encode(nv12, timestamp, std::mem::take(&mut force_keyframe))? {
+            let input = if encoder.wants_texture() {
+                Input::Texture(capture.texture(slot))
+            } else {
+                Input::Memory(capture.read(slot)?)
+            };
+            for frame in encoder.encode(input, timestamp, std::mem::take(&mut force_keyframe))? {
                 let mut payload = Vec::with_capacity(frame.bytes.len() + 9);
                 payload.extend_from_slice(&frame.timestamp.to_be_bytes());
                 payload.push(u8::from(frame.keyframe));

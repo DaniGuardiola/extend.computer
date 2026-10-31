@@ -184,6 +184,7 @@ impl Desktop {
         #[cfg(windows)]
         {
             config.codec = extend_computer_agent::session::display::VideoCodec::H264;
+            config.separate_cursor = false;
         }
         if config.auto_size && config.mode == extend_computer_agent::session::display::Mode::Mirror
         {
@@ -583,7 +584,8 @@ impl Desktop {
         mut config: Config,
         presets: Vec<(u32, u32)>,
     ) -> Result<()> {
-        // The Windows helper encodes H.264 only, and mirrors only.
+        // The Windows helper mirrors only, encodes H.264 and draws the
+        // pointer into the video.
         #[cfg(windows)]
         {
             ensure!(
@@ -591,6 +593,7 @@ impl Desktop {
                 "Only display mirroring is available on Windows so far"
             );
             config.codec = extend_computer_agent::session::display::VideoCodec::H264;
+            config.separate_cursor = false;
         }
         config.validate()?;
         ensure!(

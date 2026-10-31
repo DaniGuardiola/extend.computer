@@ -1,10 +1,14 @@
-//! H.264 encoding with a synchronous Media Foundation transform. Output is an
-//! Annex B stream whose keyframes always carry SPS and PPS, which the
+//! H.264 encoding with Media Foundation. Hardware encoders (NVENC, Quick
+//! Sync, AMF) read converted frames straight from GPU textures; the built-in
+//! software encoder is the fallback and reads them back to memory. Output is
+//! an Annex B stream whose keyframes always carry SPS and PPS, which the
 //! receivers need to start or restart decoding.
-use anyhow::{ensure, Context, Result};
+use anyhow::{bail, ensure, Context, Result};
+use std::time::{Duration, Instant};
 use windows::{
     core::Interface,
     Win32::{
+        Graphics::Direct3D11::{ID3D11Device, ID3D11Texture2D},
         Media::MediaFoundation::*,
         System::{
             Com::{CoInitializeEx, COINIT_MULTITHREADED},
@@ -13,15 +17,34 @@ use windows::{
     },
 };
 
+/// How long a hardware encoder may take to return a submitted frame before
+/// it is collected on the next call instead.
+const OUTPUT_WAIT: Duration = Duration::from_millis(40);
+
 pub struct Frame {
     pub timestamp: u64,
     pub keyframe: bool,
     pub bytes: Vec<u8>,
 }
 
+/// Where the encoder reads its input.
+pub enum Input<'a> {
+    Texture(&'a ID3D11Texture2D),
+    Memory(&'a [u8]),
+}
+
+struct Hardware {
+    events: IMFMediaEventGenerator,
+    /// Inputs the encoder has asked for and not yet received.
+    credits: u32,
+    _manager: IMFDXGIDeviceManager,
+}
+
 pub struct Encoder {
     transform: IMFTransform,
     codec: Option<ICodecAPI>,
+    hardware: Option<Hardware>,
+    pub name: String,
     width: u32,
     height: u32,
     fps: u32,
@@ -40,13 +63,75 @@ fn variant_u32(value: u32) -> VARIANT {
 }
 
 impl Encoder {
-    pub fn new(width: u32, height: u32, fps: u32, bitrate: u32) -> Result<Self> {
+    /// Prefers a hardware encoder on `device`'s adapter unless
+    /// `EXTEND_DISPLAY_ENCODER=software`.
+    pub fn new(
+        device: &ID3D11Device,
+        width: u32,
+        height: u32,
+        fps: u32,
+        bitrate: u32,
+    ) -> Result<Self> {
         unsafe {
             let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
             MFStartup(MF_VERSION, MFSTARTUP_NOSOCKET)
                 .context("Could not start Media Foundation")?;
         }
-        let transform = find_encoder()?;
+        let software_only = std::env::var("EXTEND_DISPLAY_ENCODER").is_ok_and(|v| v == "software");
+        if !software_only {
+            for (activate, name) in encoders(true)? {
+                match Self::start(
+                    activate,
+                    name.clone(),
+                    Some(device),
+                    width,
+                    height,
+                    fps,
+                    bitrate,
+                ) {
+                    Ok(encoder) => return Ok(encoder),
+                    Err(error) => eprintln!("Display encoder {name} unavailable: {error:#}"),
+                }
+            }
+        }
+        for (activate, name) in encoders(false)? {
+            match Self::start(activate, name.clone(), None, width, height, fps, bitrate) {
+                Ok(encoder) => return Ok(encoder),
+                Err(error) => eprintln!("Display encoder {name} unavailable: {error:#}"),
+            }
+        }
+        bail!("No H.264 encoder is available")
+    }
+
+    fn start(
+        activate: IMFActivate,
+        name: String,
+        device: Option<&ID3D11Device>,
+        width: u32,
+        height: u32,
+        fps: u32,
+        bitrate: u32,
+    ) -> Result<Self> {
+        let transform: IMFTransform = unsafe { activate.ActivateObject()? };
+        let hardware = match device {
+            Some(device) => unsafe {
+                let attributes = transform.GetAttributes()?;
+                // Async encoders refuse calls until the caller opts in.
+                attributes.SetUINT32(&MF_TRANSFORM_ASYNC_UNLOCK, 1)?;
+                let mut token = 0;
+                let mut manager = None;
+                MFCreateDXGIDeviceManager(&mut token, &mut manager)?;
+                let manager = manager.context("Missing DXGI device manager")?;
+                manager.ResetDevice(device, token)?;
+                transform.ProcessMessage(MFT_MESSAGE_SET_D3D_MANAGER, manager.as_raw() as usize)?;
+                Some(Hardware {
+                    events: transform.cast()?,
+                    credits: 0,
+                    _manager: manager,
+                })
+            },
+            None => None,
+        };
         let codec: Option<ICodecAPI> = transform.cast().ok();
         if let Some(codec) = &codec {
             unsafe {
@@ -91,6 +176,8 @@ impl Encoder {
             Ok(Self {
                 transform,
                 codec,
+                hardware,
+                name,
                 width,
                 height,
                 fps,
@@ -105,6 +192,10 @@ impl Encoder {
         }
     }
 
+    pub fn wants_texture(&self) -> bool {
+        self.hardware.is_some()
+    }
+
     pub fn set_bitrate(&mut self, bitrate: u32) -> Result<()> {
         if let Some(codec) = &self.codec {
             unsafe { codec.SetValue(&CODECAPI_AVEncCommonMeanBitRate, &variant_u32(bitrate))? };
@@ -112,11 +203,7 @@ impl Encoder {
         Ok(())
     }
 
-    pub fn encode(&mut self, nv12: &[u8], timestamp: u64, keyframe: bool) -> Result<Vec<Frame>> {
-        ensure!(
-            nv12.len() == (self.width * self.height * 3 / 2) as usize,
-            "Invalid NV12 frame"
-        );
+    pub fn encode(&mut self, input: Input, timestamp: u64, keyframe: bool) -> Result<Vec<Frame>> {
         if keyframe {
             if let Some(codec) = &self.codec {
                 unsafe {
@@ -124,27 +211,104 @@ impl Encoder {
                 }
             }
         }
+        let sample = unsafe { MFCreateSample()? };
         unsafe {
-            let buffer = MFCreateMemoryBuffer(nv12.len() as u32)?;
-            let mut data = std::ptr::null_mut();
-            buffer.Lock(&mut data, None, None)?;
-            std::ptr::copy_nonoverlapping(nv12.as_ptr(), data, nv12.len());
-            buffer.Unlock()?;
-            buffer.SetCurrentLength(nv12.len() as u32)?;
-            let sample = MFCreateSample()?;
-            sample.AddBuffer(&buffer)?;
+            match input {
+                Input::Texture(texture) => {
+                    ensure!(self.hardware.is_some(), "This encoder reads memory frames");
+                    let buffer =
+                        MFCreateDXGISurfaceBuffer(&ID3D11Texture2D::IID, texture, 0, false)?;
+                    let length = buffer.cast::<IMF2DBuffer>()?.GetContiguousLength()?;
+                    buffer.SetCurrentLength(length)?;
+                    sample.AddBuffer(&buffer)?;
+                }
+                Input::Memory(nv12) => {
+                    ensure!(
+                        nv12.len() == (self.width * self.height * 3 / 2) as usize,
+                        "Invalid NV12 frame"
+                    );
+                    let buffer = MFCreateMemoryBuffer(nv12.len() as u32)?;
+                    let mut data = std::ptr::null_mut();
+                    buffer.Lock(&mut data, None, None)?;
+                    std::ptr::copy_nonoverlapping(nv12.as_ptr(), data, nv12.len());
+                    buffer.Unlock()?;
+                    buffer.SetCurrentLength(nv12.len() as u32)?;
+                    sample.AddBuffer(&buffer)?;
+                }
+            }
             // Media Foundation time is in 100 ns units.
             sample.SetSampleTime((timestamp / 100) as i64)?;
             sample.SetSampleDuration((10_000_000 / self.fps) as i64)?;
+        }
+        if self.hardware.is_some() {
+            self.encode_async(&sample)
+        } else {
+            unsafe {
+                self.transform
+                    .ProcessInput(0, &sample, 0)
+                    .context("H.264 encoding failed")?;
+            }
+            let mut frames = Vec::new();
+            while let Some(frame) = self.output()? {
+                frames.push(frame);
+            }
+            Ok(frames)
+        }
+    }
+
+    /// Async encoders announce when they accept input and when output is
+    /// ready. Submit once a slot is free, then wait briefly for the result
+    /// so each frame normally leaves in the same call.
+    fn encode_async(&mut self, sample: &IMFSample) -> Result<Vec<Frame>> {
+        let mut frames = Vec::new();
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while self.hardware.as_ref().unwrap().credits == 0 {
+            ensure!(
+                Instant::now() < deadline,
+                "The hardware encoder stopped accepting frames"
+            );
+            if !self.pump(&mut frames)? {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        }
+        unsafe {
             self.transform
-                .ProcessInput(0, &sample, 0)
+                .ProcessInput(0, sample, 0)
                 .context("H.264 encoding failed")?;
         }
-        let mut frames = Vec::new();
-        while let Some(frame) = self.output()? {
-            frames.push(frame);
+        self.hardware.as_mut().unwrap().credits -= 1;
+        let submitted = frames.len();
+        let deadline = Instant::now() + OUTPUT_WAIT;
+        while frames.len() == submitted && Instant::now() < deadline {
+            if !self.pump(&mut frames)? {
+                std::thread::sleep(Duration::from_millis(1));
+            }
         }
+        // Pick up any further events without waiting.
+        while self.pump(&mut frames)? {}
         Ok(frames)
+    }
+
+    /// Handles one pending encoder event. Returns false when none is queued.
+    fn pump(&mut self, frames: &mut Vec<Frame>) -> Result<bool> {
+        let hardware = self.hardware.as_mut().unwrap();
+        let event = match unsafe { hardware.events.GetEvent(MF_EVENT_FLAG_NO_WAIT) } {
+            Ok(event) => event,
+            Err(error) if error.code() == MF_E_NO_EVENTS_AVAILABLE => return Ok(false),
+            Err(error) => return Err(error).context("The hardware encoder failed"),
+        };
+        let kind = unsafe { event.GetType()? };
+        if kind == METransformNeedInput.0 as u32 {
+            hardware.credits += 1;
+        } else if kind == METransformHaveOutput.0 as u32 {
+            if let Some(frame) = self.output()? {
+                frames.push(frame);
+            }
+        } else if kind == MEError.0 as u32 {
+            let status = unsafe { event.GetStatus()? };
+            bail!("The hardware encoder failed: {status:?}");
+        }
+        Ok(true)
     }
 
     fn output(&mut self) -> Result<Option<Frame>> {
@@ -230,6 +394,9 @@ impl Drop for Encoder {
             let _ = self
                 .transform
                 .ProcessMessage(MFT_MESSAGE_NOTIFY_END_STREAMING, 0);
+            if let Some(hardware) = &self.hardware {
+                let _ = hardware.events.cast::<IMFShutdown>().map(|s| s.Shutdown());
+            }
         }
     }
 }
@@ -258,7 +425,8 @@ fn nals(data: &[u8]) -> Vec<&[u8]> {
     units
 }
 
-fn find_encoder() -> Result<IMFTransform> {
+/// Registered NV12 to H.264 encoders, best first, with their names.
+fn encoders(hardware: bool) -> Result<Vec<(IMFActivate, String)>> {
     let input = MFT_REGISTER_TYPE_INFO {
         guidMajorType: MFMediaType_Video,
         guidSubtype: MFVideoFormat_NV12,
@@ -267,29 +435,48 @@ fn find_encoder() -> Result<IMFTransform> {
         guidMajorType: MFMediaType_Video,
         guidSubtype: MFVideoFormat_H264,
     };
+    let flags = if hardware {
+        MFT_ENUM_FLAG_HARDWARE | MFT_ENUM_FLAG_SORTANDFILTER
+    } else {
+        MFT_ENUM_FLAG_SYNCMFT | MFT_ENUM_FLAG_LOCALMFT | MFT_ENUM_FLAG_SORTANDFILTER
+    };
     let mut activates = std::ptr::null_mut();
     let mut count = 0;
+    let mut found = Vec::new();
     unsafe {
         MFTEnumEx(
             MFT_CATEGORY_VIDEO_ENCODER,
-            MFT_ENUM_FLAG_SYNCMFT | MFT_ENUM_FLAG_LOCALMFT | MFT_ENUM_FLAG_SORTANDFILTER,
+            flags,
             Some(&input),
             Some(&output),
             &mut activates,
             &mut count,
         )?;
-        let list = std::slice::from_raw_parts_mut(activates, count as usize);
-        let mut transform = None;
-        // Taking each entry releases it; the array itself is freed below.
-        for slot in list.iter_mut() {
+        if activates.is_null() {
+            return Ok(found);
+        }
+        // Taking each entry moves ownership out; the array itself is freed below.
+        for slot in std::slice::from_raw_parts_mut(activates, count as usize) {
             if let Some(activate) = slot.take() {
-                if transform.is_none() {
-                    transform = activate.ActivateObject::<IMFTransform>().ok();
-                }
+                let name = friendly_name(&activate).unwrap_or_else(|| "H.264 encoder".into());
+                found.push((activate, name));
             }
         }
         windows::Win32::System::Com::CoTaskMemFree(Some(activates as *const _));
-        transform.context("No H.264 encoder is available")
+    }
+    Ok(found)
+}
+
+fn friendly_name(activate: &IMFActivate) -> Option<String> {
+    let mut text = windows::core::PWSTR::null();
+    let mut length = 0;
+    unsafe {
+        activate
+            .GetAllocatedString(&MFT_FRIENDLY_NAME_Attribute, &mut text, &mut length)
+            .ok()?;
+        let name = text.to_string().ok();
+        windows::Win32::System::Com::CoTaskMemFree(Some(text.0 as *const _));
+        name
     }
 }
 
