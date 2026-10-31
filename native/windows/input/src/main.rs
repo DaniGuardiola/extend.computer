@@ -2,12 +2,12 @@
 //! helper (see engine/src/cursor.rs):
 //!
 //! - `status` prints which input permissions are available.
-//! - `inject-control` and `inject-input` print `READY <w> <h> [tokens]`,
-//!   then apply one stdin line at a time and answer `OK`: `ALIVE`, a JSON
-//!   input event, or a normalized `x y` pointer position. They release all
+//! - `inject-control` prints `READY <w> <h> [tokens]`,
+//!   then applies one stdin line at a time and answers `OK`: `ALIVE`, a JSON
+//!   input event, or a normalized `x y` pointer position. It releases all
 //!   held input and print `STOP` on any error, on stdin EOF, and after 2 s
 //!   without a line.
-//! - `capture-{edge,input,control}-{left,right} <remoteW> <remoteH> <offsetY>`
+//! - `capture-control-{left,right} <remoteW> <remoteH> <offsetY>`
 //!   prints `READY <w> <h>`, then `REMOTE`, normalized `x y` positions,
 //!   JSON input events and `LOCAL` as the pointer crosses the shared edge,
 //!   and `STOP <reason>` when it ends. Stdin carries `ALIVE` at least every
@@ -42,7 +42,7 @@ fn main() {
 #[cfg(windows)]
 mod windows_main {
     use crate::{
-        capture::{self, Mode},
+        capture,
         edge::Side,
         inject::{primary, Injector},
     };
@@ -57,7 +57,6 @@ mod windows_main {
     };
 
     const HEARTBEAT: Duration = Duration::from_secs(2);
-    const INPUT_LIMIT: Duration = Duration::from_secs(30);
 
     pub fn run() -> Result<()> {
         unsafe {
@@ -70,20 +69,11 @@ mod windows_main {
                 println!("listen=true post=true");
                 Ok(())
             }
-            Some("inject-control") => receive(true),
-            Some("inject-input") => receive(false),
-            Some(mode) if mode.starts_with("capture-") => {
-                let (kind, side) = mode["capture-".len()..]
-                    .split_once('-')
+            Some("inject-control") => receive(),
+            Some(mode) if mode.starts_with("capture-control-") => {
+                let side = Side::parse(&mode["capture-control-".len()..])
                     .context("Unsupported input helper mode")?;
-                let kind = match kind {
-                    "edge" => Mode::Edge,
-                    "input" => Mode::Input,
-                    "control" => Mode::Control,
-                    _ => bail!("Unsupported input helper mode: {mode}"),
-                };
-                let side = Side::parse(side).context("Unsupported input helper mode")?;
-                capture::run(kind, side, &args[1..])
+                capture::run(side, &args[1..])
             }
             Some(mode) => bail!("Unsupported input helper mode: {mode}"),
             None => bail!("Choose an input helper mode."),
@@ -111,7 +101,7 @@ mod windows_main {
     }
 
     /// Injects input from the peer into this computer.
-    fn receive(persistent: bool) -> Result<()> {
+    fn receive() -> Result<()> {
         let dry_run = std::env::var("EXTEND_COMPUTER_INPUT_DRY_RUN").is_ok_and(|v| v == "1");
         let mut injector = Injector::new(dry_run);
         let (display, width, height) = primary();
@@ -119,7 +109,6 @@ mod windows_main {
         reply(&format!(
             "READY {width:.1} {height:.1} input-text-v1 input-shortcuts-control-v1"
         ))?;
-        let started = Instant::now();
         let mut last = Instant::now();
         let result = loop {
             match input.recv_timeout(Duration::from_millis(100)) {
@@ -135,9 +124,6 @@ mod windows_main {
             }
             if last.elapsed() > HEARTBEAT {
                 break Err(anyhow::anyhow!("Input heartbeat stopped"));
-            }
-            if !persistent && started.elapsed() > INPUT_LIMIT {
-                break Ok(());
             }
             let (now, _, _) = primary();
             if now != display {

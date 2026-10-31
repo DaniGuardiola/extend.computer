@@ -1,5 +1,5 @@
-//! Sends this computer's pointer, and optionally its keyboard and buttons, to
-//! the peer when the pointer crosses the shared edge. Low-level hooks see
+//! Sends this computer's pointer, keyboard and buttons to the peer when the
+//! pointer crosses the shared edge. Low-level hooks see
 //! every event first; while the peer has control they swallow them and
 //! report wire events on stdout instead.
 use crate::{
@@ -24,22 +24,10 @@ use windows::Win32::{
 };
 
 const HEARTBEAT: Duration = Duration::from_secs(2);
-const DURATION_LIMIT: Duration = Duration::from_secs(30);
 const ESCAPE: u16 = 0x01;
-
-#[derive(Clone, Copy, PartialEq)]
-pub enum Mode {
-    /// Pointer only; keys stay local and clicks are blocked while remote.
-    Edge,
-    /// Full input for at most 30 s.
-    Input,
-    /// Full input until stopped.
-    Control,
-}
 
 struct State {
     layout: Layout,
-    full_input: bool,
     display: RECT,
     scale: f64,
     /// Where the hidden local pointer waits while the peer has control.
@@ -86,7 +74,7 @@ impl State {
     }
 
     fn can_enter(&self) -> bool {
-        !self.full_input || (self.local_keys.is_empty() && self.local_buttons == 0)
+        self.local_keys.is_empty() && self.local_buttons == 0
     }
 
     fn to_pixels(&self, point: Point) -> POINT {
@@ -99,9 +87,7 @@ impl State {
     /// Hands control back: releases whatever the peer holds and shows the
     /// local pointer at `point`.
     fn return_local(&mut self, point: Point) {
-        if self.full_input {
-            emit_event(serde_json::json!({"kind": "release"}));
-        }
+        emit_event(serde_json::json!({"kind": "release"}));
         self.swallow_up.extend(self.remote_keys.iter().copied());
         self.swallow_up
             .extend(self.remote_modifier_keys.iter().copied());
@@ -179,9 +165,6 @@ impl State {
             }
             return false;
         }
-        if !self.full_input {
-            return true;
-        }
         if down {
             let limit = Duration::from_millis(u64::from(unsafe { GetDoubleClickTime() }));
             let (cx, cy) = unsafe {
@@ -217,16 +200,14 @@ impl State {
         if !self.layout.is_remote() {
             return false;
         }
-        if self.full_input {
-            // One 120-unit notch is 10 macOS pixels on the wire.
-            let pixels = (i32::from(delta) / 12).clamp(-4096, 4096);
-            let (dx, dy) = if horizontal {
-                (-pixels, 0)
-            } else {
-                (0, pixels)
-            };
-            emit_event(serde_json::json!({"kind": "scroll", "dx": dx, "dy": dy}));
-        }
+        // One 120-unit notch is 10 macOS pixels on the wire.
+        let pixels = (i32::from(delta) / 12).clamp(-4096, 4096);
+        let (dx, dy) = if horizontal {
+            (-pixels, 0)
+        } else {
+            (0, pixels)
+        };
+        emit_event(serde_json::json!({"kind": "scroll", "dx": dx, "dy": dy}));
         true
     }
 
@@ -247,15 +228,6 @@ impl State {
             if !down && self.swallow_up.remove(&scan) {
                 return true;
             }
-            if down {
-                self.local_keys.insert(scan);
-            } else {
-                self.local_keys.remove(&scan);
-            }
-            return false;
-        }
-        if !self.full_input {
-            // Keys stay local in pointer-only mode.
             if down {
                 self.local_keys.insert(scan);
             } else {
@@ -362,22 +334,21 @@ unsafe extern "system" fn keyboard_hook(code: i32, wparam: WPARAM, lparam: LPARA
     unsafe { CallNextHookEx(None, code, wparam, lparam) }
 }
 
-pub fn run(mode: Mode, side: Side, args: &[String]) -> Result<()> {
+pub fn run(side: Side, args: &[String]) -> Result<()> {
     let number = |index: usize| -> Result<f64> {
         args.get(index)
             .and_then(|v| v.parse::<f64>().ok())
-            .context("Usage: capture-<mode>-<side> <remoteWidth> <remoteHeight> <offsetY>")
+            .context("Usage: capture-control-<side> <remoteWidth> <remoteHeight> <offsetY>")
     };
     let (remote_width, remote_height, offset_y) = (number(0)?, number(1)?, number(2)?);
     if args.len() != 3 {
-        bail!("Usage: capture-<mode>-<side> <remoteWidth> <remoteHeight> <offsetY>");
+        bail!("Usage: capture-control-<side> <remoteWidth> <remoteHeight> <offsetY>");
     }
     let (display, width, height) = primary();
     let layout = Layout::new(width, height, remote_width, remote_height, side, offset_y)?;
     let (stop, stopped) = mpsc::channel();
     *STATE.lock().unwrap() = Some(State {
         layout,
-        full_input: mode != Mode::Edge,
         display,
         scale: f64::from(unsafe { GetDpiForSystem() }.max(96)) / 96.0,
         park: POINT::default(),
@@ -425,7 +396,6 @@ pub fn run(mode: Mode, side: Side, args: &[String]) -> Result<()> {
             }
         }
     });
-    let started = Instant::now();
     let mut alive = Instant::now();
     let reason = loop {
         if let Ok(reason) = stopped.try_recv() {
@@ -444,9 +414,6 @@ pub fn run(mode: Mode, side: Side, args: &[String]) -> Result<()> {
         }
         if alive.elapsed() > HEARTBEAT {
             break "heartbeat-timeout".into();
-        }
-        if mode != Mode::Control && started.elapsed() > DURATION_LIMIT {
-            break "duration-limit".into();
         }
         if primary().0 != display {
             break "display-changed".into();

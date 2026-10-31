@@ -46,20 +46,6 @@ impl Queue {
         self.events.push_back(event);
     }
 }
-pub fn send(client: Client, path: &Path, low_jitter: bool, edge: &str, offset: f64) -> Result<()> {
-    run(
-        client,
-        path,
-        low_jitter,
-        edge,
-        offset,
-        Some(Duration::from_secs(29)),
-        None,
-        || {},
-        || None,
-        |_| {},
-    )
-}
 /// New capture helpers start locally, including after reconnect.
 pub fn send_session(
     client: Client,
@@ -76,7 +62,6 @@ pub fn send_session(
         edge,
         offset,
         duration,
-        Some(()),
         || {},
         || None,
         |_| {},
@@ -102,7 +87,6 @@ pub fn send_session_with_ready(
         edge,
         offset,
         duration,
-        Some(()),
         ready,
         desired_edge,
         round_trip,
@@ -116,7 +100,6 @@ fn run(
     edge: &str,
     offset: f64,
     duration: Option<Duration>,
-    session: Option<()>,
     ready: impl FnOnce(),
     desired_edge: impl Fn() -> Option<String>,
     // Each round trip that acknowledged input, including the peer applying it.
@@ -126,26 +109,15 @@ fn run(
         matches!(edge, "left" | "right") && offset.is_finite(),
         "invalid layout"
     );
-    let display = if let Some(()) = session {
-        client.request_control()?
-    } else {
-        client.request_input()?
-    };
-    let mut lease = if session.is_some() && low_jitter {
+    let display = client.request_control()?;
+    let mut lease = if low_jitter {
         crate::low_jitter::start_required(client.address().ip())?
     } else {
         crate::low_jitter::start_for_peer(client.address().ip(), low_jitter)
     };
     let mut helper = spawn(
         path,
-        &format!(
-            "capture-{}-{edge}",
-            if session.is_some() {
-                "control"
-            } else {
-                "input"
-            }
-        ),
+        &format!("capture-control-{edge}"),
         &[
             display.width.to_string(),
             display.height.to_string(),
@@ -205,7 +177,7 @@ fn run(
         }
         writer.lock().unwrap().ended = true;
     });
-    eprintln!("Full input active {}. Cross {edge}; Control-Option-Escape stops. Release held keys/buttons before crossing.", if session.is_some() { "until stopped or disconnected" } else { "for 30 seconds" });
+    eprintln!("Full input active until stopped or disconnected. Cross {edge}; Control-Option-Escape stops. Release held keys/buttons before crossing.");
     ready();
     let trace = crate::timing::Trace::from_env();
     let start = Instant::now();
@@ -220,7 +192,7 @@ fn run(
                 || (pending > 0 && ack.elapsed() >= Duration::from_millis(16))
                 || ack.elapsed() >= Duration::from_millis(500)
             {
-                if session.is_some() && low_jitter {
+                if low_jitter {
                     crate::low_jitter::maintain_required(&mut lease)?;
                 } else {
                     crate::low_jitter::maintain(&mut lease);
@@ -250,7 +222,7 @@ fn run(
                     bail!("input capture failed or queue overflowed");
                 }
                 if q.ended {
-                    if session.is_some() && duration.is_none() && !q.user_stopped {
+                    if duration.is_none() && !q.user_stopped {
                         let detail = match q.stop_reason.as_deref() {
                             Some("STOP display-changed") => "The display layout changed. Reconnect to use the new layout.",
                             Some("STOP capture-disabled") => "macOS stopped input capture. Check Accessibility and Input Monitoring, then reconnect.",

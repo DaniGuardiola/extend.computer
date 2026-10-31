@@ -25,10 +25,7 @@ impl CursorSink for Sink {
     fn supports_text_input(&self) -> bool {
         self.text
     }
-    fn start_cursor(&mut self, _: &str) -> anyhow::Result<bool> {
-        Ok(true)
-    }
-    fn start_input(&mut self, _: &str) -> anyhow::Result<bool> {
+    fn start_control(&mut self, _: &str) -> anyhow::Result<bool> {
         Ok(self.allow)
     }
     fn move_to(&mut self, _: f64, _: f64) -> anyhow::Result<()> {
@@ -96,29 +93,11 @@ fn scenario_with_adapter(
     seen.events.clone()
 }
 #[test]
-fn cursor_grant_does_not_authorize_keys() {
-    assert!(scenario(
-        true,
-        |c, _, _| {
-            c.request_cursor().unwrap();
-            c.queue_input(InputEvent::MacKey {
-                code: 0,
-                down: true,
-                repeat: false,
-            })
-            .unwrap();
-            assert!(c.probe().is_err());
-        },
-        false
-    )
-    .is_empty());
-}
-#[test]
 fn unavailable_input_adapter_blocks_input() {
     assert!(scenario(
         false,
         |c, _, _| {
-            assert!(c.request_input().is_err());
+            assert!(c.request_control().is_err());
         },
         false
     )
@@ -129,7 +108,7 @@ fn transitions_remain_ordered_before_barrier() {
     let events = scenario(
         true,
         |c, _, _| {
-            c.request_input().unwrap();
+            c.request_control().unwrap();
             for event in [
                 InputEvent::Modifiers { mask: 1 },
                 InputEvent::MacKey {
@@ -158,7 +137,7 @@ fn revocation_stops_keys_and_finishes_sink() {
     let events = scenario(
         true,
         |c, t, id| {
-            c.request_input().unwrap();
+            c.request_control().unwrap();
             c.queue_input(InputEvent::Button {
                 button: 0,
                 down: true,
@@ -179,7 +158,7 @@ fn input_window_is_bounded() {
     let events = scenario(
         true,
         |c, _, _| {
-            c.request_input().unwrap();
+            c.request_control().unwrap();
             for _ in 0..5 {
                 let _ = c.queue_input(InputEvent::Release);
             }
@@ -194,8 +173,8 @@ fn duplicate_grant_cannot_extend_input() {
     scenario(
         true,
         |c, _, _| {
-            c.request_input().unwrap();
-            assert!(c.request_input().is_err());
+            c.request_control().unwrap();
+            assert!(c.request_control().is_err());
         },
         false,
     );
@@ -257,7 +236,7 @@ fn committed_unicode_is_bounded_and_crosses_authenticated_input() {
     let events = scenario(
         true,
         |c, _, _| {
-            c.request_input().unwrap();
+            c.request_control().unwrap();
             assert!(c.supports_text_input());
             c.queue_input(text).unwrap();
             c.probe().unwrap();
@@ -273,7 +252,7 @@ fn text_encoding_without_receiving_adapter_keeps_physical_input_usable() {
         true,
         false,
         |client, _, _| {
-            client.request_input().unwrap();
+            client.request_control().unwrap();
             assert!(!client.supports_text_input());
             assert!(client
                 .queue_input(InputEvent::Text {

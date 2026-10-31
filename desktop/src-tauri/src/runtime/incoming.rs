@@ -345,9 +345,6 @@ impl CursorSink for GuiSink {
     fn unpaired(&mut self, peer: &str) -> Result<()> {
         self.app.received_unpair(peer)
     }
-    fn start_cursor(&mut self, _: &str) -> Result<bool> {
-        Ok(false)
-    }
     fn start_control(&mut self, peer: &str) -> Result<bool> {
         let permissions = self.app.refresh_permissions_for_route(self.usb)?;
         if !self.app.inner.lock().unwrap().receiving_enabled

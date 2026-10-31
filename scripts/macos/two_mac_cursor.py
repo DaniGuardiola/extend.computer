@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Explicitly authorized development test; --input enables full control. No saved grants."""
+"""Explicitly authorized development test of full control. No saved grants."""
 import argparse
 import os
 from pathlib import Path
@@ -29,13 +29,9 @@ def main():
     parser.add_argument('--low-jitter', action='store_true', help='Enable session-managed leases for synthetic diagnostic')
     parser.add_argument('--synthetic', action='store_true', help='Use dummy receiver; no native input APIs')
     parser.add_argument('--trace-dir', help='Save timing-only CSV files from both Macs')
-    parser.add_argument('--input', action='store_true', help='Explicitly authorize mouse and keyboard control for this development test')
-    parser.add_argument('--session', action='store_true', help='Full control until stopped; implies --input')
-    parser.add_argument('--seconds', type=int, help='Optional run limit for --session')
+    parser.add_argument('--seconds', type=int, help='Optional run limit for full control')
     args = parser.parse_args()
-    if args.seconds is not None and (not args.session or not 1 <= args.seconds <= 86400): parser.error('--seconds requires --session and 1..86400')
-    if args.session: args.input = True
-    if args.input and args.synthetic: parser.error('--input cannot use cursor-only synthetic driver')
+    if args.seconds is not None and (args.synthetic or not 1 <= args.seconds <= 86400): parser.error('--seconds requires a native receiver and 1..86400')
     ssh = ['ssh', '-o', 'BatchMode=yes', '-o', 'IdentitiesOnly=yes', '-o', 'StrictHostKeyChecking=yes', '-o', f'UserKnownHostsFile={args.known_hosts}', '-o', 'ConnectTimeout=8', '-i', args.key, args.ssh_host]
     state = '.test-state-cursor-' + uuid.uuid4().hex
     helper = args.remote_dir + '/scripts/macos/desktop-cursor-helper.py'
@@ -74,13 +70,12 @@ def main():
             client_env['EXTEND_COMPUTER_TIMING_PATH'] = str(Path(args.trace_dir).resolve() / 'sender.csv')
         driver_args = [args.driver, args.peer_host + ":48177", args.helper]
         if not args.synthetic: driver_args += [args.edge, str(args.offset_y)]
-        if args.session: driver_args.append('session:' + str(args.seconds or 0))
-        elif args.input: driver_args.append('input')
+        if args.seconds: driver_args.append('session:' + str(args.seconds))
         client = subprocess.Popen(driver_args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=client_env)
         client.stdin.write(code + '\n'); client.stdin.flush(); code = None
         client_output = lines(client)
         updates = 0
-        deadline = (time.monotonic() + args.seconds + 15 if args.seconds else None) if args.session else time.monotonic() + 45
+        deadline = time.monotonic() + 45 if args.synthetic else (time.monotonic() + args.seconds + 15 if args.seconds else None)
         while True:
             line = client_output.get(timeout=max(.01, deadline-time.monotonic()) if deadline is not None else None)
             if line is None: break
@@ -101,9 +96,9 @@ def main():
                     break
                 time.sleep(.1)
             else: raise RuntimeError('receiver trace did not flush')
-        if not args.session: assert updates > 0, 'no cursor movement captured; repeat with physical mouse movement'
+        if args.synthetic: assert updates > 0, 'no cursor movement captured; repeat with physical mouse movement'
         receiver_kind = 'dummy' if args.synthetic else 'native'
-        event_kind = 'input events' if args.input else 'cursor updates'
+        event_kind = 'cursor updates' if args.synthetic else 'input events'
         print(f'PASS: {updates} encrypted {event_kind} acknowledged by {receiver_kind} receiver', flush=True)
     finally:
         if client and client.poll() is None: client.terminate(); client.wait(timeout=5)

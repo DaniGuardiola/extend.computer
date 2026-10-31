@@ -61,22 +61,6 @@ enum Command {
         #[arg(long, default_value_t = 5)]
         probes: u32,
     },
-    Cursor {
-        address: String,
-        #[arg(long)]
-        peer: Option<String>,
-        #[arg(long)]
-        helper: PathBuf,
-        /// Position of the peer's main display relative to this Mac.
-        #[arg(long, default_value = "left", value_parser = ["left", "right"])]
-        edge: String,
-        /// Remote top relative to local top, in logical display points; positive is down.
-        #[arg(long, default_value_t = 0.0, allow_hyphen_values = true)]
-        offset_y: f64,
-        /// Request full mouse and keyboard control for a paired device.
-        #[arg(long)]
-        input: bool,
-    },
     /// Full input until stopped. Uses the same engine and trust store as the GUI will.
     Control {
         address: String,
@@ -270,40 +254,6 @@ fn main() -> Result<()> {
                 confirm_pairing,
             )?;
             probes(client, count)
-        }
-        Command::Cursor {
-            address,
-            peer,
-            helper,
-            edge,
-            offset_y,
-            input,
-        } => {
-            let code = if peer.is_none() {
-                Some(Zeroizing::new(rpassword::prompt_password("Pair code: ")?))
-            } else {
-                None
-            };
-            let client = Client::connect(
-                connect(&address)?,
-                &identity,
-                &store,
-                code.as_ref().map(|s| s.trim()),
-                peer.as_deref(),
-                confirm_pairing,
-            )?;
-            let send = if input {
-                extend_computer_agent::control::send
-            } else {
-                extend_computer_agent::cursor::send_with_policy
-            };
-            send(
-                client,
-                &helper,
-                args.no_awdl || !args.awdl.unwrap_or(false),
-                &edge,
-                offset_y,
-            )
         }
         Command::Control {
             address,

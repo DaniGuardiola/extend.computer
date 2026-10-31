@@ -26,7 +26,7 @@ impl CursorSink for Sink {
         self.finished
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     }
-    fn start_cursor(&mut self, _: &str) -> anyhow::Result<bool> {
+    fn start_control(&mut self, _: &str) -> anyhow::Result<bool> {
         Ok(self.allow)
     }
     fn move_to(&mut self, x: f64, y: f64) -> anyhow::Result<()> {
@@ -91,38 +91,13 @@ fn scenario(
     assert_eq!(observed.lock().unwrap().len(), expected_moves);
 }
 #[test]
-fn unavailable_cursor_adapter_blocks_movement() {
+fn unavailable_control_adapter_blocks_movement() {
     scenario(
         false,
         |c, _, _| {
-            assert!(c.request_cursor().is_err());
+            assert!(c.request_control().is_err());
         },
         0,
-        false,
-    );
-}
-#[test]
-fn cursor_without_request_rejected() {
-    scenario(
-        true,
-        |c, _, _| {
-            assert!(c.move_cursor(0.5, 0.5).is_err());
-        },
-        0,
-        false,
-    );
-}
-#[test]
-fn cursor_consent_moves_and_revocation_stops_injection() {
-    scenario(
-        true,
-        |c, t, id| {
-            c.request_cursor().unwrap();
-            c.move_cursor(0.25, 0.75).unwrap();
-            t.revoke(id).unwrap();
-            assert!(c.move_cursor(0.4, 0.4).is_err());
-        },
-        1,
         false,
     );
 }
@@ -131,16 +106,17 @@ fn invalid_coordinates_never_reach_sink() {
     scenario(
         true,
         |c, _, _| {
-            c.request_cursor().unwrap();
+            c.request_control().unwrap();
             for (x, y) in [
                 (f64::NAN, 0.0),
                 (f64::INFINITY, 0.0),
                 (-0.1, 0.0),
                 (0.0, 1.1),
             ] {
-                assert!(c.move_cursor(x, y).is_err());
+                assert!(c.queue_cursor(x, y).is_err());
             }
-            c.move_cursor(1.0, 0.0).unwrap();
+            c.queue_cursor(1.0, 0.0).unwrap();
+            c.probe().unwrap();
         },
         1,
         true,
@@ -151,8 +127,8 @@ fn duplicate_request_cannot_extend_grant() {
     scenario(
         true,
         |c, _, _| {
-            c.request_cursor().unwrap();
-            assert!(c.request_cursor().is_err());
+            c.request_control().unwrap();
+            assert!(c.request_control().is_err());
         },
         0,
         false,
@@ -164,7 +140,7 @@ fn bounded_stream_is_applied_before_probe_ack() {
     scenario(
         true,
         |c, _, _| {
-            c.request_cursor().unwrap();
+            c.request_control().unwrap();
             for _ in 0..3 {
                 for i in 0..4 {
                     c.queue_cursor(i as f64 / 4.0, 0.5).unwrap();
@@ -193,7 +169,7 @@ fn stream_window_overflow_is_rejected() {
     scenario(
         true,
         |c, _, _| {
-            c.request_cursor().unwrap();
+            c.request_control().unwrap();
             for _ in 0..5 {
                 let _ = c.queue_cursor(0.5, 0.5);
             }
@@ -208,7 +184,7 @@ fn stream_revocation_stops_next_injection() {
     scenario(
         true,
         |c, t, id| {
-            c.request_cursor().unwrap();
+            c.request_control().unwrap();
             c.queue_cursor(0.5, 0.5).unwrap();
             c.probe().unwrap();
             t.revoke(id).unwrap();
@@ -221,11 +197,11 @@ fn stream_revocation_stops_next_injection() {
 }
 
 #[test]
-fn approved_cursor_reports_receiver_display_geometry() {
+fn approved_control_reports_receiver_display_geometry() {
     scenario(
         true,
         |client, _, _| {
-            let display = client.request_cursor().unwrap();
+            let display = client.request_control().unwrap();
             assert_eq!(display.width, 1280.0);
             assert_eq!(display.height, 800.0);
         },

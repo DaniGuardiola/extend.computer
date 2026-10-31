@@ -18,7 +18,7 @@ struct Dummy {
     count: u64,
 }
 impl CursorSink for Dummy {
-    fn start_cursor(&mut self, _: &str) -> Result<bool> {
+    fn start_control(&mut self, _: &str) -> Result<bool> {
         Ok(true)
     }
     fn move_to(&mut self, _: f64, _: f64) -> Result<()> {
@@ -67,7 +67,7 @@ fn main() -> Result<()> {
             &identity,
             &store,
             &mut Some(window),
-            |_, _| Decision::Once,
+            |_, _| Decision::Remember,
             &mut extend_computer_agent::low_jitter::ManagedCursor::new(
                 Dummy {
                     trace: Trace::from_env(),
@@ -87,12 +87,10 @@ fn main() -> Result<()> {
             &store,
             Some(code.trim()),
             None,
-            |_, _| Decision::Once,
+            |_, _| Decision::Remember,
         )?;
         eprintln!("dummy: authenticated");
-        client
-            .request_cursor()
-            .context("request cursor capability")?;
+        client.request_control().context("request control")?;
         let _lease =
             extend_computer_agent::low_jitter::start_for_peer(client.address().ip(), low_jitter);
         let trace = Trace::from_env();

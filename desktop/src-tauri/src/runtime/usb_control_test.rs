@@ -516,9 +516,6 @@ mod tests {
             fn supports_text_input(&self) -> bool {
                 true
             }
-            fn start_cursor(&mut self, _: &str) -> Result<bool> {
-                Ok(false)
-            }
             fn start_control(&mut self, _: &str) -> Result<bool> {
                 self.0.lock().unwrap().starts += 1;
                 Ok(true)

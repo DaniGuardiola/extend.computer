@@ -11,7 +11,7 @@ use std::{
 };
 struct NoInput;
 impl CursorSink for NoInput {
-    fn start_cursor(&mut self, _: &str) -> anyhow::Result<bool> {
+    fn start_control(&mut self, _: &str) -> anyhow::Result<bool> {
         panic!("pairing requested control")
     }
     fn move_to(&mut self, _: f64, _: f64) -> anyhow::Result<()> {

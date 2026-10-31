@@ -2,7 +2,7 @@
 
 [← Development signing](../development/signing.md) · [Index](../README.md) · [Releases and updates →](releases.md)
 
-`extend-computer control` provides full mouse and keyboard control until stopped or disconnected. The existing `extend-computer cursor --input` remains a short 30-second development mode. Both interfaces use the same session, permission, and native input engine.
+`extend-computer control` provides full mouse and keyboard control until stopped or disconnected. It uses the same session, permission, and native input engine as the desktop app.
 
 On Macs with several local screens, handoff uses the screen containing the cursor,
 not just the main display. Crossing an exposed left or right edge transfers
@@ -51,7 +51,7 @@ extend-computer --state PATH control RECEIVER:48177 --peer RECEIVER_FINGERPRINT 
 
 `--reconnect` requires a persistent identity, a pinned receiver fingerprint, and a paired receiver with receiving enabled. It retries transport failures with 1/2/4-second backoff. Identity mismatch, removed pairing, missing OS permissions, and protocol errors, and normal user stop are terminal. Every new capture starts locally; no stale keys, button state, or remote cursor ownership are replayed.
 
-`--seconds N` optionally limits each connection. Without it, control continues until stopped/disconnected. Fixed short-test deadlines remain unchanged in the existing diagnostic modes. Protocol is `EXTEND05`; update both Rust endpoints together.
+`--seconds N` optionally limits each connection. Without it, control continues until stopped/disconnected. Protocol is `EXTEND05`; update both Rust endpoints together.
 
 ## Stop controls
 

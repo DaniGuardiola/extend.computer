@@ -702,9 +702,6 @@ impl session::CursorSink for NameSink {
         }
         Ok(())
     }
-    fn start_cursor(&mut self, peer: &str) -> Result<bool> {
-        self.start_control(peer)
-    }
     fn start_control(&mut self, peer: &str) -> Result<bool> {
         if let Some(listener) = &self.listener_gate {
             ensure!(listener.state.lock().unwrap().running, "Receiving is off");
@@ -717,9 +714,6 @@ impl session::CursorSink for NameSink {
         };
         state.input_lease = self.input_id.map(|id| (peer.to_owned(), id));
         Ok(self.input_id.is_some())
-    }
-    fn start_input(&mut self, peer: &str) -> Result<bool> {
-        self.start_control(peer)
     }
     fn move_to(&mut self, x: f64, y: f64) -> Result<()> {
         self.input

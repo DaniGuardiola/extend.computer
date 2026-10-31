@@ -25,9 +25,6 @@ impl CursorSink for Sink {
     fn supports_text_input(&self) -> bool {
         true
     }
-    fn start_cursor(&mut self, _: &str) -> Result<bool> {
-        Ok(true)
-    }
     fn start_control(&mut self, _: &str) -> Result<bool> {
         Ok(true)
     }

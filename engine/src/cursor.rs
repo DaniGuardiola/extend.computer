@@ -1,12 +1,11 @@
 //! Native helper boundary. Starts native resources after peer authentication.
 use crate::error::EngineError;
-use crate::session::{Client, CursorSink, DisplaySize};
+use crate::session::{CursorSink, DisplaySize};
 use anyhow::{ensure, Context, Result};
 use std::{
     io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
-    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
@@ -53,7 +52,7 @@ pub(crate) fn spawn(path: &Path, mode: &str, arguments: &[String]) -> Result<Hel
         (3..=5).contains(&fields.len()) && fields[0] == "READY",
         EngineError::HelperUnavailable
     );
-    let input_mode = matches!(mode, "inject-control" | "inject-input");
+    let input_mode = mode == "inject-control";
     let mut text = false;
     let mut shortcut = None;
     for token in &fields[3..] {
@@ -131,13 +130,6 @@ impl CursorSink for NativeSink {
         self.helper = Some(spawn(path, "inject-control", &[])?);
         Ok(true)
     }
-    fn start_input(&mut self, _: &str) -> Result<bool> {
-        let Some(path) = &self.path else {
-            return Ok(false);
-        };
-        self.helper = Some(spawn(path, "inject-input", &[])?);
-        Ok(true)
-    }
     fn input(&mut self, event: &crate::input::InputEvent) -> Result<()> {
         if matches!(event, crate::input::InputEvent::Text { .. }) {
             ensure!(
@@ -149,14 +141,6 @@ impl CursorSink for NativeSink {
     }
     fn heartbeat(&mut self) -> Result<()> {
         self.command("ALIVE")
-    }
-
-    fn start_cursor(&mut self, _: &str) -> Result<bool> {
-        let Some(path) = &self.path else {
-            return Ok(false);
-        };
-        self.helper = Some(spawn(path, "inject", &[])?);
-        Ok(true)
     }
     fn display_size(&self) -> Result<DisplaySize> {
         self.helper
@@ -186,118 +170,6 @@ impl CursorSink for NativeSink {
         self.updates += 1;
         Ok(())
     }
-}
-
-pub fn send(client: Client, path: &Path) -> Result<()> {
-    send_with_policy(client, path, true, "left", 0.0)
-}
-pub fn send_with_policy(
-    mut client: Client,
-    path: &Path,
-    low_jitter: bool,
-    edge: &str,
-    offset_y: f64,
-) -> Result<()> {
-    ensure!(
-        matches!(edge, "left" | "right") && offset_y.is_finite(),
-        "invalid edge layout"
-    );
-    let display = client.request_cursor()?;
-    let _lease = crate::low_jitter::start_for_peer(client.address().ip(), low_jitter);
-    let mut helper = spawn(
-        path,
-        &format!("capture-edge-{edge}"),
-        &[
-            display.width.to_string(),
-            display.height.to_string(),
-            offset_y.to_string(),
-        ],
-    )?;
-    let output = helper.0.stdout.take().unwrap();
-    let latest = Arc::new(Mutex::new(None));
-    let writer = latest.clone();
-    let trace = crate::timing::Trace::from_env();
-    let capture_trace = trace.clone();
-    let reader = std::thread::spawn(move || {
-        for (capture_id, line) in BufReader::new(output).lines().enumerate() {
-            let capture_id = capture_id as u64;
-            let Ok(line) = line else { break };
-            if line == "STOP" {
-                break;
-            }
-            if line == "LOCAL" {
-                *writer.lock().unwrap() = None;
-                eprintln!("Control returned to this Mac.");
-                continue;
-            }
-            if line == "REMOTE" {
-                eprintln!("Cursor control moved to peer. Control-Option-Escape stops.");
-                continue;
-            }
-            let fields: Vec<_> = line.split_whitespace().collect();
-            if fields.len() != 2 {
-                break;
-            }
-            let (Ok(x), Ok(y)) = (fields[0].parse::<f64>(), fields[1].parse::<f64>()) else {
-                break;
-            };
-            capture_trace.record("capture_arrival", capture_id, 0);
-            *writer.lock().unwrap() = Some((x, y, capture_id, Instant::now()));
-        }
-    });
-    eprintln!("Edge handoff active for at most 30 seconds: peer {edge}, vertical offset {offset_y} points. Control-Option-Escape or Ctrl-C stops. Cursor only; keyboard stays local, remote clicks/scrolling blocked.");
-    let start = Instant::now();
-    let mut heartbeat = Instant::now();
-    let mut sent = 0;
-    let mut pending = 0;
-    let result = (|| -> Result<()> {
-        while start.elapsed() < Duration::from_secs(29) {
-            if reader.is_finished() {
-                break;
-            }
-            // Flush before taking the newest sample, never replay samples collected
-            // while waiting for the network. At most four positions are in flight.
-            if pending == 4 || (pending > 0 && heartbeat.elapsed() >= Duration::from_millis(16)) {
-                trace.record("ack_start", sent, 0);
-                client.probe()?;
-                writeln!(
-                    helper.0.stdin.as_mut().context("capture input closed")?,
-                    "ALIVE"
-                )?;
-                trace.record("ack_end", sent, 0);
-                pending = 0;
-                heartbeat = Instant::now();
-            }
-            let point = latest.lock().unwrap().take();
-            if let Some((x, y, capture_id, captured)) = point {
-                trace.record("sample", sent, capture_id as u128);
-                trace.record("send_start", sent, captured.elapsed().as_micros());
-                client.queue_cursor(x, y)?;
-                trace.record("send_end", sent, 0);
-                sent += 1;
-                pending += 1;
-            } else if heartbeat.elapsed() > Duration::from_secs(1) {
-                trace.record("ack_start", sent, 0);
-                client.probe()?;
-                writeln!(
-                    helper.0.stdin.as_mut().context("capture input closed")?,
-                    "ALIVE"
-                )?;
-                trace.record("ack_end", sent, 0);
-                heartbeat = Instant::now();
-            }
-            std::thread::sleep(Duration::from_millis(4));
-        }
-        if pending > 0 {
-            client.probe()?;
-        }
-        Ok(())
-    })();
-    drop(helper);
-    let _ = reader.join();
-    result?;
-    println!("cursor_updates={sent}");
-    client.close()
 }
 
 #[cfg(all(test, unix))]
@@ -368,7 +240,7 @@ mod text_contract_tests {
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
             let mut sink = NativeSink::new(Some(path));
             assert!(!sink.supports_text_input());
-            retry_busy(|| sink.start_input("peer")).unwrap();
+            retry_busy(|| sink.start_control("peer")).unwrap();
             assert_eq!(sink.supports_text_input(), supported);
             let result = sink.input(&crate::input::InputEvent::Text {
                 value: "é🙂".into(),

@@ -425,9 +425,6 @@ mod relay_regression {
     }
     struct Sink(Arc<Mutex<Vec<String>>>);
     impl CursorSink for Sink {
-        fn start_cursor(&mut self, _: &str) -> anyhow::Result<bool> {
-            Ok(true)
-        }
         fn move_to(&mut self, _: f64, _: f64) -> anyhow::Result<()> {
             Ok(())
         }

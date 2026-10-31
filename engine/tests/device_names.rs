@@ -15,7 +15,7 @@ struct NamedSink {
     received: Arc<Mutex<Vec<(String, String)>>>,
 }
 impl CursorSink for NamedSink {
-    fn start_cursor(&mut self, _: &str) -> anyhow::Result<bool> {
+    fn start_control(&mut self, _: &str) -> anyhow::Result<bool> {
         panic!("metadata requested control")
     }
     fn move_to(&mut self, _: f64, _: f64) -> anyhow::Result<()> {

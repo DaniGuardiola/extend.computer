@@ -67,17 +67,11 @@ impl CursorSink for Observer {
     fn supports_text_input(&self) -> bool {
         self.active
     }
-    fn start_cursor(&mut self, _: &str) -> Result<bool> {
-        Ok(false)
-    }
     fn move_to(&mut self, _: f64, _: f64) -> Result<()> {
         ensure!(self.active, "Input is not granted");
         Ok(())
     }
     fn start_control(&mut self, peer: &str) -> Result<bool> {
-        self.grant(peer)
-    }
-    fn start_input(&mut self, peer: &str) -> Result<bool> {
         self.grant(peer)
     }
     fn input(&mut self, event: &InputEvent) -> Result<()> {

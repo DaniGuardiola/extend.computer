@@ -11,14 +11,12 @@ private func activeEdgeDisplays() -> [EdgeDisplay]? {
 
 private final class EdgeCaptureContext {
     var layout: EdgeLayout
-    let input: InputCapture
-    let persistent: Bool
+    let input = InputCapture()
     var bounds: CGRect
     var display: CGDirectDisplayID
     let displays: [EdgeDisplay]
     let runLoop: CFRunLoop
     var lastAck = ProcessInfo.processInfo.systemUptime
-    let started = ProcessInfo.processInfo.systemUptime
     let canHideCursor = ExtendComputerEnableBackgroundCursorVisibility()
     var cursorHidden = false
     var stopped = false
@@ -29,9 +27,7 @@ private final class EdgeCaptureContext {
     var cursorProbeUntil: TimeInterval = 0
     var cursorProbeRows = [String]()
 
-    init(layout: EdgeLayout, bounds: CGRect, display: CGDirectDisplayID, displays: [EdgeDisplay], fullInput: Bool, persistent: Bool) {
-        self.persistent = persistent
-        self.input = InputCapture(enabled: fullInput)
+    init(layout: EdgeLayout, bounds: CGRect, display: CGDirectDisplayID, displays: [EdgeDisplay]) {
         self.layout = layout; self.bounds = bounds; self.display = display
         self.displays = displays
         self.runLoop = CFRunLoopGetCurrent()
@@ -86,7 +82,7 @@ private final class EdgeCaptureContext {
             return Unmanaged.passUnretained(event)
         }
         if input.handle(type, event, remote: layout.remotePosition != nil) { return nil }
-        if type == .mouseMoved || (input.enabled && [.leftMouseDragged, .rightMouseDragged, .otherMouseDragged].contains(type)) {
+        if [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged].contains(type) {
             if layout.remotePosition == nil && !selectDisplay(at: event.location) { return Unmanaged.passUnretained(event) }
             let now = ProcessInfo.processInfo.systemUptime
             if diagnostics && now < cursorProbeUntil && cursorProbeRows.count < 256 {
@@ -130,16 +126,13 @@ private final class EdgeCaptureContext {
                 output("LOCAL"); return nil
             }
         }
-        if layout.remotePosition != nil && ![CGEventType.keyDown, .keyUp, .flagsChanged].contains(type) {
-            // Cursor-only milestone: remote clicks/scrolling are not implemented.
-            // Do not let those events accidentally act on the parked local pointer.
-            return nil
-        }
+        // Do not let other events act on the parked local pointer.
+        if layout.remotePosition != nil { return nil }
         return Unmanaged.passUnretained(event)
     }
 }
 
-func runEdgeCapture(side: EdgeSide, remoteWidth: Double, remoteHeight: Double, offsetY: Double, fullInput: Bool = false, persistent: Bool = false) throws {
+func runEdgeCapture(side: EdgeSide, remoteWidth: Double, remoteHeight: Double, offsetY: Double) throws {
     guard CGPreflightListenEventAccess(), CGPreflightPostEventAccess() else {
         fail("Edge handoff requires Input Monitoring and Accessibility for extend.computer Cursor on this Mac.")
     }
@@ -156,7 +149,7 @@ func runEdgeCapture(side: EdgeSide, remoteWidth: Double, remoteHeight: Double, o
     let layout = try EdgeLayout(localWidth: bounds.width, localHeight: bounds.height,
                                 remoteWidth: remoteWidth, remoteHeight: remoteHeight,
                                 side: side, offsetY: offsetY)
-    let context = EdgeCaptureContext(layout: layout, bounds: bounds, display: display, displays: displays, fullInput: fullInput, persistent: persistent)
+    let context = EdgeCaptureContext(layout: layout, bounds: bounds, display: display, displays: displays)
     let events: [CGEventType] = [.mouseMoved, .leftMouseDown, .leftMouseUp, .rightMouseDown,
         .rightMouseUp, .otherMouseDown, .otherMouseUp, .leftMouseDragged, .rightMouseDragged,
         .otherMouseDragged, .scrollWheel, .keyDown, .keyUp, .flagsChanged]
@@ -174,7 +167,6 @@ func runEdgeCapture(side: EdgeSide, remoteWidth: Double, remoteHeight: Double, o
         let now = ProcessInfo.processInfo.systemUptime
         if activeEdgeDisplays() != context.displays { context.stop(reason: "display-changed"); return }
         if now - context.lastAck > 2 { context.stop(reason: "heartbeat-timeout") }
-        else if !context.persistent && now - context.started >= 30 { context.stop(reason: "duration-limit") }
     }!
     CFRunLoopAddTimer(context.runLoop, timer, .commonModes)
     DispatchQueue.global().async {

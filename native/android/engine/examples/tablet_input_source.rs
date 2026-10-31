@@ -748,9 +748,6 @@ mod tests {
         events: Arc<Mutex<Vec<InputEvent>>>,
     }
     impl session::CursorSink for Sink {
-        fn start_cursor(&mut self, _: &str) -> Result<bool> {
-            Ok(false)
-        }
         fn move_to(&mut self, _: f64, _: f64) -> Result<()> {
             Ok(())
         }

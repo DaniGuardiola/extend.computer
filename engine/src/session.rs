@@ -89,8 +89,6 @@ enum Message {
     Pong {
         sequence: u64,
     },
-    RequestCursor,
-    RequestInput,
     RequestControl {
         // Retained for compatibility with older endpoints; new receivers use pairing/account access.
         remembered_only: bool,
@@ -102,24 +100,9 @@ enum Message {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         shortcut_policy: Option<crate::input::ShortcutPolicy>,
     },
-    InputGranted {
-        display: DisplaySize,
-        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-        text_supported: bool,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        shortcut_policy: Option<crate::input::ShortcutPolicy>,
-    },
     Input {
         sequence: u64,
         event: crate::input::InputEvent,
-    },
-    CursorGranted {
-        display: DisplaySize,
-    },
-    Cursor {
-        sequence: u64,
-        x: f64,
-        y: f64,
     },
     CursorStream {
         sequence: u64,
@@ -260,7 +243,7 @@ pub trait CursorSink {
     fn shortcut_policy(&self) -> Option<crate::input::ShortcutPolicy> {
         None
     }
-    /// Actual active adapter contract, queried only after start_input/control.
+    /// Actual active adapter contract, queried only after start_control.
     fn supports_text_input(&self) -> bool {
         false
     }
@@ -270,12 +253,8 @@ pub trait CursorSink {
     fn supports_modifier_sides(&self) -> bool {
         false
     }
-    fn start_cursor(&mut self, peer: &str) -> Result<bool>;
     fn move_to(&mut self, x: f64, y: f64) -> Result<()>;
     fn start_control(&mut self, _peer: &str) -> Result<bool> {
-        Ok(false)
-    }
-    fn start_input(&mut self, _peer: &str) -> Result<bool> {
         Ok(false)
     }
     fn input(&mut self, _event: &crate::input::InputEvent) -> Result<()> {
@@ -315,9 +294,6 @@ impl<S: CursorSink> Drop for CursorSession<'_, S> {
 }
 struct DisabledCursor;
 impl CursorSink for DisabledCursor {
-    fn start_cursor(&mut self, _: &str) -> Result<bool> {
-        Ok(false)
-    }
     fn move_to(&mut self, _: f64, _: f64) -> Result<()> {
         bail!("cursor disabled")
     }
@@ -490,11 +466,8 @@ fn serve_connection_pinned_inner(
     channel.active_timeout()?;
     let deadline = Instant::now() + Duration::from_secs(300);
     let mut next_sequence = 0;
-    let mut cursor_deadline = None;
     let mut pending_cursor = 0;
-    let mut input_granted = false;
-    let mut session_control = false;
-    let mut active_input = false;
+    let mut control = false;
     loop {
         let message: Message = channel.receive()?;
         if cursor.ending() {
@@ -506,24 +479,16 @@ fn serve_connection_pinned_inner(
             channel.close_after_peer(Duration::from_secs(2));
             return Ok(());
         }
-        ensure!(
-            session_control || Instant::now() < deadline,
-            "session expired"
-        );
-        if store.is_revoked(&peer)? || (active_input && store.peer(&peer)?.is_none()) {
+        ensure!(control || Instant::now() < deadline, "session expired");
+        if store.is_revoked(&peer)? || (control && store.peer(&peer)?.is_none()) {
             channel.send(&Message::Denied)?;
             bail!("pairing or account access removed");
         }
-        let streamed = matches!(message, Message::CursorStream { .. });
         match message {
             Message::Ping { sequence } => {
                 ensure!(sequence == next_sequence, "unexpected probe sequence");
                 next_sequence += 1;
-                if input_granted {
-                    ensure!(
-                        (session_control || cursor_deadline.is_some_and(|d| Instant::now() < d)),
-                        "input grant expired"
-                    );
+                if control {
                     cursor.heartbeat()?;
                 }
                 channel.send(&Message::Pong { sequence })?;
@@ -531,7 +496,7 @@ fn serve_connection_pinned_inner(
             }
             Message::RequestControl { .. } => {
                 channel.require_capability(crate::protocol::CONTROL)?;
-                ensure!(cursor_deadline.is_none(), "control already requested");
+                ensure!(!control, "control already requested");
                 ensure!(store.peer(&peer)?.is_some(), EngineError::RequestRejected);
                 if !cursor.start_control(&peer)? {
                     channel.send(&Message::Denied)?;
@@ -539,10 +504,7 @@ fn serve_connection_pinned_inner(
                 }
                 ensure!(store.peer(&peer)?.is_some(), EngineError::RequestRejected);
                 let display = cursor.display_size()?.validate()?;
-                active_input = true;
-                cursor_deadline = Some(Instant::now()); // Marks a nonrenewable request; session scope uses heartbeat instead.
-                input_granted = true;
-                session_control = true;
+                control = true;
                 text_granted = cursor.supports_text_input()
                     && channel.supports_capability(crate::protocol::INPUT_TEXT);
                 channel.send(&Message::ControlGranted {
@@ -557,36 +519,8 @@ fn serve_connection_pinned_inner(
                     },
                 })?;
             }
-            Message::RequestInput => {
-                channel.require_capability(crate::protocol::INPUT)?;
-                ensure!(cursor_deadline.is_none(), "control already requested");
-                ensure!(store.peer(&peer)?.is_some(), EngineError::RequestRejected);
-                ensure!(cursor.start_input(&peer)?, EngineError::RequestRejected);
-                active_input = true;
-                ensure!(!store.is_revoked(&peer)?, "device revoked");
-                let display = cursor.display_size()?.validate()?;
-                cursor_deadline = Some(Instant::now() + Duration::from_secs(30));
-                input_granted = true;
-                text_granted = cursor.supports_text_input()
-                    && channel.supports_capability(crate::protocol::INPUT_TEXT);
-                channel.send(&Message::InputGranted {
-                    display,
-                    text_supported: text_granted,
-                    shortcut_policy: if channel
-                        .supports_capability(crate::protocol::INPUT_SHORTCUTS)
-                    {
-                        cursor.shortcut_policy()
-                    } else {
-                        None
-                    },
-                })?;
-            }
             Message::Input { sequence, event } => {
-                ensure!(
-                    input_granted
-                        && (session_control || cursor_deadline.is_some_and(|d| Instant::now() < d)),
-                    "input grant absent or expired"
-                );
+                ensure!(control, "input grant absent");
                 ensure!(sequence == next_sequence, "unexpected input sequence");
                 ensure!(pending_cursor < 4, "input window exceeded");
                 event.validate()?;
@@ -606,26 +540,10 @@ fn serve_connection_pinned_inner(
                 pending_cursor += 1;
                 next_sequence += 1;
             }
-            Message::RequestCursor => {
-                channel.require_capability(crate::protocol::CURSOR)?;
-                ensure!(cursor_deadline.is_none(), "cursor already requested");
-                ensure!(store.peer(&peer)?.is_some(), EngineError::RequestRejected);
-                ensure!(cursor.start_cursor(&peer)?, EngineError::RequestRejected);
-                active_input = true;
-                ensure!(!store.is_revoked(&peer)?, "device revoked");
-                let display = cursor.display_size()?.validate()?;
-                cursor_deadline = Some(Instant::now() + Duration::from_secs(30));
-                channel.send(&Message::CursorGranted { display })?;
-            }
-            Message::Cursor { sequence, x, y } | Message::CursorStream { sequence, x, y } => {
-                if streamed {
-                    ensure!(pending_cursor < 4, "cursor window exceeded");
-                    pending_cursor += 1;
-                }
-                ensure!(
-                    (session_control || cursor_deadline.is_some_and(|d| Instant::now() < d)),
-                    "cursor grant absent or expired"
-                );
+            Message::CursorStream { sequence, x, y } => {
+                ensure!(pending_cursor < 4, "cursor window exceeded");
+                pending_cursor += 1;
+                ensure!(control, "cursor grant absent");
                 ensure!(sequence == next_sequence, "unexpected cursor sequence");
                 ensure!(
                     x.is_finite()
@@ -636,9 +554,6 @@ fn serve_connection_pinned_inner(
                 );
                 cursor.move_to(x, y)?;
                 next_sequence += 1;
-                if !streamed {
-                    channel.send(&Message::Pong { sequence })?;
-                }
             }
             Message::Close => return Ok(()),
             _ => bail!("message not authorized for this session"),
@@ -917,35 +832,6 @@ impl Client {
         self.channel.active_timeout()?;
         display.validate()
     }
-    pub fn request_input(&mut self) -> Result<DisplaySize> {
-        self.shortcut_policy = None;
-        self.channel.require_capability(crate::protocol::INPUT)?;
-        ensure!(!self.store.is_revoked(&self.peer)?, "device revoked");
-        self.channel.send(&Message::RequestInput)?;
-        self.channel.consent_timeout()?;
-        let display = match self.reply()? {
-            Message::InputGranted {
-                display,
-                text_supported,
-                shortcut_policy,
-            } => {
-                self.shortcut_policy = crate::input::ShortcutPolicy::validate_grant(
-                    shortcut_policy,
-                    self.channel
-                        .supports_capability(crate::protocol::INPUT_SHORTCUTS),
-                )?;
-                self.text_granted = text_supported
-                    && self
-                        .channel
-                        .supports_capability(crate::protocol::INPUT_TEXT);
-                display
-            }
-            Message::Denied => bail!(EngineError::RemoteConsentDenied),
-            _ => bail!(EngineError::RequestRejected),
-        };
-        self.channel.active_timeout()?;
-        display.validate()
-    }
     pub fn shortcut_policy(&self) -> Option<crate::input::ShortcutPolicy> {
         self.shortcut_policy.filter(|_| {
             self.channel
@@ -981,38 +867,6 @@ impl Client {
         self.sequence += 1;
         Ok(())
     }
-    pub fn request_cursor(&mut self) -> Result<DisplaySize> {
-        self.channel.require_capability(crate::protocol::CURSOR)?;
-        ensure!(!self.store.is_revoked(&self.peer)?, "device revoked");
-        self.channel.send(&Message::RequestCursor)?;
-        self.channel.consent_timeout()?;
-        let display = match self.reply()? {
-            Message::CursorGranted { display } => display,
-            Message::Denied => bail!(EngineError::RemoteConsentDenied),
-            _ => bail!(EngineError::RequestRejected),
-        };
-        let display = display.validate()?;
-        self.channel.active_timeout()?;
-        Ok(display)
-    }
-    pub fn move_cursor(&mut self, x: f64, y: f64) -> Result<()> {
-        ensure!(!self.store.is_revoked(&self.peer)?, "device revoked");
-        ensure!(
-            x.is_finite() && y.is_finite() && (0.0..=1.0).contains(&x) && (0.0..=1.0).contains(&y),
-            "invalid cursor coordinates"
-        );
-        self.channel.send(&Message::Cursor {
-            sequence: self.sequence,
-            x,
-            y,
-        })?;
-        ensure!(
-            matches!(self.reply()?, Message::Pong { sequence } if sequence == self.sequence),
-            "invalid cursor acknowledgment"
-        );
-        self.sequence += 1;
-        Ok(())
-    }
     /// Send within a four-position window. `probe` acknowledges all preceding positions.
     /// Callers must probe before a fifth queued position; the receiver enforces this bound.
     pub fn queue_cursor(&mut self, x: f64, y: f64) -> Result<()> {
@@ -1043,10 +897,7 @@ mod remote_end_tests {
     };
     struct Receiver(Arc<AtomicBool>);
     impl CursorSink for Receiver {
-        fn start_cursor(&mut self, _: &str) -> Result<bool> {
-            Ok(false)
-        }
-        fn start_input(&mut self, _: &str) -> Result<bool> {
+        fn start_control(&mut self, _: &str) -> Result<bool> {
             Ok(true)
         }
         fn move_to(&mut self, _: f64, _: f64) -> Result<()> {
@@ -1090,7 +941,7 @@ mod remote_end_tests {
             |_, _| Decision::Deny,
         )
         .unwrap();
-        client.request_input().unwrap();
+        client.request_control().unwrap();
         // Stream cursor moves like a live session while the receiving user
         // presses Disconnect, so unread input is in flight when it ends.
         let started = std::time::Instant::now();
@@ -1127,10 +978,9 @@ mod text_grant_tests {
     #[serde(tag = "type", deny_unknown_fields)]
     enum LegacyGrant {
         ControlGranted { display: DisplaySize },
-        InputGranted { display: DisplaySize },
     }
     #[test]
-    fn shortcut_policy_comes_from_active_adapter_in_both_authenticated_grants() {
+    fn shortcut_policy_comes_from_active_adapter_in_control_grant() {
         use std::{net::TcpListener, thread};
         struct Adapter {
             active: bool,
@@ -1144,14 +994,7 @@ mod text_grant_tests {
                     None
                 }
             }
-            fn start_cursor(&mut self, _: &str) -> Result<bool> {
-                Ok(false)
-            }
             fn start_control(&mut self, _: &str) -> Result<bool> {
-                self.active = true;
-                Ok(true)
-            }
-            fn start_input(&mut self, _: &str) -> Result<bool> {
                 self.active = true;
                 Ok(true)
             }
@@ -1167,87 +1010,71 @@ mod text_grant_tests {
             Some(crate::input::ShortcutPolicy::Command),
             Some(crate::input::ShortcutPolicy::Control),
         ] {
-            for control in [false, true] {
-                let a = Identity::generate();
-                let b = Identity::generate();
-                let client_dir = tempfile::tempdir().unwrap();
-                let server_dir = tempfile::tempdir().unwrap();
-                let client_trust = TrustStore::open(client_dir.path()).unwrap();
-                let server_trust = TrustStore::open(server_dir.path()).unwrap();
-                let pin = b.fingerprint();
-                client_trust.remember(&pin).unwrap();
-                server_trust.remember(&a.fingerprint()).unwrap();
-                let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-                let address = listener.local_addr().unwrap();
-                let worker = thread::spawn(move || {
-                    let mut adapter = Adapter {
-                        active: false,
-                        policy,
-                    };
-                    assert_eq!(adapter.shortcut_policy(), None);
-                    let result = serve_connection_with_cursor(
-                        listener.accept().unwrap().0,
-                        &b,
-                        &server_trust,
-                        &mut None,
-                        |_, _| Decision::Deny,
-                        &mut adapter,
-                    );
-                    assert_eq!(adapter.shortcut_policy(), None);
-                    result
-                });
-                let mut client = Client::connect(
-                    TcpStream::connect(address).unwrap(),
-                    &a,
-                    &client_trust,
-                    None,
-                    Some(&pin),
+            let a = Identity::generate();
+            let b = Identity::generate();
+            let client_dir = tempfile::tempdir().unwrap();
+            let server_dir = tempfile::tempdir().unwrap();
+            let client_trust = TrustStore::open(client_dir.path()).unwrap();
+            let server_trust = TrustStore::open(server_dir.path()).unwrap();
+            let pin = b.fingerprint();
+            client_trust.remember(&pin).unwrap();
+            server_trust.remember(&a.fingerprint()).unwrap();
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let address = listener.local_addr().unwrap();
+            let worker = thread::spawn(move || {
+                let mut adapter = Adapter {
+                    active: false,
+                    policy,
+                };
+                assert_eq!(adapter.shortcut_policy(), None);
+                let result = serve_connection_with_cursor(
+                    listener.accept().unwrap().0,
+                    &b,
+                    &server_trust,
+                    &mut None,
                     |_, _| Decision::Deny,
-                )
-                .unwrap();
-                assert_eq!(client.shortcut_policy(), None);
-                if control {
-                    client.request_control().unwrap();
-                } else {
-                    client.request_input().unwrap();
-                }
-                assert_eq!(client.shortcut_policy(), policy);
-                client.close().unwrap();
-                worker.join().unwrap().unwrap();
-            }
+                    &mut adapter,
+                );
+                assert_eq!(adapter.shortcut_policy(), None);
+                result
+            });
+            let mut client = Client::connect(
+                TcpStream::connect(address).unwrap(),
+                &a,
+                &client_trust,
+                None,
+                Some(&pin),
+                |_, _| Decision::Deny,
+            )
+            .unwrap();
+            assert_eq!(client.shortcut_policy(), None);
+            client.request_control().unwrap();
+            assert_eq!(client.shortcut_policy(), policy);
+            client.close().unwrap();
+            worker.join().unwrap().unwrap();
         }
     }
     #[test]
     fn disabled_text_grant_keeps_strict_legacy_schema() {
-        for message in [
-            Message::ControlGranted {
-                display: DisplaySize {
-                    width: 1000.,
-                    height: 800.,
-                },
-                text_supported: false,
-                shortcut_policy: None,
+        let message = Message::ControlGranted {
+            display: DisplaySize {
+                width: 1000.,
+                height: 800.,
             },
-            Message::InputGranted {
-                display: DisplaySize {
-                    width: 1000.,
-                    height: 800.,
-                },
-                text_supported: false,
-                shortcut_policy: None,
-            },
-        ] {
-            let bytes = serde_json::to_vec(&message).unwrap();
-            assert!(serde_json::from_slice::<LegacyGrant>(&bytes).is_ok());
-            let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-            assert!(value.get("text_supported").is_none());
-            assert!(value.get("shortcut_policy").is_none());
-            let mut current = value;
-            current["text_supported"] = true.into();
-            current["shortcut_policy"] = "command".into();
-            assert!(serde_json::from_value::<Message>(current.clone()).is_ok());
-            current["shortcut_policy"] = "meta".into();
-            assert!(serde_json::from_value::<Message>(current).is_err());
-        }
+            text_supported: false,
+            shortcut_policy: None,
+        };
+        let bytes = serde_json::to_vec(&message).unwrap();
+        let LegacyGrant::ControlGranted { display } = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(display.width, 1000.);
+        let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert!(value.get("text_supported").is_none());
+        assert!(value.get("shortcut_policy").is_none());
+        let mut current = value;
+        current["text_supported"] = true.into();
+        current["shortcut_policy"] = "command".into();
+        assert!(serde_json::from_value::<Message>(current.clone()).is_ok());
+        current["shortcut_policy"] = "meta".into();
+        assert!(serde_json::from_value::<Message>(current).is_err());
     }
 }

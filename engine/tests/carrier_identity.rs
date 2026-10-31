@@ -21,10 +21,6 @@ use std::{
 
 struct Sink(Arc<AtomicBool>);
 impl CursorSink for Sink {
-    fn start_cursor(&mut self, _: &str) -> anyhow::Result<bool> {
-        self.0.store(true, Ordering::Release);
-        Ok(true)
-    }
     fn start_control(&mut self, _: &str) -> anyhow::Result<bool> {
         self.0.store(true, Ordering::Release);
         Ok(true)

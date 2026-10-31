@@ -979,7 +979,7 @@ mod tests {
             );
             let mut channel = Channel::new(stream, noise.into_transport_mode()?);
             channel.send(&serde_json::json!({"min_protocol":1,"max_protocol":1,
-                "app_version":"0.1","capabilities":[crate::protocol::INPUT,crate::protocol::CURSOR,crate::protocol::CONTROL]}))?;
+                "app_version":"0.1","capabilities":[crate::protocol::CONTROL]}))?;
             let hello: serde_json::Value = channel.receive()?;
             ensure!(
                 hello["capabilities"]

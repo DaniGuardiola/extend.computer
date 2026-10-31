@@ -2,12 +2,10 @@ import Foundation
 import CoreGraphics
 
 final class InputCapture {
-    let enabled: Bool
     var localKeys = Set<Int>()
     var remoteKeys = Set<Int>()
     var remoteButtons = Set<Int>()
     var lastModifiers = 0
-    init(enabled: Bool) { self.enabled = enabled }
     // Device flags (IOLLEvent.h) tell which side of each modifier is held.
     static let leftFlags: [UInt64] = [0x02, 0x01, 0x20, 0x08]
     static let rightFlags: [UInt64] = [0x04, 0x2000, 0x40, 0x10]
@@ -26,18 +24,15 @@ final class InputCapture {
         output(line)
     }
     func release() {
-        guard enabled else { return }
         emit(InputPacket(kind: "release")); remoteButtons.removeAll(); lastModifiers = 0
         // Keep ownership until physical key-up, so a remotely pressed key cannot
         // leak an unmatched release/repeat into a local app after returning.
     }
     func canEnter(_ event: CGEvent) -> Bool {
-        guard enabled else { return true }
         return localKeys.isEmpty && !(0..<128).contains { CGEventSource.keyState(.combinedSessionState, key: CGKeyCode($0)) } && Self.modifiers(event.flags) == 0 &&
             ![CGMouseButton.left, .right, .center].contains { CGEventSource.buttonState(.combinedSessionState, button: $0) }
     }
     func handle(_ type: CGEventType, _ event: CGEvent, remote: Bool) -> Bool {
-        guard enabled else { return false }
         let code = Int(event.getIntegerValueField(.keyboardEventKeycode))
         if !remote {
             if type == .keyUp && remoteKeys.remove(code) != nil { return true }

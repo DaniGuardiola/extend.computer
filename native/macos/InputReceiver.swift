@@ -4,7 +4,6 @@ import Darwin
 
 private final class InputReceiver {
     let source: CGEventSource
-    let persistent: Bool
     let bounds: CGRect
     let display: CGDirectDisplayID
     var binding: DisplayInputBinding?
@@ -13,13 +12,11 @@ private final class InputReceiver {
     var point = CGEvent(source: nil)?.location ?? .zero
     var state = InputState()
     var lastInput = ProcessInfo.processInfo.systemUptime
-    let started = ProcessInfo.processInfo.systemUptime
     let dryRun = ProcessInfo.processInfo.environment["EXTEND_COMPUTER_INPUT_DRY_RUN"] == "1"
     var stopped = false
     var eventNumber: Int64 = 1
     var buttonNumbers = [Int: Int64]()
-    init(persistent: Bool, target: DisplayInputTarget? = nil) {
-        self.persistent = persistent
+    init(target: DisplayInputTarget? = nil) {
         let selectedDisplay = target?.display_id ?? CGMainDisplayID()
         self.display = selectedDisplay
         self.bounds = target?.bounds.cgRect ?? CGDisplayBounds(selectedDisplay)
@@ -139,14 +136,14 @@ private final class InputReceiver {
     }
 }
 
-func runInputReceiver(persistent: Bool = false, target: DisplayInputTarget? = nil) {
+func runInputReceiver(target: DisplayInputTarget? = nil) {
     guard CGPreflightPostEventAccess() else { fail("Enable Accessibility for extend.computer Cursor, then restart.") }
     if let target {
         guard CGDisplayIsActive(target.display_id) != 0, CGDisplayBounds(target.display_id) == target.bounds.cgRect else {
             fail("Captured display is inactive or its geometry changed.")
         }
     }
-    let receiver = InputReceiver(persistent: persistent, target: target)
+    let receiver = InputReceiver(target: target)
     // Shutdown must run on the main loop before launchd terminates this helper.
     let signals = [SIGTERM, SIGINT].map { number -> DispatchSourceSignal in
         signal(number, SIG_IGN)
@@ -155,7 +152,7 @@ func runInputReceiver(persistent: Bool = false, target: DisplayInputTarget? = ni
     }
     let timer = CFRunLoopTimerCreateWithHandler(kCFAllocatorDefault, CFAbsoluteTimeGetCurrent() + 0.1, 0.1, 0, 0) { _ in
         let now = ProcessInfo.processInfo.systemUptime
-        if now - receiver.lastInput > 2 || (!receiver.persistent && now - receiver.started >= 30)
+        if now - receiver.lastInput > 2
             || (target != nil && (!receiver.targetValid() || getppid() != receiver.parent)) { receiver.stop() }
     }!
     CFRunLoopAddTimer(receiver.loop, timer, .commonModes)

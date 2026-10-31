@@ -98,20 +98,6 @@ impl<S: CursorSink> CursorSink for ManagedCursor<S> {
         self.start()?;
         Ok(true)
     }
-    fn start_cursor(&mut self, peer: &str) -> Result<bool> {
-        if !self.inner.start_cursor(peer)? {
-            return Ok(false);
-        }
-        self.start()?;
-        Ok(true)
-    }
-    fn start_input(&mut self, peer: &str) -> Result<bool> {
-        if !self.inner.start_input(peer)? {
-            return Ok(false);
-        }
-        self.start()?;
-        Ok(true)
-    }
     fn input(&mut self, event: &crate::input::InputEvent) -> Result<()> {
         self.inner.input(event)
     }
@@ -150,58 +136,49 @@ mod text_adapter_tests {
     fn managed_native_text_tracks_actual_helper_readiness_and_finish() {
         for supported in [false, true] {
             for required in [false, true] {
-                for control in [false, true] {
-                    let temp = tempfile::tempdir().unwrap();
-                    let path = temp.path().join("helper");
-                    std::fs::write(&path, format!(
-                        "#!/bin/sh\nprintf '%s\\n' 'READY 1920 1080{}'\nwhile IFS= read -r line; do printf '%s\\n' OK; done\n",
-                        if supported { " input-text-v1 input-shortcuts-command-v1" } else { "" },
-                    )).unwrap();
-                    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700))
-                        .unwrap();
-                    let inner = NativeSink::new(Some(path));
-                    let peer = "127.0.0.1".parse().unwrap();
-                    let mut sink = if required {
-                        ManagedCursor::required(inner, peer)
-                    } else {
-                        ManagedCursor::new(inner, peer, false)
-                    };
-                    assert!(!sink.supports_text_input());
-                    assert_eq!(sink.shortcut_policy(), None);
-                    // Exercise the actual required decorator and subprocess READY contract
-                    // without acquiring a privileged network lease in a host unit test.
-                    if required {
-                        if control {
-                            sink.inner.start_control("peer").unwrap();
-                        } else {
-                            sink.inner.start_input("peer").unwrap();
-                        }
-                    } else if control {
-                        sink.start_control("peer").unwrap();
-                    } else {
-                        sink.start_input("peer").unwrap();
-                    }
-                    assert_eq!(sink.supports_text_input(), supported);
-                    assert_eq!(
-                        sink.shortcut_policy(),
-                        if supported {
-                            Some(crate::input::ShortcutPolicy::Command)
-                        } else {
-                            None
-                        }
-                    );
-                    assert_eq!(
-                        sink.input(&InputEvent::Text {
-                            value: "e\u{301}👩‍💻中文".into()
-                        })
-                        .is_ok(),
-                        supported
-                    );
-                    sink.input(&InputEvent::Release).unwrap();
-                    sink.finish();
-                    assert!(!sink.supports_text_input());
-                    assert_eq!(sink.shortcut_policy(), None);
+                let temp = tempfile::tempdir().unwrap();
+                let path = temp.path().join("helper");
+                std::fs::write(&path, format!(
+                    "#!/bin/sh\nprintf '%s\\n' 'READY 1920 1080{}'\nwhile IFS= read -r line; do printf '%s\\n' OK; done\n",
+                    if supported { " input-text-v1 input-shortcuts-command-v1" } else { "" },
+                )).unwrap();
+                std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+                let inner = NativeSink::new(Some(path));
+                let peer = "127.0.0.1".parse().unwrap();
+                let mut sink = if required {
+                    ManagedCursor::required(inner, peer)
+                } else {
+                    ManagedCursor::new(inner, peer, false)
+                };
+                assert!(!sink.supports_text_input());
+                assert_eq!(sink.shortcut_policy(), None);
+                // Exercise the actual required decorator and subprocess READY contract
+                // without acquiring a privileged network lease in a host unit test.
+                if required {
+                    sink.inner.start_control("peer").unwrap();
+                } else {
+                    sink.start_control("peer").unwrap();
                 }
+                assert_eq!(sink.supports_text_input(), supported);
+                assert_eq!(
+                    sink.shortcut_policy(),
+                    if supported {
+                        Some(crate::input::ShortcutPolicy::Command)
+                    } else {
+                        None
+                    }
+                );
+                assert_eq!(
+                    sink.input(&InputEvent::Text {
+                        value: "e\u{301}👩‍💻中文".into()
+                    })
+                    .is_ok(),
+                    supported
+                );
+                sink.input(&InputEvent::Release).unwrap();
+                sink.finish();
+                assert!(!sink.supports_text_input());
+                assert_eq!(sink.shortcut_policy(), None);
             }
         }
     }

@@ -17,9 +17,6 @@ struct Sink {
     starts: Arc<AtomicUsize>,
 }
 impl CursorSink for Sink {
-    fn start_cursor(&mut self, _: &str) -> anyhow::Result<bool> {
-        Ok(false)
-    }
     fn start_control(&mut self, _: &str) -> anyhow::Result<bool> {
         self.starts.fetch_add(1, Ordering::SeqCst);
         Ok(true)
@@ -78,7 +75,8 @@ fn paired_control_reconnects_without_approval_and_unpair_stops_it() {
         first.probe().unwrap();
         thread::sleep(Duration::from_millis(100));
     }
-    first.move_cursor(0.4, 0.5).unwrap();
+    first.queue_cursor(0.4, 0.5).unwrap();
+    first.probe().unwrap();
     first.close().unwrap();
     let mut second = Client::connect(
         TcpStream::connect(addr).unwrap(),
@@ -90,7 +88,8 @@ fn paired_control_reconnects_without_approval_and_unpair_stops_it() {
     )
     .unwrap();
     second.request_control().unwrap();
-    second.move_cursor(0.5, 0.4).unwrap();
+    second.queue_cursor(0.5, 0.4).unwrap();
+    second.probe().unwrap();
     bt.forget(&a_id).unwrap();
     assert!(second.probe().is_err());
     drop(second);
@@ -275,9 +274,6 @@ fn emergency_stop_wins_over_simultaneous_connection_failure() {
     use std::os::unix::fs::PermissionsExt;
     struct FailingHeartbeat;
     impl CursorSink for FailingHeartbeat {
-        fn start_cursor(&mut self, _: &str) -> anyhow::Result<bool> {
-            Ok(false)
-        }
         fn start_control(&mut self, _: &str) -> anyhow::Result<bool> {
             Ok(true)
         }

@@ -9,13 +9,12 @@ import select
 import subprocess
 import sys
 import tempfile
-import time
 import uuid
 
 
 def main():
-    if sys.argv[1:] not in (['inject'], ['inject-input'], ['inject-control']):
-        raise SystemExit('desktop helper supports inject only')
+    if sys.argv[1:] != ['inject-control']:
+        raise SystemExit('desktop helper supports inject-control only')
     native = Path(__file__).resolve().parents[2] / 'target/extend.computer Cursor.app/Contents/MacOS/ExtendComputerCursor'
     label = 'computer.extend.prototype.cursor-session.' + uuid.uuid4().hex
     domain = f'gui/{os.getuid()}'
@@ -31,8 +30,7 @@ def main():
         try:
             subprocess.run(['launchctl', 'bootstrap', domain, str(config)], check=True)
             started = True
-            deadline = float("inf") if sys.argv[1] == "inject-control" else time.monotonic() + 35
-            while time.monotonic() < deadline:
+            while True:
                 if errors.exists() and errors.stat().st_size:
                     sys.stderr.write(errors.read_text())
                     return 1
@@ -46,8 +44,6 @@ def main():
                     while packet:
                         written = os.write(destination, packet)
                         packet = packet[written:]
-            sys.stderr.write('Desktop cursor helper timed out.\n')
-            return 1
         finally:
             if started:
                 subprocess.run(['launchctl', 'bootout', f'{domain}/{label}'], capture_output=True)
