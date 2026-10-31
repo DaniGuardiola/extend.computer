@@ -1,5 +1,27 @@
 # extend.computer
 
+## 0.4.0
+
+### Minor Changes
+
+- [`07d5d71`](https://github.com/DaniGuardiola/extend.computer/commit/07d5d71ca049272acff38d043240957ee56cfe2f) Thanks [@DaniGuardiola](https://github.com/DaniGuardiola)! - Show whether a local network connection runs over Wi-Fi or Ethernet. The connection status names the link, and its explanation says which link each device uses.
+
+- [`09cc0b3`](https://github.com/DaniGuardiola/extend.computer/commit/09cc0b313b76c9a9791b6c9e96d397867cee91cd) Thanks [@DaniGuardiola](https://github.com/DaniGuardiola)! - Show live connection quality for connected devices. Signal bars in the connection status show good, fair or poor quality, hovering shows the round trip and packet loss, and a connection that stays below good suggests a fix for its route, such as Ethernet or a USB cable instead of Wi-Fi.
+
+- [`be32574`](https://github.com/DaniGuardiola/extend.computer/commit/be32574ef6956ac58b0b7d0ce866b5ce03cb1e4a) Thanks [@DaniGuardiola](https://github.com/DaniGuardiola)! - Sign in with a passkey or security key directly in the app on extend.computer accounts, without switching to the browser. This also works for accounts that use a passkey or security key as their second factor. Custom account servers keep passkey sign-in through the browser.
+
+- [`d68e621`](https://github.com/DaniGuardiola/extend.computer/commit/d68e62136a9cb7c50134fbe6898a407fcdd2d88e) Thanks [@DaniGuardiola](https://github.com/DaniGuardiola)! - A Mac can now extend or mirror its screen to a Windows PC running extend.computer. Devices now tell each other what they support, so the Mac picks a video format the other device can show, and Extend, Mirror and Share keyboard & mouse explain when a device can't do them instead of failing after connecting.
+
+### Patch Changes
+
+- [`821d2fb`](https://github.com/DaniGuardiola/extend.computer/commit/821d2fb238f0b4cb55f8a3696ee45966c8715d1f) Thanks [@DaniGuardiola](https://github.com/DaniGuardiola)! - Switch between a USB cable and the local network within seconds when the cable is plugged in or removed, instead of losing the device until the app restarts. A connection error on a device now clears once that device is reachable again.
+
+- [`4a804ba`](https://github.com/DaniGuardiola/extend.computer/commit/4a804bac273fbb27d31f7622d69fa4ec6ee84199) Thanks [@DaniGuardiola](https://github.com/DaniGuardiola)! - Changing the extended display's size no longer makes other monitors look darker or warmer. The extended display now offers its sizes from the start, so changing size switches modes instead of rebuilding it, which had made macOS reset other screens' color profiles until disconnecting.
+
+- [`c33f448`](https://github.com/DaniGuardiola/extend.computer/commit/c33f448156dc15432b4dd95abb938ad7e476b621) Thanks [@DaniGuardiola](https://github.com/DaniGuardiola)! - Fix extending a display failing on the first attempt with "placement rejected": the app now waits for macOS to bring the new display online before placing it.
+
+- [`d2a25b5`](https://github.com/DaniGuardiola/extend.computer/commit/d2a25b559bb94497a644d9b503d6e43b898bc964) Thanks [@DaniGuardiola](https://github.com/DaniGuardiola)! - Keep keyboard and mouse sharing smooth while the app is in the background, and send right-hand Shift, Control, Option and Command keys as themselves instead of their left-hand counterparts.
+
 ## 0.3.1
 
 ### Patch Changes
