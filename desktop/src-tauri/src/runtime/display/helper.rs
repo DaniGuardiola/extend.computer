@@ -7,7 +7,7 @@ use std::{
     collections::VecDeque,
     io::{Read, Write},
     path::Path,
-    process::{Child, ChildStdin, Command, Stdio},
+    process::{Child, ChildStdin, Stdio},
     sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
         mpsc::{self, Receiver, SyncSender, TryRecvError, TrySendError},
@@ -387,7 +387,9 @@ impl Helper {
     }
 
     pub fn screen_size(path: &Path, config: &mut Config) -> Result<()> {
-        let output = Command::new(path).arg("screen").output()?;
+        let output = extend_computer_agent::cursor::helper_command(path)
+            .arg("screen")
+            .output()?;
         ensure!(output.status.success(), "Could not read display size");
         let screen: Screen = serde_json::from_slice(&output.stdout)?;
         fit_screen(&screen, config)
@@ -410,7 +412,7 @@ impl Helper {
         } else {
             "mirror"
         };
-        let mut process = Command::new(path);
+        let mut process = extend_computer_agent::cursor::helper_command(path);
         if automatic_low_latency(
             std::env::var_os("EXTEND_DISPLAY_LOW_LATENCY_ENCODER").as_deref(),
             config.codec,

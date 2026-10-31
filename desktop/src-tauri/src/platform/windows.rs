@@ -15,10 +15,7 @@ pub fn helper(beside: &Path, name: &str) -> Result<PathBuf> {
 }
 /// The host name as the user typed it; `COMPUTERNAME` is always upper case.
 pub fn computer_name() -> Option<String> {
-    use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    std::process::Command::new("hostname")
-        .creation_flags(CREATE_NO_WINDOW)
+    extend_computer_agent::cursor::helper_command("hostname")
         .output()
         .ok()
         .filter(|o| o.status.success())

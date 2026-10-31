@@ -5,7 +5,7 @@ use serde::Serialize;
 use std::{
     io::Read,
     path::Path,
-    process::{Command, Stdio},
+    process::Stdio,
     time::{Duration, Instant},
 };
 #[derive(Clone, Default, Serialize)]
@@ -27,7 +27,7 @@ impl Permissions {
     }
 }
 fn read_status(path: &Path) -> Result<String> {
-    let mut child = Command::new(path)
+    let mut child = extend_computer_agent::cursor::helper_command(path)
         .arg("status")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())

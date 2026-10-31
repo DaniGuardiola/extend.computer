@@ -9,6 +9,20 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// A command for a native helper. The release app on Windows has no console,
+/// so console helpers it starts would otherwise each open a console window.
+pub fn helper_command(program: impl AsRef<std::ffi::OsStr>) -> Command {
+    #[allow(unused_mut)]
+    let mut command = Command::new(program);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    command
+}
+
 pub(crate) struct Helper(
     pub(crate) Child,
     Option<DisplaySize>,
@@ -32,7 +46,7 @@ impl Drop for Helper {
 }
 pub(crate) fn spawn(path: &Path, mode: &str, arguments: &[String]) -> Result<Helper> {
     let mut child = Helper(
-        Command::new(path)
+        helper_command(path)
             .arg(mode)
             .args(arguments)
             .stdin(Stdio::piped())
