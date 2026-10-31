@@ -4,16 +4,25 @@ use tauri::Manager;
 pub mod passkey;
 pub mod traffic_lights;
 
-// The display helper can view another screen; the UI still marks remote
-// desktop as coming later.
-pub const CAPABILITIES: super::Capabilities = super::Capabilities {
-    extend_display: true,
-    mirror_display: true,
-    share_input: true,
-    remote_desktop: true,
-    input_permissions: true,
-    wifi_optimization: true,
+// Every display and input role. The display helper may report less, such as
+// no extended display where virtual displays are unavailable. The UI still
+// marks remote desktop as coming later.
+pub const ABILITIES: crate::runtime::Abilities = crate::runtime::Abilities {
+    source_mirror: true,
+    source_extend: true,
+    display_control: true,
+    viewer: true,
+    viewer_input: true,
+    encode_hevc: true,
+    decode_hevc: true,
+    cursor_send: true,
+    cursor_overlay: true,
+    input_receive: true,
+    input_send: true,
 };
+/// Input capture and injection need Accessibility; Wi-Fi uses a broker.
+pub const INPUT_PERMISSIONS: bool = true;
+pub const WIFI_OPTIMIZATION: bool = true;
 pub fn initialize(app: &tauri::AppHandle) -> Result<()> {
     let resources = crate::permission_flow::resources(app)?;
     crate::wifi_permission::initialize(&resources)?;

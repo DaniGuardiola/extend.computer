@@ -5,7 +5,7 @@
 The shared engine manages sessions across computers and mobile devices. Platform adapters provide the input, display, permission, and credential-storage capabilities available on each operating system.
 
 > [!NOTE]
-> macOS is the shipping platform. Windows support is in development: it pairs, mirrors its screen to another device, and shares keyboard and mouse with another device in both directions. Other platforms are **not supported yet**.
+> macOS is the shipping platform. Windows support is in development: it pairs, mirrors its screen to another device, shows another device's extended or mirrored screen full screen, and shares keyboard and mouse with another device in both directions. Other platforms are **not supported yet**.
 
 ## Shared responsibilities
 
@@ -17,7 +17,7 @@ Identity verification, trust decisions, account membership, encrypted session au
 | --- | --- | --- |
 | Identity storage | Protect device keys using the platform's credential facilities | macOS Keychain; Windows Credential Manager; separate development file identity |
 | Input | Capture and inject supported events; map physical keys and modifiers | macOS native helpers; Windows SendInput injection and low-level-hook capture (`native/windows/input/`) |
-| Displays | Expose supported capture, virtual-display, and presentation capabilities | Experimental macOS LAN streaming: ScreenCaptureKit, VideoToolbox, Metal, and a runtime virtual-display adapter. Windows mirroring source: DXGI Desktop Duplication and Media Foundation H.264 (`native/windows/display/`) |
+| Displays | Expose supported capture, virtual-display, and presentation capabilities | Experimental macOS LAN streaming: ScreenCaptureKit, VideoToolbox, Metal, and a runtime virtual-display adapter. Windows mirroring source: DXGI Desktop Duplication and Media Foundation H.264; Windows viewer: Media Foundation H.264 decoding and Direct3D 11 presentation (`native/windows/display/`) |
 | Permissions | Determine effective access and guide users through OS approval | macOS permission bridge |
 | Network optimization | Apply supported optimizations and restore resources on exit | macOS Wi-Fi/AWDL broker |
 | Distribution | Package, sign, install, and update applications | macOS Developer ID and Sparkle pipeline |
@@ -35,6 +35,8 @@ CI tests the shared engine on Linux, the shipping desktop on macOS, and the engi
 Support is per mode and role, not simply per platform name. A device might present an image without being able to create a virtual display, or accept control without being able to capture global input.
 
 The protocol negotiates implemented capabilities. Hardware, OS restrictions, and permissions determine the available operations.
+
+Each device also lists its roles in the encrypted Hello as `offers` ([`protocol::offer`](../../engine/src/protocol.rs)): which display sources it runs, whether it views another screen, decodes HEVC or draws a separate pointer, and whether it sends or receives keyboard and mouse input. The desktop builds them from its display helper's abilities. Offers are advisory and frozen: at most 32 tokens of lowercase letters, digits and hyphens; a peer that sends none, or a list that breaks those rules, is unknown and keeps the behaviour that predates offers, never a guess from its platform name. The device list disables actions a peer said it can't do. A display source picks its codec and pointer from the receiver's offers in that session's own handshake, and a receiver turns down an offer it can't show before starting any helper. When both ends negotiated `display-decline-v1` it says so with `Declined`; older peers see the connection end.
 
 ---
 

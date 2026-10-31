@@ -73,6 +73,7 @@ impl Desktop {
         *devices = next;
         drop(devices);
         let _ = self.clear_peer_device_info(peer);
+        self.peer_offers.lock().unwrap().remove(peer);
         self.clear_removal(peer)
     }
     pub fn received_unpair(&self, peer: &str) -> Result<()> {

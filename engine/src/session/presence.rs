@@ -86,6 +86,8 @@ pub struct PresenceReply {
     pub device_info: Option<crate::device_info::DeviceInfo>,
     /// The peer's own physical link for this connection.
     pub link: Option<crate::link::Link>,
+    /// The roles the peer offered; advisory until a session's own handshake.
+    pub offers: crate::protocol::Offers,
 }
 
 /// Returns hardware metadata only after pinned identity and trusted presence succeed.
@@ -122,6 +124,7 @@ pub fn query_presence_with_device_info(
         status,
         device_info: channel.remote_device_info().cloned(),
         link: channel.remote_link(),
+        offers: channel.remote_offers().clone(),
     }))
 }
 

@@ -22,6 +22,7 @@ The macOS CI whitelist includes shared engine and build inputs plus the explicit
 - `runtime/unpair.rs`: local access removal, pinned peer notification, and persistent explicit retry.
 - `runtime/outgoing.rs`: initiated pairing, code normalization, and pinned control connections.
 - `runtime/display.rs`: paired/account display connections, authenticated WebRTC setup, adaptive video bitrate, and native helper lifecycle.
+- `runtime/abilities.rs`: this device's display and input roles (per-platform defaults refined by the display helper's `capabilities`), which feed the Hello offers, the UI's capabilities, a source's per-peer codec and pointer, and a receiver's decline check.
 - `runtime/state.rs`: typed session kinds/phases and allowed transitions, serialized with stable IPC strings.
 - `runtime/errors.rs`: user-facing translation of typed engine errors and transport failures.
 - `runtime/tests.rs`: encrypted pairing/control lifecycle tests with a fake native input helper.

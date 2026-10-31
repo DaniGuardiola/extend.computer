@@ -10,8 +10,9 @@ pub use macos::*;
 pub use windows::*;
 
 /// What this device can start and which OS grants it uses, so the UI offers
-/// only what works here. Each platform exports its set as `CAPABILITIES`.
-#[derive(Clone, Copy, serde::Serialize)]
+/// only what works here. Built from `runtime::Abilities`, whose defaults each
+/// platform exports as `ABILITIES`, plus the platform's grants.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
 pub struct Capabilities {
     pub extend_display: bool,
     pub mirror_display: bool,

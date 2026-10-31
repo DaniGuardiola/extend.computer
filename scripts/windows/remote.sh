@@ -7,6 +7,7 @@
 #   ui Action=... [Key=...]  UI Automation in the desktop session, elevated; see ui.ps1
 #   display-test [software]  run the display helper for ~5 s while sweeping the pointer, summarize its stream
 #   input-test [drive]       run capture-control-left against injected input; drive only injects it
+#   viewer-test [W H]        sync, build the display helper, run its viewer full screen on a synthetic stream
 #
 # EXTEND_WINDOWS_HOST (default windows-pc) names the SSH host, whose default shell must be Windows
 # PowerShell, and EXTEND_WINDOWS_REPO (default C:\src\extend.computer) the checkout there.
@@ -128,9 +129,20 @@ input_test() {
     session input-test '-Timeout 30' "Bin=$target\\debug" "Mode=${1:-capture}"
 }
 
+# The viewer opens full screen and the test clicks and types into it, so the PC's desktop is busy meanwhile.
+viewer_test() {
+    sync
+    prepare
+    remote "\$env:CARGO_TARGET_DIR = $(quote "$target"); Set-Location $(quote "$repo\\native\\windows"); \
+cargo build -p extend-computer-display 2>&1 | Select-String '^error|Finished' -Context 0,8 | Out-String -Width 300; \
+if (\$LASTEXITCODE) { \"helper build failed (\$LASTEXITCODE)\"; exit 1 }; exit 0"
+    scp -q scripts/windows/viewer-test.py "$host:$(slashes "$work")/"
+    session viewer-test '-Timeout 120' "Bin=$target\\debug" "Width=${1:-1920}" "Height=${2:-1080}"
+}
+
 command=${1:-}
 case $command in
-    sync | run | shot | ui | display-test | input-test)
+    sync | run | shot | ui | display-test | input-test | viewer-test)
         shift
         "${command//-/_}" "$@"
         ;;

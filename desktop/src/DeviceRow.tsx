@@ -15,6 +15,7 @@ import {
   api,
   localNoun,
   native,
+  peerOffers,
   unavailableHere,
   type Capabilities,
   type Device,
@@ -136,11 +137,18 @@ export function DeviceRow({
     setDevice({ name: peer.name, address: peer.address, edge: peer.edge });
   }, [peer.name, peer.address, peer.edge]);
   const sessionMode = session ? (session.display ?? "input") : undefined;
-  const unavailable = (icon: ReactNode, label: string) => (
+  // What this computer can't start, or what the peer said it can't do.
+  const showsDisplays = peerOffers(peer, "display-viewer");
+  const noDisplays = `${peer.name} can’t show another screen yet.`;
+  const unavailable = (
+    icon: ReactNode,
+    label: string,
+    explanation = unavailableHere,
+  ) => (
     <ExplainedButton
       className="device-action"
       aria-disabled="true"
-      explanation={unavailableHere}
+      explanation={explanation}
     >
       {icon}
       <span>{label}</span>
@@ -315,6 +323,8 @@ export function DeviceRow({
             stopAction
           ) : !capabilities.extend_display ? (
             unavailable(<MonitorUp size={18} />, "Extend display")
+          ) : !showsDisplays ? (
+            unavailable(<MonitorUp size={18} />, "Extend display", noDisplays)
           ) : (
             <ExplainedButton
               className="device-action"
@@ -347,6 +357,8 @@ export function DeviceRow({
             stopAction
           ) : !capabilities.mirror_display ? (
             unavailable(<Copy size={18} />, "Mirror display")
+          ) : !showsDisplays ? (
+            unavailable(<Copy size={18} />, "Mirror display", noDisplays)
           ) : (
             <ExplainedButton
               className="device-action"
@@ -378,6 +390,12 @@ export function DeviceRow({
             stopAction
           ) : !capabilities.share_input ? (
             unavailable(<Keyboard size={18} />, "Share keyboard & mouse")
+          ) : !peerOffers(peer, "input-receive") ? (
+            unavailable(
+              <Keyboard size={18} />,
+              "Share keyboard & mouse",
+              `${peer.name} can’t be controlled with a keyboard and mouse yet.`,
+            )
           ) : (
             <ExplainedButton
               className="device-action"

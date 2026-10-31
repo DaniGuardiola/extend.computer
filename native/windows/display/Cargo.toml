@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "Windows display helper: captures the screen and streams encoded video to the desktop app"
+description = "Windows display helper: streams the screen to the desktop app and shows a peer's screen"
 
 [[bin]]
 name = "ExtendComputerDisplay"
@@ -12,6 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow.workspace = true
+serde_json.workspace = true
 extend-computer-agent = { path = "../../../engine" }
 
 [target.'cfg(windows)'.dependencies]
@@ -25,9 +26,16 @@ windows = { workspace = true, features = [
   "Win32_Graphics_Gdi",
   "Win32_Media_MediaFoundation",
   "Win32_System_Com",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_LibraryLoader",
   "Win32_System_Ole",
   "Win32_System_Performance",
+  "Win32_System_Power",
+  "Win32_System_RemoteDesktop",
+  "Win32_System_Threading",
   "Win32_System_Variant",
   "Win32_UI_HiDpi",
+  "Win32_UI_Input_Ime",
+  "Win32_UI_Input_KeyboardAndMouse",
   "Win32_UI_WindowsAndMessaging",
 ] }

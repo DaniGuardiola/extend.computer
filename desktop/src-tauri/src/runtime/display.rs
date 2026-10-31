@@ -2,7 +2,8 @@
 use super::*;
 use extend_computer_agent::{
     display::{DisplayEvent, Transport},
-    session::display::{Config, DisplaySignal},
+    protocol::offer,
+    session::display::{Config, Declined, DisplaySignal},
 };
 use std::net::IpAddr;
 mod bitrate;
@@ -67,6 +68,161 @@ mod recovery_tests {
         assert!(!restored.focused);
         assert!(!restored.enabled);
         assert!(receiver.message(now).is_none());
+    }
+}
+
+#[cfg(all(test, unix))]
+mod decline_tests {
+    use super::*;
+    use extend_computer_agent::session::display::{DeclineReason, Mode, VideoCodec};
+
+    /// Fake input and display helpers that record every launch.
+    fn helpers(root: &std::path::Path) -> (PathBuf, PathBuf) {
+        use std::os::unix::fs::PermissionsExt;
+        let log = root.join("launches");
+        let cursor = root.join("extend.computer Cursor.app/Contents/MacOS/ExtendComputerCursor");
+        #[cfg(not(target_os = "macos"))]
+        let cursor = root.join("ExtendComputerCursor.exe");
+        let display = crate::platform::helper(&cursor, "Display").unwrap();
+        for path in [&cursor, &display] {
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            let script = r#"#!/bin/sh
+echo "$(basename "$0") $*" >> 'LOG'
+case "$1" in
+status) echo 'listen=true post=true wifi=true';;
+screen) echo '{"width":1280,"height":800,"scale":1}';;
+*) exit 1;;
+esac
+"#;
+            std::fs::write(path, script.replace("LOG", &log.display().to_string())).unwrap();
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        (cursor, log)
+    }
+
+    struct Outcome {
+        source: anyhow::Error,
+        receiver: Result<()>,
+        launches: String,
+        app: Arc<Desktop>,
+        _files: tempfile::TempDir,
+    }
+
+    /// Offers `config` to a receiver with `abilities` and records the source's
+    /// error, the receiver's own result and the helpers it launched.
+    fn offer(abilities: crate::runtime::Abilities, config: Config) -> Outcome {
+        let temp = tempfile::tempdir().unwrap();
+        let (cursor, log) = helpers(temp.path());
+        let receiver = Desktop::new(temp.path().join("receiver"), cursor).unwrap();
+        receiver.set_abilities(abilities);
+        let identity = Arc::new(extend_computer_agent::identity::Identity::generate());
+        *receiver.identity.lock().unwrap() = Some(identity.clone());
+        let source = extend_computer_agent::identity::Identity::generate();
+        receiver
+            .store()
+            .unwrap()
+            .remember(&source.fingerprint())
+            .unwrap();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let app = receiver.clone();
+        let server = std::thread::spawn(move || {
+            let socket = listener.accept().unwrap().0;
+            let (id, cancelled) = app.reserve(SessionKind::Incoming, None).unwrap();
+            let result = app.receive_display(id, cancelled, socket, None);
+            let copy = match &result {
+                Ok(()) => Ok(()),
+                Err(error) => Err(match error.downcast_ref::<Declined>() {
+                    Some(declined) => anyhow::Error::new(*declined),
+                    None => anyhow::anyhow!("{error:#}"),
+                }),
+            };
+            app.finish(id, result);
+            copy
+        });
+        let error = DisplaySignal::connect(
+            TcpStream::connect(address).unwrap(),
+            &source,
+            &identity.fingerprint(),
+            &config,
+            "offer",
+        )
+        .err()
+        .expect("The receiver answered an offer it should not show");
+        Outcome {
+            source: error,
+            receiver: server.join().unwrap(),
+            launches: std::fs::read_to_string(&log).unwrap_or_default(),
+            app: receiver,
+            _files: temp,
+        }
+    }
+
+    fn config(mode: Mode, auto_size: bool, codec: VideoCodec) -> Config {
+        Config {
+            mode,
+            width: 1280,
+            height: 800,
+            fps: 60,
+            bitrate: 8_000_000,
+            retina: false,
+            auto_size,
+            codec,
+            separate_cursor: true,
+        }
+    }
+
+    #[test]
+    fn receiver_declines_unsupported_offers_before_any_helper_starts() {
+        let viewer = crate::runtime::Abilities {
+            viewer: true,
+            decode_hevc: false,
+            cursor_overlay: false,
+            ..crate::runtime::Abilities::defaults()
+        };
+        let no_viewer = crate::runtime::Abilities {
+            viewer: false,
+            ..viewer
+        };
+        for (abilities, offered) in [
+            // Fixed-size Extend starts its viewer only after media connects;
+            // automatic Mirror sizes one up front. Both are turned down first.
+            (no_viewer, config(Mode::Extend, false, VideoCodec::H264)),
+            (no_viewer, config(Mode::Mirror, true, VideoCodec::H264)),
+            (viewer, config(Mode::Mirror, true, VideoCodec::Hevc)),
+            (viewer, config(Mode::Extend, false, VideoCodec::Hevc)),
+        ] {
+            let outcome = offer(abilities, offered.clone());
+            assert_eq!(outcome.launches, "", "{offered:?}");
+            assert_eq!(
+                outcome.source.downcast_ref::<Declined>(),
+                Some(&Declined {
+                    reason: DeclineReason::Unsupported,
+                    local: false
+                })
+            );
+            assert_eq!(
+                crate::runtime::friendly_error(&outcome.source),
+                "The other device can’t show this display yet. Update extend.computer on that device."
+            );
+            assert!(outcome
+                .receiver
+                .unwrap_err()
+                .downcast_ref::<Declined>()
+                .is_some_and(|declined| declined.local));
+            // Its own decision is not an error on the declining device.
+            let snapshot = outcome.app.snapshot().unwrap();
+            assert!(snapshot.error.is_none(), "{:?}", snapshot.error);
+            assert!(snapshot.session.is_none());
+        }
+        // The same offer reaches the receiver's helpers once it can show it.
+        let outcome = offer(viewer, config(Mode::Extend, false, VideoCodec::H264));
+        assert!(outcome.source.downcast_ref::<Declined>().is_none());
+        assert!(
+            outcome.launches.contains("ExtendComputerCursor status"),
+            "{}",
+            outcome.launches
+        );
     }
 }
 
@@ -158,11 +314,6 @@ fn validate_settings(previous: &Config, next: &Config) -> Result<()> {
 
 impl Desktop {
     pub fn update_display(&self, session: u64, mut config: Config) -> Result<()> {
-        #[cfg(windows)]
-        {
-            config.codec = extend_computer_agent::session::display::VideoCodec::H264;
-            config.separate_cursor = false;
-        }
         if config.auto_size && config.mode == extend_computer_agent::session::display::Mode::Mirror
         {
             helper::Helper::screen_size(&self.display_helper()?, &mut config)?;
@@ -337,7 +488,7 @@ impl Desktop {
             }
         });
     }
-    fn display_helper(&self) -> Result<PathBuf> {
+    pub(super) fn display_helper(&self) -> Result<PathBuf> {
         crate::platform::helper(&self.helper, "Display")
     }
     pub fn start_display_listener(self: &Arc<Self>) -> Result<()> {
@@ -408,6 +559,8 @@ impl Desktop {
         let mut configuration = None;
         let mut prepared_viewer = None;
         let answer = |peer: &str, config: &mut Config, offer: &str, features| {
+            // Turn down what this device can't show before any helper starts.
+            self.abilities().admit(config).map_err(Declined::local)?;
             if let Some(route) = usb_route {
                 ensure!(route.current(self), "USB connection was cancelled");
             }
@@ -544,22 +697,23 @@ impl Desktop {
         mut config: Config,
         presets: Vec<(u32, u32)>,
     ) -> Result<()> {
-        let capabilities = crate::platform::CAPABILITIES;
+        let local = self.abilities();
         ensure!(
-            match config.mode {
-                extend_computer_agent::session::display::Mode::Extend =>
-                    capabilities.extend_display,
-                extend_computer_agent::session::display::Mode::Mirror =>
-                    capabilities.mirror_display,
-            },
+            local.sources(config.mode),
             "This display mode is not available on this computer yet"
         );
-        // The Windows helper encodes H.264 only and draws the pointer into the video.
-        #[cfg(windows)]
-        {
-            config.codec = extend_computer_agent::session::display::VideoCodec::H264;
-            config.separate_cursor = false;
-        }
+        // Presence offers can be stale, so this only spares a doomed attempt;
+        // the receiver's own check decides. Development builds can skip it to
+        // exercise that check.
+        let cached = self.peer_offers.lock().unwrap().get(&peer).cloned();
+        let skip_peer_check = cfg!(debug_assertions)
+            && std::env::var_os("EXTEND_DISPLAY_IGNORE_PEER_OFFERS").is_some();
+        ensure!(
+            skip_peer_check
+                || cached.is_none_or(|tokens| tokens.iter().any(|t| t == offer::DISPLAY_VIEWER)),
+            "{} can’t show another screen yet.",
+            device.name
+        );
         config.validate()?;
         ensure!(
             presets.len() <= 8
@@ -646,30 +800,40 @@ impl Desktop {
                     && physical_usb_peer(local_ip, remote_ip);
                 app.set_socket_route(id, &socket, usb_route.as_ref().map(|_| "usb"))?;
                 let shutdown = socket.try_clone()?;
-                let (mut media, route) = if let Some(route) = &usb_route {
-                    (route.transport(&app, config.codec)?, "usb")
-                } else {
-                    (
-                        Transport::with_udp_peer(local_ip, remote_ip, config.codec)?,
-                        cable_route.unwrap_or("local"),
-                    )
-                };
-                if physical_usb {
-                    media.prefer_kernel_arrival();
-                }
-                app.set_display_route(id, route);
-                let (mut signal, config, answer, _) = DisplaySignal::connect_with_settings_offer(
+                // The codec and pointer follow the receiver's offers from this
+                // pinned handshake, so the media is built only after it.
+                let mut media = None;
+                let (mut signal, config, answer, _) = DisplaySignal::connect_for_peer(
                     socket,
                     &identity,
                     &peer,
-                    &config,
+                    config,
                     true,
-                    |features| {
-                        #[cfg(not(target_os = "macos"))]
-                        let features = features.without_input();
-                        media.offer_with_features(features)
+                    |config, features, offers| {
+                        local.choose(config, offers);
+                        let (mut transport, route) = if let Some(route) = &usb_route {
+                            (route.transport(&app, config.codec)?, "usb")
+                        } else {
+                            (
+                                Transport::with_udp_peer(local_ip, remote_ip, config.codec)?,
+                                cable_route.unwrap_or("local"),
+                            )
+                        };
+                        if physical_usb {
+                            transport.prefer_kernel_arrival();
+                        }
+                        app.set_display_route(id, route);
+                        let features = if local.display_control {
+                            features
+                        } else {
+                            features.without_input()
+                        };
+                        let offer = transport.offer_with_features(features)?;
+                        media = Some(transport);
+                        Ok(offer)
                     },
                 )?;
+                let mut media = media.context("Missing display transport")?;
                 media.accept_answer(&answer)?;
                 if physical_usb {
                     media.enable_physical_usb_recovery()?;
@@ -820,9 +984,11 @@ impl Desktop {
             )
         });
         let mut input_closed = false;
+        // A viewer offers input only once the source opens the input channel:
+        // negotiation says both builds could, not that this source allows it.
         let mut receiver_input = (!source).then(|| {
             receiver::Receiver::new(
-                media.input_negotiated(),
+                false,
                 media.text_input_negotiated(),
                 media.shortcuts_negotiated(),
             )
@@ -1023,6 +1189,11 @@ impl Desktop {
                         }
                     }
                 }
+                Some(DisplayEvent::InputOpened) if !source && !input_closed => {
+                    if let Some(receiver) = &mut receiver_input {
+                        receiver.open();
+                    }
+                }
                 Some(DisplayEvent::InputClosed) if !source => {
                     input_closed = true;
                     if let Some(receiver) = &mut receiver_input {
@@ -1194,7 +1365,7 @@ impl Desktop {
                     media.request_keyframe()?;
                 }
                 if !source && !announced && helper.rendering_ready() {
-                    eprintln!("Display video decoded and GPU rendered by Metal");
+                    eprintln!("Display video decoded and rendered on the GPU");
                     self.stage(id, Phase::Connected, Some(peer));
                     announced = true;
                 }

@@ -16,6 +16,7 @@ use std::{
     },
     time::{Duration, Instant},
 };
+mod abilities;
 mod device_info;
 mod device_names;
 mod display;
@@ -34,6 +35,7 @@ mod usb;
 #[cfg(any(test, debug_assertions, feature = "display-benchmark"))]
 mod usb_control_test;
 mod wired;
+pub(crate) use abilities::Abilities;
 pub(crate) use errors::friendly_error;
 use errors::is_connection_error;
 mod state;
@@ -116,6 +118,9 @@ pub struct Peer {
     /// The peer's own physical link, as it reported over the local network.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub link: Option<extend_computer_agent::link::Link>,
+    /// The roles the peer offered in its last presence check; null when it
+    /// didn't say (an older build), which allows everything as before.
+    pub offers: Option<Vec<String>>,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -175,6 +180,10 @@ pub struct Desktop {
     health: Mutex<BTreeMap<String, presence::Health>>,
     presence_addresses: Mutex<BTreeMap<String, SocketAddr>>,
     peer_links: Mutex<BTreeMap<String, extend_computer_agent::link::Link>>,
+    /// Roles each peer offered in its last presence check. Advisory: a
+    /// session decides from the offers in its own handshake.
+    peer_offers: Mutex<BTreeMap<String, Vec<String>>>,
+    abilities: Mutex<Abilities>,
     discovered_presence: Mutex<Vec<SocketAddr>>,
     inner: Mutex<Inner>,
     removals: Mutex<BTreeMap<String, String>>,
@@ -216,6 +225,9 @@ impl Desktop {
                 *reason = unpair::REMOTE_UNPAIR_MESSAGE.into();
             }
         }
+        // Peers learn this build's roles from the first Hello on; the display
+        // helper's answer may refine them later (start_abilities_probe).
+        extend_computer_agent::protocol::set_local_offers(Abilities::defaults().offers());
         Ok(Arc::new(Self {
             account_relay: Arc::new(Default::default()),
             account_devices: Default::default(),
@@ -232,6 +244,8 @@ impl Desktop {
             health: Mutex::new(BTreeMap::new()),
             presence_addresses: Mutex::new(BTreeMap::new()),
             peer_links: Mutex::new(BTreeMap::new()),
+            peer_offers: Mutex::new(BTreeMap::new()),
+            abilities: Mutex::new(Abilities::defaults()),
             discovered_presence: Mutex::new(Vec::new()),
             approvals: Approvals::default(),
             removals: Mutex::new(removals),
@@ -438,6 +452,7 @@ impl Desktop {
                     trust_source,
                     device_info: self.device_info.lock().unwrap().get(&id).cloned(),
                     link: self.peer_links.lock().unwrap().get(&id).copied(),
+                    offers: self.peer_offers.lock().unwrap().get(&id).cloned(),
                     id,
                 })
             })
@@ -512,7 +527,7 @@ impl Desktop {
                 .map(|e| e.peer.clone()),
             permissions: inner.permissions.clone(),
             permission_request: inner.permission_request.clone(),
-            capabilities: crate::platform::CAPABILITIES,
+            capabilities: self.abilities().capabilities(),
         })
     }
     pub fn refresh_permissions(&self) -> Result<Permissions> {
@@ -828,9 +843,15 @@ impl Desktop {
                                 .into(),
                             );
                         }
-                        if !(job.view.kind == SessionKind::Incoming
-                            && job.view.phase == Phase::Connected
-                            && is_connection_error(&e))
+                        // A display this device chose not to show is its
+                        // own decision, not an error to report.
+                        let declined_here = e
+                            .downcast_ref::<extend_computer_agent::session::display::Declined>()
+                            .is_some_and(|declined| declined.local);
+                        if !declined_here
+                            && !(job.view.kind == SessionKind::Incoming
+                                && job.view.phase == Phase::Connected
+                                && is_connection_error(&e))
                         {
                             let message = friendly_error(&e);
                             i.error_peer = job.view.peer.clone().map(|peer| PeerError {

@@ -94,6 +94,11 @@ impl Receiver {
         Ok(())
     }
 
+    /// The source opened the input channel, so this session allows input.
+    pub fn open(&mut self) {
+        self.available = true;
+    }
+
     pub fn close(&mut self, now: Instant) {
         self.suspend(now);
         self.available = false;
@@ -648,6 +653,34 @@ mod tests {
                 clicks: 1,
             },
         }
+    }
+
+    #[test]
+    fn availability_follows_the_input_channel_not_negotiation() {
+        let now = Instant::now();
+        // A session starts unavailable even when both builds negotiated input:
+        // a source may withhold the channel (a Windows source today).
+        let mut receiver = Receiver::new(false, true, true);
+        assert!(!receiver.state().available && !receiver.state().text_supported);
+        focus(&mut receiver, now);
+        assert!(!receiver.state().focused);
+        assert!(receiver.message(now).is_none());
+
+        receiver.open();
+        let state = receiver.state();
+        assert!(state.available && state.text_supported && !state.focused);
+        focus(&mut receiver, now);
+        grant(&mut receiver, now);
+        assert!(receiver.state().enabled);
+
+        // Closing the channel ends the lease and makes input unavailable.
+        receiver.close(now);
+        let state = receiver.state();
+        assert!(!state.available && !state.enabled && !state.focused);
+        assert!(!state.text_supported);
+        focus(&mut receiver, now);
+        assert!(!receiver.state().focused);
+        assert!(receiver.message(now).is_none());
     }
 
     #[test]

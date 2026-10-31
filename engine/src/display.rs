@@ -555,6 +555,8 @@ pub enum DisplayEvent {
         loss: Option<f32>,
     },
     Cursor(Vec<u8>),
+    /// The display input channel opened: the source accepts input this session.
+    InputOpened,
     Input(input::Message),
     InputClosed,
 }
@@ -1290,6 +1292,7 @@ impl Transport {
                             "Display input must be ordered and reliable"
                         );
                         self.input_channel = Some(id);
+                        self.events.push_back(DisplayEvent::InputOpened);
                     }
                     _ => anyhow::bail!("Unexpected display data channel"),
                 },
@@ -2037,6 +2040,49 @@ mod tests {
             }
             assert!(Instant::now() < deadline, "Input transport setup timed out");
             std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+    #[test]
+    fn viewer_learns_input_from_the_opened_channel_not_from_negotiation() {
+        // Both negotiated input, but only the second source allows it.
+        for source_allows in [false, true] {
+            let ip = "127.0.0.1".parse().unwrap();
+            let mut source = Transport::new(ip).unwrap();
+            let mut receiver = Transport::new(ip).unwrap();
+            let features = DisplayFeatures::input_for_test();
+            let offer = source
+                .offer_with_features(if source_allows {
+                    features
+                } else {
+                    features.without_input()
+                })
+                .unwrap();
+            let answer = receiver.answer_with_features(&offer, features).unwrap();
+            source.accept_answer(&answer).unwrap();
+            assert!(receiver.input_negotiated());
+            let mut opened = (false, false);
+            let mut ready = None;
+            let deadline = Instant::now() + Duration::from_secs(5);
+            loop {
+                opened.0 |= matches!(source.poll().unwrap(), Some(DisplayEvent::InputOpened));
+                opened.1 |= matches!(receiver.poll().unwrap(), Some(DisplayEvent::InputOpened));
+                if source.cursor_shape.is_some() && receiver.cursor_shape.is_some() {
+                    ready.get_or_insert_with(Instant::now);
+                }
+                if opened == (true, true)
+                    || (!source_allows
+                        && ready.is_some_and(|at| at.elapsed() > Duration::from_millis(300)))
+                {
+                    break;
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "Display transport setup timed out"
+                );
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            assert_eq!(opened, (source_allows, source_allows));
+            assert_eq!(receiver.input_channel.is_some(), source_allows);
         }
     }
     #[test]

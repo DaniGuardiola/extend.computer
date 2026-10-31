@@ -131,6 +131,7 @@ pub struct Channel {
     capabilities: Vec<String>,
     remote_device_info: Option<crate::device_info::DeviceInfo>,
     remote_link: Option<crate::link::Link>,
+    remote_offers: crate::protocol::Offers,
 }
 
 impl Channel {
@@ -144,6 +145,7 @@ impl Channel {
             capabilities: Vec::new(),
             remote_device_info: None,
             remote_link: None,
+            remote_offers: Default::default(),
         }
     }
     pub(crate) fn set_protocol(&mut self, protocol: u16, capabilities: Vec<String>) {
@@ -166,6 +168,13 @@ impl Channel {
     /// The peer's own physical link for this connection, if it reported one.
     pub fn remote_link(&self) -> Option<crate::link::Link> {
         self.remote_link
+    }
+    pub(crate) fn set_remote_offers(&mut self, offers: crate::protocol::Offers) {
+        self.remote_offers = offers;
+    }
+    /// The roles the peer offered in this authenticated exchange.
+    pub fn remote_offers(&self) -> &crate::protocol::Offers {
+        &self.remote_offers
     }
     pub fn require_capability(&self, capability: &str) -> Result<()> {
         ensure!(

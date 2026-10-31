@@ -31,6 +31,11 @@ pub(crate) fn friendly_error(error: &anyhow::Error) -> String {
     if error.downcast_ref::<KeychainAccessError>().is_some() {
         return KeychainAccessError.to_string();
     }
+    if let Some(declined) =
+        error.downcast_ref::<extend_computer_agent::session::display::Declined>()
+    {
+        return declined.to_string();
+    }
     if let Some(failure) = error.downcast_ref::<EngineError>() {
         return match failure {
             EngineError::ProtocolIncompatible | EngineError::FeatureUnavailable => return failure.to_string(),

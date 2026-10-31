@@ -130,8 +130,15 @@ export const scenarios: Scenario[] = [
     "Devices",
     "windows",
     "This computer runs Windows",
-    "Extend display and Remote desktop stay visible but explain they are not available on Windows yet.",
+    "Extend display stays visible but explains it is not available on Windows yet; Remote desktop is coming later.",
     "Mirror display",
+  ),
+  s(
+    "Devices",
+    "peer-no-viewer",
+    "Peer can’t show a screen",
+    "A Windows peer that offers no display viewer: Extend and Mirror display stay visible but explain why, keyboard sharing still works.",
+    "Share keyboard & mouse",
   ),
   s(
     "Devices",

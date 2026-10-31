@@ -6,6 +6,7 @@ mod edge;
 #[cfg(windows)]
 mod inject;
 #[cfg_attr(not(windows), allow(dead_code))]
+#[path = "../../shared/keys.rs"]
 mod keys;
 
 #[cfg(not(windows))]

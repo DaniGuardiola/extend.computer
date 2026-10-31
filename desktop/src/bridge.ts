@@ -59,9 +59,14 @@ export type Peer = Device & {
   route?: "local" | "internet" | "usb" | null;
   /** The peer's own physical link, reported over the local network. */
   link?: Link;
+  /** Roles the peer offered, such as `display-viewer`; null when it didn't say. */
+  offers?: string[] | null;
   availability:
     "checking" | "online" | "receiving_off" | "offline" | "update_required";
 };
+/** A peer that didn't list its roles (an older build) is allowed everything. */
+export const peerOffers = (peer: Peer, role: string) =>
+  !peer.offers || peer.offers.includes(role);
 export type Candidate = { name: string; addresses: string[] };
 export type Request = {
   id: number;

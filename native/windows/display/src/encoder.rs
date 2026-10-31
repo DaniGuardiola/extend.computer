@@ -462,7 +462,7 @@ fn encoders(hardware: bool) -> Result<Vec<(IMFActivate, String)>> {
     Ok(found)
 }
 
-fn friendly_name(activate: &IMFActivate) -> Option<String> {
+pub(crate) fn friendly_name(activate: &IMFActivate) -> Option<String> {
     let mut text = windows::core::PWSTR::null();
     let mut length = 0;
     unsafe {

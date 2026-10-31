@@ -357,6 +357,7 @@ fn main() {
             let root = app.path().data_dir()?.join(profile);
             platform::initialize(app.handle())?;
             let desktop = Desktop::new(root, platform::cursor_helper(app.handle())?)?;
+            desktop.start_abilities_probe();
             desktop.start_presence()?;
             desktop.start_display_listener()?;
             desktop.start_peer_checks();

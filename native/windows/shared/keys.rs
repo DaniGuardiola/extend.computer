@@ -1,6 +1,8 @@
 //! Key translation between the wire format and Windows. The wire carries
 //! macOS virtual keycodes (`kVK_*`, US ANSI positions); Windows input uses
-//! set-1 scancodes, where `0xE0xx` marks an extended key.
+//! set-1 scancodes, where `0xE0xx` marks an extended key. Shared by the input
+//! helper, which injects and captures keys, and the display viewer, which
+//! sends the keys typed into it.
 
 /// macOS virtual keycode → Windows scancode, by physical position.
 const MAC_TO_SCAN: &[(u16, u16)] = &[

@@ -75,6 +75,7 @@ bash scripts/windows/remote.sh shot [file.png]
 bash scripts/windows/remote.sh ui Action=list|invoke|click|type [Window=<title>] [Name=<element>] [X=<x> Y=<y>] [Text=<keys>]
 bash scripts/windows/remote.sh display-test [software]
 bash scripts/windows/remote.sh input-test [drive]
+bash scripts/windows/remote.sh viewer-test [width height]
 ```
 
 `EXTEND_WINDOWS_HOST` selects the SSH host (default `windows-pc`) and `EXTEND_WINDOWS_REPO` the PC's checkout (default `C:\src\extend.computer`).
@@ -86,6 +87,8 @@ bash scripts/windows/remote.sh input-test [drive]
 `shot` saves a screenshot of the whole desktop, by default to `/tmp/extend-dev-shot.png`. `ui` lists windows, or the named elements of windows whose title contains `Window`; invokes the element called `Name`; clicks at `X`,`Y` in physical pixels; or types `Text` in SendKeys syntax.
 
 `display-test` runs the display helper in mirror mode for about 5 seconds while moving the pointer, then reports its frame rate, keyframes and frame size and saves the video to `/tmp/extend-dev-display.h264`; `software` selects the software encoder. `input-test` runs `capture-control-left` against injected pointer and key input and prints what the helper reports; `drive` only injects the input, to exercise the running app.
+
+`viewer-test` syncs, builds the display helper and runs its viewer as the app would, on a synthetic stream from `ExtendComputerDisplay.exe self-test stream`, by default 1920x1080. The viewer covers the primary monitor for about 15 seconds while the test clicks, types and closes it, so leave the PC's desktop alone meanwhile. It checks readiness, the full-screen viewport, settings, render readiness and presented counts at 60 fps, a keyframe request after an unreadable frame, input packets (a printable key as text only, Ctrl+C as Command+C, Enter as a physical key), closing, and exit on `stop`, on the end of stdin and when its parent exits. `ExtendComputerDisplay.exe self-test` needs no desktop: it round-trips synthetic frames through the encoder and the viewer's hardware and software decoders.
 
 On the PC, work files live in `%TEMP%\extend-dev` and scheduled tasks are named `extend-dev-*`.
 

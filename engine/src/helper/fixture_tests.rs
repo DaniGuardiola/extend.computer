@@ -41,6 +41,7 @@ fn read(channel: &str, json: &str) -> Result<Option<String>> {
             None
         }
         "screen" => text(serde_json::from_slice::<Screen>(bytes)?.to_bytes()?),
+        "capabilities" => text(Abilities::parse(json)?.to_bytes()?),
         "source_stdin" => {
             let command = SourceCommand::parse_line(json).ok_or(anyhow::anyhow!("Unread"))?;
             let line = command.to_line()?;

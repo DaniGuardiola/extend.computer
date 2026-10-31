@@ -146,6 +146,16 @@ func selfTest(codec: VideoCodec = .h264) throws {
                 print("capture=\(CGPreflightScreenCaptureAccess()) virtual=\(ECDisplaySupported())")
                 return
             }
+            if args == ["capabilities"] {
+                // engine::helper::display::Abilities. Extending needs the virtual display API.
+                let data = try JSONSerialization.data(withJSONObject: [
+                    "version": 1, "source": ECDisplaySupported() ? ["mirror", "extend"] : ["mirror"],
+                    "target": true, "viewer": true, "viewer_input": true,
+                    "encode": ["hevc", "h264"], "decode": ["hevc", "h264"],
+                    "cursor_send": true, "cursor_overlay": true
+                ] as [String: Any], options: [.sortedKeys])
+                print(String(decoding: data, as: UTF8.self)); return
+            }
             if args == ["screen"] {
                 guard let screen = NSScreen.main else { throw DisplayFailure("No display available.") }
                 let data = try JSONSerialization.data(withJSONObject: [

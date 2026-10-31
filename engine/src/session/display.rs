@@ -1,5 +1,6 @@
 //! Display negotiation is encrypted and pinned before any media resources start.
 use super::*;
+use crate::protocol::Offers;
 pub mod settings;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
@@ -110,8 +111,52 @@ enum Signal {
     SettingsResult {
         result: settings::Completion,
     },
+    /// Sent instead of an Answer, only when both ends negotiated
+    /// DISPLAY_DECLINE: older receivers reject unknown signals.
+    Declined {
+        reason: DeclineReason,
+    },
     Close,
 }
+/// Why a receiver turned an offer down before starting any media.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DeclineReason {
+    /// The receiver can't present this mode or codec.
+    Unsupported,
+    /// A reason added by a newer build.
+    #[serde(other)]
+    Other,
+}
+/// A display offer turned down on purpose before any media started. The
+/// receiver's answer closure returns it with `local` set; the source gets it
+/// back with `local` unset when the receiver could say why.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Declined {
+    pub reason: DeclineReason,
+    /// This device made the decision.
+    pub local: bool,
+}
+impl Declined {
+    pub fn local(reason: DeclineReason) -> Self {
+        Self {
+            reason,
+            local: true,
+        }
+    }
+}
+impl std::fmt::Display for Declined {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match (self.local, self.reason) {
+            (true, _) => "This device can’t show this display yet.",
+            (false, DeclineReason::Unsupported) => {
+                "The other device can’t show this display yet. Update extend.computer on that device."
+            }
+            (false, DeclineReason::Other) => "The other device declined this display.",
+        })
+    }
+}
+impl std::error::Error for Declined {}
 pub struct DisplaySignal {
     channel: Channel,
     last_heartbeat: Option<Instant>,
@@ -190,12 +235,32 @@ impl DisplaySignal {
         Self::connect_with_settings_offer(stream, identity, peer, config, false, make_offer)
     }
     pub fn connect_with_settings_offer(
-        mut stream: TcpStream,
+        stream: TcpStream,
         identity: &Identity,
         peer: &str,
         config: &Config,
         enable_settings: bool,
         make_offer: impl FnOnce(DisplayFeatures) -> Result<String>,
+    ) -> Result<(Self, Config, String, DisplayFeatures)> {
+        Self::connect_for_peer(
+            stream,
+            identity,
+            peer,
+            config.clone(),
+            enable_settings,
+            |_, features, _| make_offer(features),
+        )
+    }
+    /// Like `connect_with_settings_offer`, but `make_offer` may also adapt the
+    /// configuration (codec, pointer) to the roles this peer offered in the
+    /// pinned handshake, before any media is built and before the Offer.
+    pub fn connect_for_peer(
+        mut stream: TcpStream,
+        identity: &Identity,
+        peer: &str,
+        mut config: Config,
+        enable_settings: bool,
+        make_offer: impl FnOnce(&mut Config, DisplayFeatures, &Offers) -> Result<String>,
     ) -> Result<(Self, Config, String, DisplayFeatures)> {
         config.validate()?;
         wire::configure(&stream)?;
@@ -211,7 +276,9 @@ impl DisplaySignal {
             Some(peer),
         )?;
         let features = DisplayFeatures::negotiated(&channel);
-        let offer = make_offer(features)?;
+        let offers = channel.remote_offers().clone();
+        let offer = make_offer(&mut config, features, &offers)?;
+        config.validate()?;
         channel.display_signaling();
         let offered_settings =
             enable_settings && channel.supports_capability(crate::protocol::RECEIVER_SETTINGS);
@@ -220,13 +287,21 @@ impl DisplaySignal {
             sdp: offer,
             receiver_settings: offered_settings,
         })?;
-        let Signal::Answer {
-            config: selected,
-            sdp,
-            receiver_settings,
-        } = channel.receive()?
-        else {
-            bail!(EngineError::RequestRejected)
+        let (selected, sdp, receiver_settings) = match channel.receive()? {
+            Signal::Answer {
+                config,
+                sdp,
+                receiver_settings,
+            } => (config, sdp, receiver_settings),
+            Signal::Declined { reason }
+                if channel.supports_capability(crate::protocol::DISPLAY_DECLINE) =>
+            {
+                bail!(Declined {
+                    reason,
+                    local: false
+                })
+            }
+            _ => bail!(EngineError::RequestRejected),
         };
         selected.validate()?;
         ensure!(
@@ -357,7 +432,20 @@ impl DisplaySignal {
             bail!(EngineError::RequestRejected)
         };
         config.validate()?;
-        let sdp = answer(&peer, &mut config, &sdp, features)?;
+        let sdp = match answer(&peer, &mut config, &sdp, features) {
+            Ok(sdp) => sdp,
+            Err(error) => {
+                // Tell a source that can read it why, then end the exchange.
+                if let Some(declined) = error.downcast_ref::<Declined>() {
+                    if channel.supports_capability(crate::protocol::DISPLAY_DECLINE) {
+                        let _ = channel.send(&Signal::Declined {
+                            reason: declined.reason,
+                        });
+                    }
+                }
+                return Err(error);
+            }
+        };
         config.validate()?;
         ensure!(store.peer(&peer)?.is_some(), EngineError::RequestRejected);
         let receiver_settings = receiver_settings
@@ -1036,6 +1124,269 @@ mod tests {
         assert_eq!(answer, "legacy-answer");
         assert!(!features.input_enabled());
         server.join().unwrap().unwrap();
+    }
+    /// A receiver that sends `hello` as its Hello, then runs `then`, as an
+    /// older or other-platform build would.
+    fn scripted_receiver(
+        receiver: Identity,
+        source_peer: String,
+        hello: serde_json::Value,
+        then: impl FnOnce(&mut Channel) -> Result<()> + Send + 'static,
+    ) -> (std::net::SocketAddr, std::thread::JoinHandle<Result<()>>) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || -> Result<()> {
+            let mut stream = listener.accept()?.0;
+            wire::configure(&stream)?;
+            let deadline = Instant::now() + Duration::from_secs(5);
+            let mut greeting = [0; 9];
+            wire::read_exact_until(&mut stream, &mut greeting, deadline)?;
+            ensure!(
+                &greeting[..8] == MAGIC && greeting[8] == b'D',
+                "Invalid greeting"
+            );
+            let mut noise = Builder::new(BASE.parse()?)
+                .local_private_key(receiver.secret())?
+                .prologue(b"extend.computer/v1/display")?
+                .build_responder()?;
+            let mut output = [0; wire::MAX_FRAME];
+            for turn in 0..3 {
+                if turn == 1 {
+                    let len = noise.write_message(&[], &mut output)?;
+                    wire::write_frame(&mut stream, &output[..len])?;
+                } else {
+                    let bytes = wire::read_frame_until(&mut stream, deadline)?;
+                    ensure!(
+                        noise.read_message(&bytes, &mut output)? == 0,
+                        "Bad handshake"
+                    );
+                }
+            }
+            ensure!(
+                fingerprint(noise.get_remote_static().unwrap()) == source_peer,
+                "Invalid source pin"
+            );
+            let mut channel = Channel::new(stream, noise.into_transport_mode()?);
+            channel.send(&hello)?;
+            let _: serde_json::Value = channel.receive()?;
+            channel.display_signaling();
+            then(&mut channel)
+        });
+        (address, server)
+    }
+    fn current_capabilities() -> serde_json::Value {
+        serde_json::json!([
+            crate::protocol::CONTROL,
+            crate::protocol::DISPLAY_INPUT,
+            crate::protocol::RECEIVER_SETTINGS,
+            crate::protocol::DISPLAY_DECLINE
+        ])
+    }
+    #[test]
+    fn source_adapts_the_offer_to_roles_from_the_pinned_handshake() {
+        let source = Identity::generate();
+        let receiver = Identity::generate();
+        let peer = receiver.fingerprint();
+        // A viewer that decodes only H.264 and can't draw a separate pointer.
+        let hello = serde_json::json!({"min_protocol":1,"max_protocol":1,"app_version":"1",
+            "capabilities":current_capabilities(),
+            "offers":[crate::protocol::offer::DISPLAY_VIEWER]});
+        let (address, server) =
+            scripted_receiver(receiver, source.fingerprint(), hello, |channel| {
+                let Signal::Offer { config, sdp, .. } = channel.receive()? else {
+                    bail!("Expected an offer")
+                };
+                ensure!(sdp == "chosen-offer", "Unexpected offer");
+                ensure!(
+                    config.codec == VideoCodec::H264 && !config.separate_cursor,
+                    "Offer kept choices the viewer can't show"
+                );
+                channel.send(&Signal::Answer {
+                    config,
+                    sdp: "answer".into(),
+                    receiver_settings: false,
+                })
+            });
+        let mut preferred = input_config();
+        preferred.codec = VideoCodec::Hevc;
+        let (_, selected, _, _) = DisplaySignal::connect_for_peer(
+            TcpStream::connect(address).unwrap(),
+            &source,
+            &peer,
+            preferred,
+            false,
+            |config, _, offers| {
+                assert_eq!(
+                    offers.tokens(),
+                    Some(&[crate::protocol::offer::DISPLAY_VIEWER.to_string()][..])
+                );
+                if !offers.allows(crate::protocol::offer::DISPLAY_DECODE_HEVC) {
+                    config.codec = VideoCodec::H264;
+                }
+                config.separate_cursor &=
+                    offers.allows(crate::protocol::offer::DISPLAY_CURSOR_OVERLAY);
+                Ok("chosen-offer".into())
+            },
+        )
+        .unwrap();
+        assert_eq!(selected.codec, VideoCodec::H264);
+        assert!(!selected.separate_cursor);
+        server.join().unwrap().unwrap();
+    }
+    #[test]
+    fn receiver_declines_with_a_reason_only_when_both_ends_negotiated_it() {
+        // Current builds on both ends: the source learns why.
+        let source = Identity::generate();
+        let receiver = Identity::generate();
+        let peer = receiver.fingerprint();
+        let root = tempfile::tempdir().unwrap();
+        let store = TrustStore::open(root.path()).unwrap();
+        store.remember(&source.fingerprint()).unwrap();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            DisplaySignal::accept_with_features(
+                listener.accept().unwrap().0,
+                &receiver,
+                &store,
+                |_, _, _, _| Err(Declined::local(DeclineReason::Unsupported).into()),
+            )
+            .map(|_| ())
+        });
+        let error = DisplaySignal::connect(
+            TcpStream::connect(address).unwrap(),
+            &source,
+            &peer,
+            &input_config(),
+            "offer",
+        )
+        .err()
+        .unwrap();
+        assert_eq!(
+            error.downcast_ref::<Declined>(),
+            Some(&Declined {
+                reason: DeclineReason::Unsupported,
+                local: false
+            })
+        );
+        let local = server.join().unwrap().unwrap_err();
+        assert_eq!(
+            local.downcast_ref::<Declined>(),
+            Some(&Declined::local(DeclineReason::Unsupported))
+        );
+        assert!(!error.to_string().is_empty() && local.to_string() != error.to_string());
+
+        // A source without the capability (v0.3.1 rejects unknown signals)
+        // sees the channel end, never a Declined message.
+        let source = Identity::generate();
+        let receiver = Identity::generate();
+        let receiver_peer = receiver.fingerprint();
+        let root = tempfile::tempdir().unwrap();
+        let store = TrustStore::open(root.path()).unwrap();
+        store.remember(&source.fingerprint()).unwrap();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            DisplaySignal::accept_with_features(
+                listener.accept().unwrap().0,
+                &receiver,
+                &store,
+                |_, _, _, _| Err(Declined::local(DeclineReason::Unsupported).into()),
+            )
+            .map(|_| ())
+        });
+        let mut stream = TcpStream::connect(address).unwrap();
+        wire::configure(&stream).unwrap();
+        stream.write_all(MAGIC).unwrap();
+        stream.write_all(b"D").unwrap();
+        let mut noise = Builder::new(BASE.parse().unwrap())
+            .local_private_key(source.secret())
+            .unwrap()
+            .prologue(b"extend.computer/v1/display")
+            .unwrap()
+            .build_initiator()
+            .unwrap();
+        let mut output = [0; wire::MAX_FRAME];
+        let deadline = Instant::now() + Duration::from_secs(5);
+        for turn in 0..3 {
+            if turn == 1 {
+                let bytes = wire::read_frame_until(&mut stream, deadline).unwrap();
+                noise.read_message(&bytes, &mut output).unwrap();
+            } else {
+                let len = noise.write_message(&[], &mut output).unwrap();
+                wire::write_frame(&mut stream, &output[..len]).unwrap();
+            }
+        }
+        assert_eq!(
+            fingerprint(noise.get_remote_static().unwrap()),
+            receiver_peer
+        );
+        let mut channel = Channel::new(stream, noise.into_transport_mode().unwrap());
+        let _: serde_json::Value = channel.receive().unwrap();
+        channel
+            .send(
+                &serde_json::json!({"min_protocol":1,"max_protocol":1,"app_version":"0.3.1",
+                "capabilities":[crate::protocol::CONTROL, crate::protocol::DISPLAY_INPUT]}),
+            )
+            .unwrap();
+        channel.display_signaling();
+        channel
+            .send(&serde_json::json!({"type":"Offer","config":input_config(),"sdp":"offer"}))
+            .unwrap();
+        assert!(channel.receive::<serde_json::Value>().is_err());
+        assert!(server
+            .join()
+            .unwrap()
+            .unwrap_err()
+            .downcast_ref::<Declined>()
+            .is_some_and(|declined| declined.local));
+
+        // A receiver that never negotiated it can't make the source accept one.
+        let source = Identity::generate();
+        let receiver = Identity::generate();
+        let peer = receiver.fingerprint();
+        let hello = serde_json::json!({"min_protocol":1,"max_protocol":1,"app_version":"1",
+            "capabilities":[crate::protocol::CONTROL]});
+        let (address, server) =
+            scripted_receiver(receiver, source.fingerprint(), hello, |channel| {
+                let _: serde_json::Value = channel.receive()?;
+                channel.send(&Signal::Declined {
+                    reason: DeclineReason::Unsupported,
+                })
+            });
+        let error = DisplaySignal::connect(
+            TcpStream::connect(address).unwrap(),
+            &source,
+            &peer,
+            &input_config(),
+            "offer",
+        )
+        .err()
+        .unwrap();
+        assert!(error.downcast_ref::<Declined>().is_none());
+        assert_eq!(
+            error.downcast_ref::<EngineError>(),
+            Some(&EngineError::RequestRejected)
+        );
+        server.join().unwrap().unwrap();
+    }
+    #[test]
+    fn decline_reasons_from_newer_builds_stay_readable() {
+        let signal: Signal =
+            serde_json::from_str(r#"{"type":"Declined","reason":"busy"}"#).unwrap();
+        assert!(matches!(
+            signal,
+            Signal::Declined {
+                reason: DeclineReason::Other
+            }
+        ));
+        assert_eq!(
+            serde_json::to_value(Signal::Declined {
+                reason: DeclineReason::Unsupported
+            })
+            .unwrap(),
+            serde_json::json!({"type":"Declined","reason":"unsupported"})
+        );
     }
     #[test]
     fn settings_updates_are_acknowledged_and_rejection_keeps_signaling_alive() {

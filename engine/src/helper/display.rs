@@ -159,6 +159,56 @@ pub struct ViewportBounds {
     pub height: f64,
 }
 
+/// `capabilities` output: what this helper build can do. Lenient: unknown keys
+/// and list entries are skipped, missing ones mean the helper can't.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Abilities {
+    pub version: u32,
+    /// Source modes: `mirror`, `extend`.
+    pub source: Vec<String>,
+    /// A source reports a capture target, so a viewer's input can be mapped.
+    pub target: bool,
+    pub viewer: bool,
+    /// The viewer sends the user's input (kind 4).
+    pub viewer_input: bool,
+    /// Codec names, as on the command line.
+    pub encode: Vec<String>,
+    pub decode: Vec<String>,
+    /// A source sends the pointer beside the video (kind 3).
+    pub cursor_send: bool,
+    /// A viewer draws kind 3 pointer packets over the video.
+    pub cursor_overlay: bool,
+}
+impl Abilities {
+    pub const VERSION: u32 = 1;
+    pub fn parse(line: &str) -> Result<Self> {
+        let abilities: Self =
+            serde_json::from_str(line.trim()).context("Invalid display helper abilities")?;
+        ensure!(
+            abilities.version >= Self::VERSION,
+            "Unsupported display helper abilities"
+        );
+        Ok(abilities)
+    }
+    pub fn to_bytes(&self) -> serde_json::Result<Vec<u8>> {
+        super::sorted(self)
+    }
+    pub fn sources(&self, mode: crate::session::display::Mode) -> bool {
+        let name = match mode {
+            crate::session::display::Mode::Mirror => "mirror",
+            crate::session::display::Mode::Extend => "extend",
+        };
+        self.source.iter().any(|s| s == name)
+    }
+    pub fn encodes(&self, codec: VideoCodec) -> bool {
+        self.encode.iter().any(|c| c == codec.name())
+    }
+    pub fn decodes(&self, codec: VideoCodec) -> bool {
+        self.decode.iter().any(|c| c == codec.name())
+    }
+}
+
 /// Kind 0, sent once a helper runs. A source adds its size; the macOS source
 /// also adds its capture target.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -310,7 +360,7 @@ pub struct InputState {
 }
 
 /// Kind 4: a viewer's local input intent.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum NativeEvent {
     Focus { active: bool, revision: u64 },
@@ -503,6 +553,26 @@ mod tests {
             codec: VideoCodec::Hevc,
             separate_cursor,
         }
+    }
+
+    #[test]
+    fn abilities_are_lenient_and_missing_means_unable() {
+        let abilities = Abilities::parse(
+            r#"{"version":1,"source":["mirror","teleport"],"encode":["h264"],"decode":["h264","av1"],"viewer":true,"future":{"x":1}}"#,
+        )
+        .unwrap();
+        assert!(abilities.sources(crate::session::display::Mode::Mirror));
+        assert!(!abilities.sources(crate::session::display::Mode::Extend));
+        assert!(abilities.viewer && !abilities.viewer_input && !abilities.target);
+        assert!(abilities.encodes(VideoCodec::H264) && !abilities.encodes(VideoCodec::Hevc));
+        assert!(abilities.decodes(VideoCodec::H264) && !abilities.decodes(VideoCodec::Hevc));
+        assert!(!abilities.cursor_send && !abilities.cursor_overlay);
+        for invalid in ["", "capture=true virtual=true", "{}", r#"{"version":0}"#] {
+            assert!(Abilities::parse(invalid).is_err(), "{invalid}");
+        }
+        let round_trip =
+            Abilities::parse(std::str::from_utf8(&abilities.to_bytes().unwrap()).unwrap()).unwrap();
+        assert_eq!(round_trip, abilities);
     }
 
     #[test]

@@ -1,9 +1,15 @@
-//! Windows display helper (mirror source). Protocol:
+//! Windows display helper: mirror source and viewer. Protocol:
 //! docs/architecture/native-helpers.md.
 #[cfg(windows)]
 mod capture;
 #[cfg(windows)]
 mod encoder;
+#[allow(dead_code)]
+#[path = "../../shared/keys.rs"]
+mod keys;
+#[cfg(windows)]
+mod self_test;
+mod viewer;
 
 #[cfg(not(windows))]
 fn main() {
@@ -28,7 +34,9 @@ mod windows_main {
     use anyhow::{bail, ensure, Result};
     use extend_computer_agent::{
         helper::{
-            display::{Configuration, HelperMessage, Launch, Screen, SourceCommand, Startup},
+            display::{
+                Abilities, Configuration, HelperMessage, Launch, Screen, SourceCommand, Startup,
+            },
             packet::{frame, write_packet, Kind},
         },
         session::display::{VideoCodec, CONFIG_LIMITS},
@@ -83,9 +91,26 @@ mod windows_main {
                 println!("capture=true virtual=false");
                 Ok(())
             }
+            // What this build implements; the app's Windows defaults match it.
+            Some("capabilities") => {
+                let abilities = Abilities {
+                    version: Abilities::VERSION,
+                    source: vec!["mirror".into()],
+                    target: false,
+                    viewer: true,
+                    viewer_input: true,
+                    encode: vec!["h264".into()],
+                    decode: vec!["h264".into()],
+                    cursor_send: false,
+                    cursor_overlay: false,
+                };
+                println!("{}", String::from_utf8(abilities.to_bytes()?)?);
+                Ok(())
+            }
+            Some("self-test") => crate::self_test::run(&args[1..]),
             Some("mirror") => mirror(Launch::parse(&args)?),
             Some("extend") => bail!("Extended displays are not supported on Windows yet."),
-            Some("viewer") => bail!("Viewing another screen is not supported on Windows yet."),
+            Some("viewer") => crate::viewer::run(Launch::parse(&args)?),
             _ => bail!("Choose extend, mirror or viewer."),
         }
     }

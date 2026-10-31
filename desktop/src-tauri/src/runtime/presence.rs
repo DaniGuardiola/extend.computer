@@ -3,6 +3,7 @@ use super::*;
 use extend_computer_agent::{
     discovery::Advertisement,
     error::EngineError,
+    protocol::Offers,
     session::{query_presence_with_device_info, serve_presence, Presence},
 };
 /// Cable links are found again from their neighbors whenever they are
@@ -228,6 +229,16 @@ impl Desktop {
         self.resolve_local_presence(peer, identity, endpoints)
     }
 
+    /// The roles from a peer's latest authenticated presence reply. A reply
+    /// without offers (an older build) makes them unknown again.
+    pub(super) fn update_peer_offers(&self, peer: &str, offers: &Offers) {
+        let mut cached = self.peer_offers.lock().unwrap();
+        match offers.tokens() {
+            Some(tokens) => cached.insert(peer.into(), tokens.to_vec()),
+            None => cached.remove(peer),
+        };
+    }
+
     /// Local checks never contact the account backend. Used before every connection attempt.
     pub(super) fn resolve_local_presence(
         &self,
@@ -260,6 +271,7 @@ impl Desktop {
                 if let Some(info) = reply.device_info {
                     let _ = self.update_peer_device_info(peer, info);
                 }
+                self.update_peer_offers(peer, &reply.offers);
                 if route != Some("usb") {
                     let mut links = self.peer_links.lock().unwrap();
                     match reply.link {
@@ -345,6 +357,7 @@ impl Desktop {
                     if let Some(info) = reply.device_info {
                         let _ = self.update_peer_device_info(peer, info);
                     }
+                    self.update_peer_offers(peer, &reply.offers);
                     let returned = self
                         .health
                         .lock()

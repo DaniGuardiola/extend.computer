@@ -68,7 +68,7 @@ export const snapshot: Snapshot = {
     extend_display: !windows,
     mirror_display: true,
     share_input: true,
-    remote_desktop: !windows,
+    remote_desktop: true,
     input_permissions: !windows,
     wifi_optimization: !windows,
   },
@@ -127,6 +127,12 @@ if (["many", "many-online", "session-many"].includes(id)) {
   });
 }
 if (id === "unknown-platform") delete snapshot.peers[0].device_info;
+if (id === "peer-no-viewer")
+  snapshot.peers[0] = {
+    ...peer(1, "Desk PC"),
+    device_info: { platform: "windows", kind: "desktop" },
+    offers: ["display-source-mirror", "input-receive", "input-send"],
+  };
 if (id === "account-trust") snapshot.peers[0].trust_source = "account";
 if (id === "unicode-name")
   snapshot.peers[0].name = "工作室 · portátil de diseño 🖥️";

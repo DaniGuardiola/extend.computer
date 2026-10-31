@@ -2,15 +2,25 @@
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
-// No virtual display driver or display viewer yet, and input needs no grants.
-pub const CAPABILITIES: super::Capabilities = super::Capabilities {
-    extend_display: false,
-    mirror_display: true,
-    share_input: true,
-    remote_desktop: false,
-    input_permissions: false,
-    wifi_optimization: false,
+// The display helper mirrors the screen in H.264 with the pointer drawn in,
+// and views another screen in H.264. There's no virtual display driver or
+// display input injection yet.
+pub const ABILITIES: crate::runtime::Abilities = crate::runtime::Abilities {
+    source_mirror: true,
+    source_extend: false,
+    display_control: false,
+    viewer: true,
+    viewer_input: true,
+    encode_hevc: false,
+    decode_hevc: false,
+    cursor_send: false,
+    cursor_overlay: false,
+    input_receive: true,
+    input_send: true,
 };
+/// Input needs no grants, and there's no Wi-Fi broker.
+pub const INPUT_PERMISSIONS: bool = false;
+pub const WIFI_OPTIMIZATION: bool = false;
 pub fn initialize(_: &tauri::AppHandle) -> Result<()> {
     Ok(())
 }

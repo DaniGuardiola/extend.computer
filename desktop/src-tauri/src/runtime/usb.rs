@@ -270,6 +270,7 @@ impl Desktop {
                 if let Some(info) = reply.device_info {
                     let _ = self.update_peer_device_info(peer, info);
                 }
+                self.update_peer_offers(peer, &reply.offers);
                 let returned = self
                     .health
                     .lock()
