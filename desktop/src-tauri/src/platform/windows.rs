@@ -2,6 +2,15 @@
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
+// No virtual display driver or display viewer yet, and input needs no grants.
+pub const CAPABILITIES: super::Capabilities = super::Capabilities {
+    extend_display: false,
+    mirror_display: true,
+    share_input: true,
+    remote_desktop: false,
+    input_permissions: false,
+    wifi_optimization: false,
+};
 pub fn initialize(_: &tauri::AppHandle) -> Result<()> {
     Ok(())
 }

@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Check, ExternalLink } from "lucide-react";
 import { Dialog } from "./Dialog";
-import { type Snapshot } from "./bridge";
+import { localNoun, type Snapshot } from "./bridge";
 export type PermissionKey = "listen" | "post" | "wifi";
 export type PermissionAction = "receive" | "share";
 export type PermissionDetailsProps = {
@@ -59,6 +59,8 @@ export function PermissionDetails({
   wifiRequired = true,
 }: PermissionDetailsProps) {
   const allowed = snapshot.permissions.post;
+  const { input_permissions, wifi_optimization } = snapshot.capabilities;
+  const wifi = wifiRequired && wifi_optimization;
   return (
     <>
       {checked && !snapshot.permissions.available && (
@@ -71,27 +73,29 @@ export function PermissionDetails({
           {error}
         </p>
       )}
-      <PermissionRow
-        title="Accessibility"
-        description="Read and control keyboard and mouse."
-        checked={checked}
-        allowed={allowed}
-      >
-        <button
-          className={`button quiet -me-3.5 shrink-0 whitespace-nowrap ${allowed ? "text-success" : ""}`}
-          title="Open Accessibility"
-          aria-label={
-            allowed ? "Allowed — Open Accessibility" : "Open Accessibility"
-          }
-          onClick={() => void openPermission("post")}
-          disabled={!snapshot.permissions.available}
+      {input_permissions && (
+        <PermissionRow
+          title="Accessibility"
+          description="Read and control keyboard and mouse."
+          checked={checked}
+          allowed={allowed}
         >
-          {allowed && <Check size={16} aria-hidden="true" />}
-          {allowed ? "Allowed" : "Open settings"}
-          <ExternalLink size={14} aria-hidden="true" />
-        </button>
-      </PermissionRow>
-      {wifiRequired ? (
+          <button
+            className={`button quiet -me-3.5 shrink-0 whitespace-nowrap ${allowed ? "text-success" : ""}`}
+            title="Open Accessibility"
+            aria-label={
+              allowed ? "Allowed — Open Accessibility" : "Open Accessibility"
+            }
+            onClick={() => void openPermission("post")}
+            disabled={!snapshot.permissions.available}
+          >
+            {allowed && <Check size={16} aria-hidden="true" />}
+            {allowed ? "Allowed" : "Open settings"}
+            <ExternalLink size={14} aria-hidden="true" />
+          </button>
+        </PermissionRow>
+      )}
+      {wifi ? (
         <PermissionRow
           title="Wi-Fi optimization"
           description="Keep your keyboard and mouse responsive over Wi-Fi. AirDrop pauses while connected."
@@ -134,7 +138,7 @@ export function PermissionDetails({
           </button>
         </PermissionRow>
       ) : null}
-      {wifiRequired && snapshot.permissions.wifi_setup_failed && (
+      {wifi && snapshot.permissions.wifi_setup_failed && (
         <p className="error text-xs" role="alert">
           Wi-Fi optimization is unavailable. Try again to repair its setup.
         </p>
@@ -161,9 +165,11 @@ export function PermissionsDialog({
       onClose={onClose}
     >
       <p className="mb-5 text-sm leading-6 text-muted">
-        {action === "receive"
-          ? "Allow access below so your other device can control this Mac."
-          : "Allow access below to share your keyboard and mouse between devices."}
+        {!details.snapshot.capabilities.input_permissions
+          ? `extend.computer can't use the keyboard and mouse on this ${localNoun} yet.`
+          : action === "receive"
+            ? `Allow access below so your other device can control this ${localNoun}.`
+            : "Allow access below to share your keyboard and mouse between devices."}
       </p>
       <PermissionDetails {...details} />
       {action === "share" &&

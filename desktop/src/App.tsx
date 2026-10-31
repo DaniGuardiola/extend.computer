@@ -413,6 +413,7 @@ export function App() {
                               (device) => device.fingerprint === peer.id,
                             )?.platform
                           }
+                          capabilities={data.capabilities}
                           disabled={!!session || busy}
                           connect={connect}
                           session={session?.peer === peer.id ? session : null}

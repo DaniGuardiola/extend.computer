@@ -1,5 +1,21 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 export const native = isTauri();
+// The OS only shapes wording ("this Mac" on macOS); `Snapshot.capabilities`
+// decides what is offered.
+const os = navigator.platform;
+export const localNoun = os.startsWith("Mac") ? "Mac" : "computer";
+export const unavailableHere = `Not available on ${os.startsWith("Win") ? "Windows" : `this ${localNoun}`} yet.`;
+/** What this device can start, and which OS grants apply to it. */
+export type Capabilities = {
+  extend_display: boolean;
+  mirror_display: boolean;
+  share_input: boolean;
+  /** Show and control another device's screen here. */
+  remote_desktop: boolean;
+  /** Accessibility approval for keyboard and mouse. */
+  input_permissions: boolean;
+  wifi_optimization: boolean;
+};
 export type Permissions = {
   listen: boolean;
   post: boolean;
@@ -82,6 +98,7 @@ export type Snapshot = {
   error_peer?: string | null;
   permissions: Permissions;
   permission_request: "receive" | "share" | null;
+  capabilities: Capabilities;
 };
 export const api = {
   setLocalDeviceName: (name: string) =>

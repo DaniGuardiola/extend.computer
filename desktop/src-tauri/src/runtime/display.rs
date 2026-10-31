@@ -541,14 +541,19 @@ impl Desktop {
         mut config: Config,
         presets: Vec<(u32, u32)>,
     ) -> Result<()> {
-        // The Windows helper mirrors only, encodes H.264 and draws the
-        // pointer into the video.
+        let capabilities = crate::platform::CAPABILITIES;
+        ensure!(
+            match config.mode {
+                extend_computer_agent::session::display::Mode::Extend =>
+                    capabilities.extend_display,
+                extend_computer_agent::session::display::Mode::Mirror =>
+                    capabilities.mirror_display,
+            },
+            "This display mode is not available on this computer yet"
+        );
+        // The Windows helper encodes H.264 only and draws the pointer into the video.
         #[cfg(windows)]
         {
-            ensure!(
-                config.mode == extend_computer_agent::session::display::Mode::Mirror,
-                "Only display mirroring is available on Windows so far"
-            );
             config.codec = extend_computer_agent::session::display::VideoCodec::H264;
             config.separate_cursor = false;
         }

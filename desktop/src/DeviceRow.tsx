@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Tooltip, TooltipAnchor, TooltipProvider } from "@ariakit/react";
 import {
   Monitor,
@@ -13,7 +13,10 @@ import {
 } from "lucide-react";
 import {
   api,
+  localNoun,
   native,
+  unavailableHere,
+  type Capabilities,
   type Device,
   type Link,
   type Peer,
@@ -53,6 +56,7 @@ const availabilityStyle = {
 export function DeviceRow({
   peer,
   platform,
+  capabilities,
   disabled,
   connect,
   session,
@@ -64,6 +68,8 @@ export function DeviceRow({
 }: {
   peer: Peer;
   platform?: string;
+  /** What this computer can start; other actions stay visible but explained. */
+  capabilities: Capabilities;
   disabled: boolean;
   session: Snapshot["session"];
   pending: boolean;
@@ -130,6 +136,16 @@ export function DeviceRow({
     setDevice({ name: peer.name, address: peer.address, edge: peer.edge });
   }, [peer.name, peer.address, peer.edge]);
   const sessionMode = session ? (session.display ?? "input") : undefined;
+  const unavailable = (icon: ReactNode, label: string) => (
+    <ExplainedButton
+      className="device-action"
+      aria-disabled="true"
+      explanation={unavailableHere}
+    >
+      {icon}
+      <span>{label}</span>
+    </ExplainedButton>
+  );
   const stopAction = session && (
     <ExplainedButton
       className={`device-action ${active ? "bg-line/40" : ""}`}
@@ -297,6 +313,8 @@ export function DeviceRow({
         <div className="grid grid-cols-2 gap-1 px-3 pb-3 min-[720px]:grid-cols-4">
           {sessionMode === "extend" ? (
             stopAction
+          ) : !capabilities.extend_display ? (
+            unavailable(<MonitorUp size={18} />, "Extend display")
           ) : (
             <ExplainedButton
               className="device-action"
@@ -327,6 +345,8 @@ export function DeviceRow({
           )}
           {sessionMode === "mirror" ? (
             stopAction
+          ) : !capabilities.mirror_display ? (
+            unavailable(<Copy size={18} />, "Mirror display")
           ) : (
             <ExplainedButton
               className="device-action"
@@ -356,6 +376,8 @@ export function DeviceRow({
           )}
           {sessionMode === "input" ? (
             stopAction
+          ) : !capabilities.share_input ? (
+            unavailable(<Keyboard size={18} />, "Share keyboard & mouse")
           ) : (
             <ExplainedButton
               className="device-action"
@@ -374,7 +396,11 @@ export function DeviceRow({
           <ExplainedButton
             className="device-action"
             aria-disabled="true"
-            explanation="View and control the other device’s desktop from here. Coming later."
+            explanation={
+              capabilities.remote_desktop
+                ? "View and control the other device’s desktop from here. Coming later."
+                : unavailableHere
+            }
           >
             <Monitor size={18} />
             <span>Remote desktop</span>
@@ -578,8 +604,8 @@ function localExplanation(peer: string, local?: Link, remote?: Link) {
   if (mine && theirs)
     return local === remote
       ? `${base} Both devices are ${mine}.`
-      : `${base} This Mac is ${mine} and ${peer} is ${theirs}.`;
-  if (mine) return `${base} This Mac is ${mine}.`;
+      : `${base} This ${localNoun} is ${mine} and ${peer} is ${theirs}.`;
+  if (mine) return `${base} This ${localNoun} is ${mine}.`;
   if (theirs) return `${base} ${peer} is ${theirs}.`;
   return `${base} It may use Wi-Fi or Ethernet.`;
 }

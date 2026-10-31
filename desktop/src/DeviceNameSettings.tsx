@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { api, type LocalDeviceInfo } from "./bridge";
+import { api, localNoun, type LocalDeviceInfo } from "./bridge";
 
 export function DeviceNameSettings() {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -60,7 +60,7 @@ export function DeviceNameSettings() {
           aria-label="Device name"
           aria-busy={saving}
           aria-invalid={!!error}
-          title="Edit name. Enter to save, Escape to cancel. Leave blank to use this Mac’s system name."
+          title={`Edit name. Enter to save, Escape to cancel. Leave blank to use this ${localNoun}’s system name.`}
           placeholder={info ? "System name" : "Loading…"}
           disabled={!info}
           readOnly={saving}

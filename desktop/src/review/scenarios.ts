@@ -128,6 +128,13 @@ export const scenarios: Scenario[] = [
   ),
   s(
     "Devices",
+    "windows",
+    "This computer runs Windows",
+    "Extend display and Remote desktop stay visible but explain they are not available on Windows yet.",
+    "Mirror display",
+  ),
+  s(
+    "Devices",
     "unicode-name",
     "Unicode device name",
     "Non-Latin name and emoji.",
@@ -591,6 +598,14 @@ export const scenarios: Scenario[] = [
     "Settings · signed in",
     "Account management and security link.",
     "review@example.test",
+    settings,
+  ),
+  s(
+    "Settings",
+    "windows-settings",
+    "Settings · Windows",
+    "Windows needs no Accessibility or Wi-Fi optimization grants, so Permissions is absent.",
+    "Appearance",
     settings,
   ),
   s(

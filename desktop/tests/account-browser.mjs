@@ -38,6 +38,14 @@ await context.addInitScript(() => {
     approval: null,
     error: null,
     permissions: perms,
+    capabilities: {
+      extend_display: true,
+      mirror_display: true,
+      share_input: true,
+      remote_desktop: true,
+      input_permissions: true,
+      wifi_optimization: true,
+    },
     permission_request: null,
   };
   const calls = [];

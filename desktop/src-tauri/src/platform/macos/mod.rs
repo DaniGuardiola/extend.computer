@@ -4,6 +4,16 @@ use tauri::Manager;
 pub mod passkey;
 pub mod traffic_lights;
 
+// The display helper can view another screen; the UI still marks remote
+// desktop as coming later.
+pub const CAPABILITIES: super::Capabilities = super::Capabilities {
+    extend_display: true,
+    mirror_display: true,
+    share_input: true,
+    remote_desktop: true,
+    input_permissions: true,
+    wifi_optimization: true,
+};
 pub fn initialize(app: &tauri::AppHandle) -> Result<()> {
     let resources = crate::permission_flow::resources(app)?;
     crate::wifi_permission::initialize(&resources)?;

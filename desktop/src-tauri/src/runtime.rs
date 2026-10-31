@@ -157,6 +157,7 @@ pub struct Snapshot {
     pub error_peer: Option<String>,
     pub permissions: Permissions,
     pub permission_request: Option<String>,
+    pub capabilities: crate::platform::Capabilities,
 }
 pub struct Desktop {
     pub root: PathBuf,
@@ -511,6 +512,7 @@ impl Desktop {
                 .map(|e| e.peer.clone()),
             permissions: inner.permissions.clone(),
             permission_request: inner.permission_request.clone(),
+            capabilities: crate::platform::CAPABILITIES,
         })
     }
     pub fn refresh_permissions(&self) -> Result<Permissions> {

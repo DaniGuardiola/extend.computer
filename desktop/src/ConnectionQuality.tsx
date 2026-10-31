@@ -1,4 +1,10 @@
-import type { Link, Peer, Quality, Snapshot } from "./bridge";
+import {
+  localNoun,
+  type Link,
+  type Peer,
+  type Quality,
+  type Snapshot,
+} from "./bridge";
 
 const levelText = {
   good: "Good connection",
@@ -86,7 +92,7 @@ export function qualitySuggestion(peer: Peer, session: Session) {
 function wifiSide(peer: string, local?: Link, remote?: Link) {
   if (local === "wifi" && remote === "wifi")
     return "Both devices are on Wi-Fi.";
-  if (local === "wifi") return "This Mac is on Wi-Fi.";
+  if (local === "wifi") return `This ${localNoun} is on Wi-Fi.`;
   if (remote === "wifi") return `${peer} is on Wi-Fi.`;
   return undefined;
 }

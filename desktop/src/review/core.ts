@@ -14,6 +14,9 @@ export const isTauri = () => true;
 export const scenarioId =
   new URLSearchParams(location.search).get("state") ?? "empty";
 const id = scenarioId;
+const windows = id.startsWith("windows");
+// The app words copy from the OS it runs on; set it before the app reads it.
+if (windows) Object.defineProperty(navigator, "platform", { value: "Win32" });
 const pending = <T>(): Promise<T> => new Promise(() => {});
 const fingerprint = (n: number) => n.toString(16).padStart(64, "a");
 const peer = (
@@ -61,6 +64,14 @@ export const snapshot: Snapshot = {
     wifi_setup_failed: false,
   },
   permission_request: null,
+  capabilities: {
+    extend_display: !windows,
+    mirror_display: true,
+    share_input: true,
+    remote_desktop: !windows,
+    input_permissions: !windows,
+    wifi_optimization: !windows,
+  },
 };
 const availabilities: Peer["availability"][] = [
   "online",

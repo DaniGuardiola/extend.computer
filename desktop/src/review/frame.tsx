@@ -43,6 +43,7 @@ function PreviewApp() {
     <>
       <App />
       {header &&
+        navigator.platform.startsWith("Mac") &&
         createPortal(
           <div className="review-traffic-lights" aria-hidden="true">
             <i />

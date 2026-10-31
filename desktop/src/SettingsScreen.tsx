@@ -23,6 +23,7 @@ export function SettingsScreen({
   onThemeChange: (theme: Theme) => void;
 }) {
   const [advanced, setAdvanced] = useState(false);
+  const { capabilities } = permissions.snapshot;
   return (
     <>
       <button className="button quiet -ms-3.5 mb-4" onClick={onBack}>
@@ -45,14 +46,19 @@ export function SettingsScreen({
         </h2>
         <Appearance theme={theme} onChange={onThemeChange} />
       </section>
-      <section aria-labelledby="permissions-heading">
-        <h2 id="permissions-heading" className="text-sm font-medium">
-          Permissions
-        </h2>
-        <div className="mt-5">
-          <PermissionDetails {...permissions} />
-        </div>
-      </section>
+      {(capabilities.input_permissions ||
+        capabilities.wifi_optimization ||
+        (permissions.checked && !permissions.snapshot.permissions.available) ||
+        permissions.error) && (
+        <section aria-labelledby="permissions-heading">
+          <h2 id="permissions-heading" className="text-sm font-medium">
+            Permissions
+          </h2>
+          <div className="mt-5">
+            <PermissionDetails {...permissions} />
+          </div>
+        </section>
+      )}
       <Updates />
       <details
         className="mt-6 border-t border-line pt-5 text-xs text-muted"
