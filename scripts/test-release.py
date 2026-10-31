@@ -97,7 +97,7 @@ class ReleaseTests(unittest.TestCase):
             with self.assertRaises(ValueError): release.validate_channel(channel, value)
 
     def test_signed_feed_retries_retains_history_and_rejects_tampering(self):
-        tools = REPO / 'native/macos/Updater/vendor/bin'
+        tools = REPO / 'native/macos/updater/vendor/bin'
         if not (tools / 'sign_update').exists(): self.skipTest('Run scripts/macos/build-updater.sh on macOS first')
         # OpenSSL PKCS#8 Ed25519 DER ends in the 32-byte seed. Do not touch Keychain.
         private = subprocess.check_output(['openssl', 'genpkey', '-algorithm', 'ed25519', '-outform', 'DER'])
@@ -110,7 +110,7 @@ class ReleaseTests(unittest.TestCase):
             desktop.mkdir()
             (desktop / 'scripts').symlink_to(REPO / 'desktop/scripts', target_is_directory=True)
             (desktop / 'node_modules').symlink_to(REPO / 'desktop/node_modules', target_is_directory=True)
-            tool_directory = root / 'native/macos/Updater'
+            tool_directory = root / 'native/macos/updater'
             tool_directory.mkdir(parents=True)
             (tool_directory / 'vendor').symlink_to(tools.parent, target_is_directory=True)
             (desktop / 'package.json').write_text(json.dumps({'version':'1.0.0'}))

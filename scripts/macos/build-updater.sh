@@ -2,7 +2,7 @@
 set -euo pipefail
 [[ $(uname -s) == Darwin ]] || exit 0
 root=$(cd "$(dirname "$0")/../.." && pwd)
-vendor="$root/native/macos/Updater/vendor"
+vendor="$root/native/macos/updater/vendor"
 version=2.10.0
 digest=c2bf58aa8387266ac179357b1415d6f2635f044da8be41042af32425dae6da0c
 if [[ ! -f "$vendor/.verified-$version" ]]; then
@@ -30,6 +30,6 @@ mkdir -p "$dest"
 xcrun clang -arch "$arch" -mmacosx-version-min=13.0 -fobjc-arc -fblocks -dynamiclib \
   -F "$vendor" -framework Cocoa -framework Sparkle \
   -Wl,-install_name,@rpath/libExtendUpdater.dylib -Wl,-rpath,@loader_path/../Frameworks \
-  "$root/native/macos/Updater/Updater.m" -o "$dest/libExtendUpdater.dylib"
+  "$root/native/macos/updater/Updater.m" -o "$dest/libExtendUpdater.dylib"
 codesign --force --sign "${APPLE_SIGNING_IDENTITY:--}" --options runtime "$dest/libExtendUpdater.dylib"
 cp "$vendor/LICENSE" "$dest/Sparkle-LICENSE"

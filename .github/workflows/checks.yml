@@ -183,9 +183,9 @@ jobs:
             target/extend.computer Display.app
             desktop/src-tauri/permission-resources
             desktop/src-tauri/updater-resources
-            native/macos/LowJitter/.build
-            native/macos/Permissions/.build
-            native/macos/Updater/vendor
+            native/macos/low-jitter/.build
+            native/macos/permissions/.build
+            native/macos/updater/vendor
           key: macos-native-${{ env.DEVELOPER_DIR }}-${{ hashFiles('native/macos/**', 'native/shared/**', 'scripts/macos/build-*.sh', 'desktop/package.json') }}
       - name: Build native resources
         if: steps.native.outputs.cache-hit != 'true'

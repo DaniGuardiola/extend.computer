@@ -41,8 +41,8 @@ Generate the Sparkle key on a trusted Mac:
 
 ```sh
 bash scripts/macos/build-updater.sh
-native/macos/Updater/vendor/bin/generate_keys --account computer.extend.updates
-native/macos/Updater/vendor/bin/generate_keys --account computer.extend.updates -p
+native/macos/updater/vendor/bin/generate_keys --account computer.extend.updates
+native/macos/updater/vendor/bin/generate_keys --account computer.extend.updates -p
 ```
 
 The private key stays in the login Keychain. To transfer it to GitHub Secrets,

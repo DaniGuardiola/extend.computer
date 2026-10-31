@@ -34,11 +34,11 @@ extend.computer connects devices to share input and displays across platforms. D
 
 | Component | Responsibility | Source |
 | --- | --- | --- |
-| Native input helper | Screen-edge handoff, input capture, event injection, and emergency stop | [`native/macos/`](../native/macos/) |
-| Native display helper | Virtual display creation, screen capture, hardware video encoding/decoding, and Metal presentation | [`native/macos/Display/`](../native/macos/Display/) |
-| Permission bridge | Permission guidance and background-service setup | [`native/macos/Permissions/`](../native/macos/Permissions/) |
-| Wi-Fi broker | Session-scoped AWDL optimization and restoration | [`native/macos/LowJitter/`](../native/macos/LowJitter/) |
-| Updater | Sparkle integration and signed release feeds | [`native/macos/Updater/`](../native/macos/Updater/) |
+| Native input helper | Screen-edge handoff, input capture, event injection, and emergency stop | [`native/macos/input/`](../native/macos/input/), [`native/windows/input/`](../native/windows/input/) |
+| Native display helper | Virtual display creation, screen capture, hardware video encoding/decoding, and Metal presentation | [`native/macos/display/`](../native/macos/display/), [`native/windows/display/`](../native/windows/display/) (capture and encoding only) |
+| Permission bridge | Permission guidance and background-service setup | [`native/macos/permissions/`](../native/macos/permissions/) |
+| Wi-Fi broker | Session-scoped AWDL optimization and restoration | [`native/macos/low-jitter/`](../native/macos/low-jitter/) |
+| Updater | Sparkle integration and signed release feeds | [`native/macos/updater/`](../native/macos/updater/) |
 
 ## Device identity
 

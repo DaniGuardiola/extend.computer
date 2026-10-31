@@ -15,11 +15,11 @@ with tempfile.TemporaryDirectory(prefix='extend-wifi-signing-') as temporary:
     root = Path(temporary)
     probe = root/'probe'
     source = root/'Probe.swift'
-    shutil.copyfile(REPO/'native/macos/LowJitter/Service/IdentityProbe.swift.test', source)
+    shutil.copyfile(REPO/'native/macos/low-jitter/Service/IdentityProbe.swift.test', source)
     subprocess.run(['/usr/bin/xcrun', 'swiftc', '-module-cache-path', str(root/'cache'),
-                    str(REPO/'native/macos/LowJitter/Service/SigningIdentity.swift'), str(source), '-o', str(probe)], check=True)
+                    str(REPO/'native/macos/low-jitter/Service/SigningIdentity.swift'), str(source), '-o', str(probe)], check=True)
     helper = root/'helper'
-    shutil.copyfile(REPO/'native/macos/LowJitter/.build/bundled/ExtendComputerLowJitter', helper)
+    shutil.copyfile(REPO/'native/macos/low-jitter/.build/bundled/ExtendComputerLowJitter', helper)
     with signing.signing_keychain():
         signing.sign(probe, 'computer.extend.desktop.development')
         signing.sign(helper, 'computer.extend.lowjitter.broker.development', hardened_runtime=True)

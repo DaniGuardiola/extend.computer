@@ -14,7 +14,7 @@
 
 - [ ] Report real remote display capabilities (hardware modes, refresh rates, Retina) during negotiation. The desktop Display settings currently derive stream-size and frame-rate choices from the negotiated profile, and remembered lower frame rates can limit later choices.
 
-- [ ] Decide the opt-in bounded presentation queue (`native/macos/Display/PresentationQueue.swift`). In one trial it improved readable cadence but added lag and CPU. Keep immediate rendering as the default unless a targeted change wins in a repeated comparison.
+- [ ] Decide the opt-in bounded presentation queue (`native/macos/display/PresentationQueue.swift`). In one trial it improved readable cadence but added lag and CPU. Keep immediate rendering as the default unless a targeted change wins in a repeated comparison.
 
 - [ ] Run `display::socket_timing` tests on a Mac without a network filter (or rely on CI). Filters such as LuLu hold a new process's first datagrams and make the queued-arrival test fail locally.
 

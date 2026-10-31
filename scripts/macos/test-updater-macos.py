@@ -50,11 +50,11 @@ def main():
     contents = app / 'Contents'
     for name in ('MacOS', 'Resources', 'Frameworks'):
         (contents / name).mkdir(parents=True)
-    vendor = ROOT / 'native/macos/Updater/vendor'
+    vendor = ROOT / 'native/macos/updater/vendor'
     run('ditto', vendor / 'Sparkle.framework', contents / 'Frameworks/Sparkle.framework')
     shutil.copy2(ROOT / 'desktop/src-tauri/updater-resources/libExtendUpdater.dylib', contents / 'Resources')
     run('xcrun', 'clang', '-arch', 'arm64', '-mmacosx-version-min=13.0', '-fobjc-arc', '-fblocks',
-        ROOT / 'native/macos/Updater/Verification.m', '-framework', 'Cocoa',
+        ROOT / 'native/macos/updater/Verification.m', '-framework', 'Cocoa',
         '-L', contents / 'Resources', '-lExtendUpdater', '-Wl,-rpath,@executable_path/../Resources',
         '-o', contents / 'MacOS/Verification')
     info = {'CFBundleIdentifier': identifier, 'CFBundleName': 'Updater Verification',

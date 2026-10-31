@@ -6,8 +6,8 @@ The app does capture, encoding and input through two helper executables per plat
 
 | Helper | macOS | Windows |
 | --- | --- | --- |
-| Input (`ExtendComputerCursor`) | `native/macos/Input/` | `native/windows/input/` |
-| Display (`ExtendComputerDisplay`) | `native/macos/Display/` | `native/windows/display/` |
+| Input (`ExtendComputerCursor`) | `native/macos/input/` | `native/windows/input/` |
+| Display (`ExtendComputerDisplay`) | `native/macos/display/` | `native/windows/display/` |
 
 Every helper exits on stdin EOF and releases anything it holds first: pressed keys and buttons, a virtual display.
 

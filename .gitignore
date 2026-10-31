@@ -16,13 +16,13 @@
 /desktop/src-tauri/gen/
 /native/windows/target/
 
-/native/macos/Permissions/.build/
+/native/macos/permissions/.build/
 /desktop/src-tauri/permission-resources/
 
 __pycache__/
 *.py[cod]
 
-/native/macos/Updater/vendor/
+/native/macos/updater/vendor/
 /desktop/src-tauri/updater-resources/
 /desktop/src-tauri/release-info.plist
 /desktop/src-tauri/tauri.release.json

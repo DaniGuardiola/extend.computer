@@ -39,11 +39,11 @@
       "signingIdentity": "-",
       "hardenedRuntime": false,
       "files": {
-        "Library/LaunchServices/ExtendComputerLowJitter": "../../native/macos/LowJitter/.build/bundled/ExtendComputerLowJitter",
-        "Library/LaunchDaemons/computer.extend.lowjitter.plist": "../../native/macos/LowJitter/Service/computer.extend.lowjitter.plist"
+        "Library/LaunchServices/ExtendComputerLowJitter": "../../native/macos/low-jitter/.build/bundled/ExtendComputerLowJitter",
+        "Library/LaunchDaemons/computer.extend.lowjitter.plist": "../../native/macos/low-jitter/Service/computer.extend.lowjitter.plist"
       },
       "frameworks": [
-        "../../native/macos/Updater/vendor/Sparkle.framework"
+        "../../native/macos/updater/vendor/Sparkle.framework"
       ],
       "infoPlist": "Info.plist"
     },

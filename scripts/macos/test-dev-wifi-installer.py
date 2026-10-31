@@ -16,7 +16,7 @@ class InstallerSafety(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
-        source = (REPO / 'native/macos/LowJitter/install-bundled-development.py.in').read_text()
+        source = (REPO / 'native/macos/low-jitter/install-bundled-development.py.in').read_text()
         source = source.replace('BUILD_REQUIREMENT', repr('test-only-requirement'))
         tree = ast.parse(source)
         # Load only definitions; never execute the root entry point.

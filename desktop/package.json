@@ -8,7 +8,7 @@
     "ui:review": "vite --mode ui-review --host 127.0.0.1",
     "build": "tsc --noEmit && vite build",
     "tauri": "tauri",
-    "native:permissions": "bash ../scripts/macos/build-permission-flow.sh && sh ../native/macos/LowJitter/build-bundled.sh && npm run native:updater && npm run native:display",
+    "native:permissions": "bash ../scripts/macos/build-permission-flow.sh && sh ../native/macos/low-jitter/build-bundled.sh && npm run native:updater && npm run native:display",
     "native:display": "bash ../scripts/macos/build-display-helper.sh",
     "desktop:dev": "python3 ../scripts/macos/dev-app.py run",
     "desktop:build:dev": "python3 ../scripts/macos/dev-app.py build",

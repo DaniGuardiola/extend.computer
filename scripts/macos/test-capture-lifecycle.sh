@@ -4,7 +4,7 @@ cd "$(dirname "$0")/../.."
 output_dir=${1:-"$PWD/target/capture-lifecycle-check"}
 mkdir -p "$output_dir"
 xcrun swiftc -O -parse-as-library -module-cache-path "$output_dir/module-cache" \
-    native/macos/Display/CaptureLifecycle.swift scripts/macos/tests/capture-lifecycle.swift \
+    native/macos/display/CaptureLifecycle.swift scripts/macos/tests/capture-lifecycle.swift \
     -o "$output_dir/check"
 "$output_dir/check"
 python3 - "$output_dir/check" <<'PY'

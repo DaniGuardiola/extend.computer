@@ -5,12 +5,12 @@ app="$PWD/target/extend.computer Display.app"
 sdk=$(xcrun --sdk macosx --show-sdk-path)
 mkdir -p "$app/Contents/MacOS"
 for arch in arm64 x86_64; do
-    xcrun clang -fobjc-arc -isysroot "$sdk" -target "$arch-apple-macosx13.0" -c native/macos/Display/VirtualDisplay.m -o "target/VirtualDisplay-$arch.o"
+    xcrun clang -fobjc-arc -isysroot "$sdk" -target "$arch-apple-macosx13.0" -c native/macos/display/VirtualDisplay.m -o "target/VirtualDisplay-$arch.o"
     xcrun swiftc -O -module-cache-path "$PWD/target/DisplayModuleCache" -parse-as-library -sdk "$sdk" -target "$arch-apple-macosx13.0" \
-        -import-objc-header native/macos/Display/VirtualDisplay.h "target/VirtualDisplay-$arch.o" \
-        native/macos/Display/Metrics.swift native/macos/Display/BenchmarkMarker.swift native/macos/Display/VideoCodec.swift native/macos/Display/CaptureDiagnostics.swift native/macos/Display/CaptureStartupDeadline.swift native/macos/Display/CaptureLifecycle.swift native/macos/Display/Capture.swift \
-        native/macos/Display/Cursor.swift native/macos/Display/PresentationQueue.swift native/macos/Display/RenderReadiness.swift native/macos/Input/InputModel.swift \
-        native/macos/Display/ViewerInput.swift native/macos/Display/Viewer.swift native/macos/Display/Main.swift \
+        -import-objc-header native/macos/display/VirtualDisplay.h "target/VirtualDisplay-$arch.o" \
+        native/macos/display/Metrics.swift native/macos/display/BenchmarkMarker.swift native/macos/display/VideoCodec.swift native/macos/display/CaptureDiagnostics.swift native/macos/display/CaptureStartupDeadline.swift native/macos/display/CaptureLifecycle.swift native/macos/display/Capture.swift \
+        native/macos/display/Cursor.swift native/macos/display/PresentationQueue.swift native/macos/display/RenderReadiness.swift native/macos/input/InputModel.swift \
+        native/macos/display/ViewerInput.swift native/macos/display/Viewer.swift native/macos/display/Main.swift \
         -o "target/ExtendComputerDisplay-$arch"
 done
 xcrun lipo -create target/ExtendComputerDisplay-arm64 target/ExtendComputerDisplay-x86_64 -output "$app/Contents/MacOS/ExtendComputerDisplay"

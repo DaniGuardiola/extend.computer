@@ -147,7 +147,7 @@ def appcast(channel, build, archive, feed_directory):
     rendered = subprocess.run(['node', 'scripts/render-notes.mjs'], cwd=DESKTOP, input=notes(), text=True, capture_output=True, check=True).stdout
     ET.SubElement(item, 'description').text = rendered
     repo = os.environ.get('RELEASE_REPOSITORY', 'DaniGuardiola/extend.computer')
-    tools = ROOT / 'native/macos/Updater/vendor/bin'
+    tools = ROOT / 'native/macos/updater/vendor/bin'
     metadata_path = archive.parent / 'release-metadata.json'
     if metadata_path.exists():
         metadata = json.loads(metadata_path.read_text())

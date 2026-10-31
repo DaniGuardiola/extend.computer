@@ -1,7 +1,7 @@
 #!/bin/bash
 set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
-PACKAGE="$ROOT/native/macos/Permissions"
+PACKAGE="$ROOT/native/macos/permissions"
 ARCH=$(uname -m)
 BUILD="$PACKAGE/.build/$ARCH"
 if [ ! -f "$BUILD/SystemSettingsKit.swiftmodule" ]; then bash "$ROOT/scripts/macos/build-permission-flow.sh"; fi

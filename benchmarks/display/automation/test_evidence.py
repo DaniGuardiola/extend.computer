@@ -308,7 +308,7 @@ class NativeTraceTests(unittest.TestCase):
             main = root / 'main.swift'
             main.write_text('DisplayMetrics.shared.event("encoded", timestamp: 7, bytes: 12)\nDisplayMetrics.shared.flush()\n')
             executable = root / 'trace-test'
-            metrics = Path(__file__).resolve().parents[3] / 'native/macos/Display/Metrics.swift'
+            metrics = Path(__file__).resolve().parents[3] / 'native/macos/display/Metrics.swift'
             subprocess.run(['xcrun', 'swiftc', str(metrics), str(main), '-o', str(executable)], check=True, capture_output=True)
             trace = root / 'trace.jsonl'
             env = {**os.environ, 'EXTEND_DISPLAY_METRICS': str(trace)}

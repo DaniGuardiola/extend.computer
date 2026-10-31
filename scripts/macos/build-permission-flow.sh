@@ -8,7 +8,7 @@ fi
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 ARCH=${TAURI_ENV_ARCH:-${EXTEND_COMPUTER_BUILD_ARCH:-}}
 if [ "$ARCH" = universal ]; then
-  UNIVERSAL_BUILD="$ROOT/native/macos/Permissions/.build/universal"
+  UNIVERSAL_BUILD="$ROOT/native/macos/permissions/.build/universal"
   mkdir -p "$UNIVERSAL_BUILD"
   TAURI_ENV_ARCH=arm64 /bin/bash "$0"
   for library in "$ROOT/desktop/src-tauri/permission-resources"/*.dylib; do cp "$library" "$UNIVERSAL_BUILD/$(basename "$library")"; done
@@ -26,7 +26,7 @@ case "$ARCH" in
   '') if [ "$(/usr/sbin/sysctl -n hw.optional.arm64 2>/dev/null || true)" = 1 ]; then ARCH=arm64; else ARCH=x86_64; fi ;;
   *) echo "Unsupported macOS architecture: $ARCH" >&2; exit 1 ;;
 esac
-PACKAGE="$ROOT/native/macos/Permissions"
+PACKAGE="$ROOT/native/macos/permissions"
 BUILD="$PACKAGE/.build/$ARCH"
 DEST="$ROOT/desktop/src-tauri/permission-resources"
 mkdir -p "$BUILD" "$DEST"
@@ -38,8 +38,8 @@ inputs=$(
   cd "$ROOT"
   {
     printf '%s %s\n' "$ARCH" "${APPLE_SIGNING_IDENTITY:--}"
-    find scripts/macos/build-permission-flow.sh native/macos/Permissions/Sources \
-      native/macos/Permissions/Vendor/PermissionFlow native/macos/LowJitter/Service \
+    find scripts/macos/build-permission-flow.sh native/macos/permissions/Sources \
+      native/macos/permissions/Vendor/PermissionFlow native/macos/low-jitter/Service \
       -type f -print0 | LC_ALL=C sort -z | xargs -0 shasum -a 256
   } | shasum -a 256 | cut -d ' ' -f 1
 )
@@ -74,7 +74,7 @@ build_sources() {
 }
 build_sources SystemSettingsKit
 build_sources PermissionFlow -lSystemSettingsKit
-build_module ExtendComputerPermissions "$PACKAGE"/Sources/ExtendComputerPermissions/*.swift "$ROOT"/native/macos/LowJitter/Service/*.swift -lPermissionFlow -lSystemSettingsKit
+build_module ExtendComputerPermissions "$PACKAGE"/Sources/ExtendComputerPermissions/*.swift "$ROOT"/native/macos/low-jitter/Service/*.swift -lPermissionFlow -lSystemSettingsKit
 /usr/bin/ditto "$PACKAGE/Vendor/PermissionFlow/Sources/PermissionFlow/Resources" "$DEST/PermissionFlow_PermissionFlow.bundle"
 cp "$PACKAGE/Vendor/PermissionFlow/LICENSE" "$DEST/PermissionFlow-LICENSE"
 for library in "$DEST"/*.dylib; do /usr/bin/codesign --force --sign "${APPLE_SIGNING_IDENTITY:--}" --options runtime "$library"; done

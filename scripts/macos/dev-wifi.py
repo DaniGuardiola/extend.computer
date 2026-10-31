@@ -31,7 +31,7 @@ def prepare():
     OUTPUT.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(source, OUTPUT / 'ExtendComputerLowJitter')
     payload = (OUTPUT / 'ExtendComputerLowJitter').read_bytes()
-    template = (REPO / 'native/macos/LowJitter/install-bundled-development.py.in').read_text()
+    template = (REPO / 'native/macos/low-jitter/install-bundled-development.py.in').read_text()
     template = template.replace('BUILD_SHA256', hashlib.sha256(payload).hexdigest())
     template = template.replace('BUILD_REQUIREMENT', repr(requirement))
     (OUTPUT / 'install.py').write_text(template)
