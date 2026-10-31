@@ -104,6 +104,32 @@ fn unavailable_input_adapter_blocks_input() {
     .is_empty());
 }
 #[test]
+fn input_without_control_grant_is_rejected() {
+    // The client does not check its own grant, so only the server stops these.
+    let events = scenario(
+        true,
+        |c, _, _| {
+            c.queue_input(InputEvent::MacKey {
+                code: 0,
+                down: true,
+                repeat: false,
+            })
+            .unwrap();
+            assert!(c.probe().is_err());
+        },
+        false,
+    );
+    assert!(events.is_empty());
+    scenario(
+        true,
+        |c, _, _| {
+            c.queue_cursor(0.5, 0.5).unwrap();
+            assert!(c.probe().is_err());
+        },
+        false,
+    );
+}
+#[test]
 fn transitions_remain_ordered_before_barrier() {
     let events = scenario(
         true,
