@@ -5,7 +5,7 @@
 The shared engine manages sessions across computers and mobile devices. Platform adapters provide the input, display, permission, and credential-storage capabilities available on each operating system.
 
 > [!NOTE]
-> macOS is the shipping platform. Windows support is in development: it pairs and can mirror its screen to another device. Other platforms are **not supported yet**.
+> macOS is the shipping platform. Windows support is in development: it pairs, mirrors its screen to another device, and accepts keyboard and mouse control from another device. Other platforms are **not supported yet**.
 
 ## Shared responsibilities
 
@@ -16,7 +16,7 @@ Identity verification, trust decisions, account membership, encrypted session au
 | Boundary | Platform-dependent work | Current implementation |
 | --- | --- | --- |
 | Identity storage | Protect device keys using the platform's credential facilities | macOS Keychain; Windows Credential Manager; separate development file identity |
-| Input | Capture and inject supported events; map physical keys and modifiers | macOS native helpers |
+| Input | Capture and inject supported events; map physical keys and modifiers | macOS native helpers; Windows SendInput injection (`native/windows/input/`) |
 | Displays | Expose supported capture, virtual-display, and presentation capabilities | Experimental macOS LAN streaming: ScreenCaptureKit, VideoToolbox, Metal, and a runtime virtual-display adapter. Windows mirroring source: DXGI Desktop Duplication and Media Foundation H.264 (`native/windows/display/`) |
 | Permissions | Determine effective access and guide users through OS approval | macOS permission bridge |
 | Network optimization | Apply supported optimizations and restore resources on exit | macOS Wi-Fi/AWDL broker |

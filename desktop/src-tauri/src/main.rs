@@ -381,11 +381,18 @@ fn main() {
                     contents.join("Library/LaunchServices/ExtendComputerLowJitter"),
                 )?;
             }
+            // Windows keeps its helpers beside the app executable.
+            #[cfg(windows)]
+            let packaged = std::env::current_exe()?
+                .parent()
+                .ok_or("Missing app directory")?
+                .join("ExtendComputerCursor.exe");
+            #[cfg(not(windows))]
             let packaged = app
                 .path()
                 .resource_dir()?
                 .join("helpers/extend.computer Cursor.app/Contents/MacOS/ExtendComputerCursor");
-            #[cfg(debug_assertions)]
+            #[cfg(all(debug_assertions, not(windows)))]
             let packaged = if packaged.is_file() {
                 packaged
             } else {

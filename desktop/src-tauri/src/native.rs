@@ -1,3 +1,4 @@
+#[cfg(any(test, target_os = "macos"))]
 mod readiness;
 use anyhow::{ensure, Context, Result};
 use serde::Serialize;
@@ -54,21 +55,23 @@ fn read_status(path: &Path) -> Result<String> {
         .read_to_string(&mut value)?;
     Ok(value)
 }
-#[cfg(not(test))]
+#[cfg(all(not(test), target_os = "macos"))]
 fn broker_ready(registration: i32, probe_allowed: bool) -> bool {
     static GATE: readiness::Gate = readiness::Gate::new();
     GATE.check(registration, probe_allowed, || {
-        #[cfg(target_os = "macos")]
-        return match extend_computer_agent::low_jitter::ready_result() {
+        match extend_computer_agent::low_jitter::ready_result() {
             Ok(()) => true,
             Err(error) => {
                 eprintln!("Wi-Fi broker readiness failed: registration={registration} failure={:?} elapsed_ms={}", error.failure, error.elapsed.as_millis());
                 false
             }
-        };
-        #[cfg(not(target_os = "macos"))]
-        extend_computer_agent::low_jitter::ready()
+        }
     })
+}
+/// Only macOS registers and probes a Wi-Fi broker.
+#[cfg(all(not(test), not(target_os = "macos")))]
+fn broker_ready(_: i32, _: bool) -> bool {
+    extend_computer_agent::low_jitter::ready()
 }
 
 pub fn permissions(path: &Path) -> Result<Permissions> {
