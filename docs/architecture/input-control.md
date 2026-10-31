@@ -5,7 +5,7 @@
 Input sharing has two roles: a device supplies input, and another receives that input. The shared engine carries authorized, ordered events; platform adapters capture and apply them.
 
 > [!NOTE]
-> macOS only. Other platforms **not supported yet**.
+> macOS and Windows. Other platforms **not supported yet**.
 
 The current sender captures input locally and forwards it through the authenticated Rust session. The receiver validates messages and posts events through its native helper. The app and CLI share this engine.
 
@@ -21,7 +21,7 @@ Release held keys and buttons before crossing. A remote drag stays on the receiv
 
 The wire window permits four pending input events. A probe acknowledges preceding events after four updates or when pending work reaches the acknowledgement interval. Sequence checks on the receiver reject unexpected ordering. Acknowledgement confirms receiver processing, not display presentation or input-to-photon latency.
 
-[`engine/src/session.rs`](../../engine/src/session.rs) owns authorization, messages, and pinned session behavior. [`engine/src/cursor.rs`](../../engine/src/cursor.rs) owns native helper startup and command acknowledgement. The native implementation is in [`InputReceiver.swift`](../../native/macos/Input/InputReceiver.swift) and [`EdgeCapture.swift`](../../native/macos/Input/EdgeCapture.swift).
+[`engine/src/session.rs`](../../engine/src/session.rs) owns authorization, messages, and pinned session behavior. [`engine/src/cursor.rs`](../../engine/src/cursor.rs) owns native helper startup and command acknowledgement. The native helpers and their protocol are described in [Native helpers](native-helpers.md).
 
 ## Liveness and recovery
 

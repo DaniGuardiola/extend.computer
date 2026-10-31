@@ -15,6 +15,7 @@ How extend.computer connects devices to share input and displays across platform
 | 5. [Pairing](architecture/pairing.md) | Verification, pinned identities, and removing trust |
 | 6. [Accounts and routing](architecture/accounts-and-routing.md) | Account membership, local connections, and internet relay |
 | 7. [Input control](architecture/input-control.md) | Capture, handoff, ordering, heartbeats, and recovery |
+| 7a. [Native helpers](architecture/native-helpers.md) | The capture, encoding and input helper contract per platform |
 | 8. [macOS permissions](architecture/macos-permissions.md) | Current macOS permission and optimization adapter |
 | 9. [Desktop development](development/desktop.md) | Build profiles, local workflow, and validation |
 | 10. [Development signing](development/signing.md) | Stable development identity and permission retention |

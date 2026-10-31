@@ -1,12 +1,5 @@
-//! Windows display helper. Speaks the same stdin/stdout protocol as the macOS
-//! helper (see desktop/src-tauri/src/runtime/display/helper.rs):
-//!
-//! - `screen` prints the primary display size as JSON.
-//! - `mirror W H FPS BITRATE retina|standard DISPLAY CODEC cursor|embedded`
-//!   streams framed packets on stdout: `[kind u8][length u32 BE][payload]`.
-//!   Kind 0 is the startup message, 1 an encoded frame
-//!   (`[timestamp ns u64 BE][keyframe u8][Annex B]`), 2 a control message.
-//!   Stdin carries one JSON control message per line.
+//! Windows display helper (mirror source). Protocol:
+//! docs/architecture/native-helpers.md.
 #[cfg(windows)]
 mod capture;
 #[cfg(windows)]

@@ -1,17 +1,4 @@
-//! Windows input helper. Speaks the same line protocol as the macOS cursor
-//! helper (see engine/src/cursor.rs):
-//!
-//! - `status` prints which input permissions are available.
-//! - `inject-control` prints `READY <w> <h> [tokens]`,
-//!   then applies one stdin line at a time and answers `OK`: `ALIVE`, a JSON
-//!   input event, or a normalized `x y` pointer position. It releases all
-//!   held input and print `STOP` on any error, on stdin EOF, and after 2 s
-//!   without a line.
-//! - `capture-control-{left,right} <remoteW> <remoteH> <offsetY>`
-//!   prints `READY <w> <h>`, then `REMOTE`, normalized `x y` positions,
-//!   JSON input events and `LOCAL` as the pointer crosses the shared edge,
-//!   and `STOP <reason>` when it ends. Stdin carries `ALIVE` at least every
-//!   2 s and `EDGE left|right`.
+//! Windows input helper. Protocol: docs/architecture/native-helpers.md.
 #[cfg(windows)]
 mod capture;
 #[cfg_attr(not(windows), allow(dead_code))]
