@@ -235,7 +235,8 @@ fn main() -> Result<()> {
     result
 }
 
-#[cfg(test)]
+// Receipts use Unix private-file permissions; other hosts refuse them.
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
     #[test]

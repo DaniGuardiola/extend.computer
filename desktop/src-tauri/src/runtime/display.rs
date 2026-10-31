@@ -181,6 +181,10 @@ pub(super) fn session_activity() -> impl Drop {
 
 impl Desktop {
     pub fn update_display(&self, session: u64, mut config: Config) -> Result<()> {
+        #[cfg(windows)]
+        {
+            config.codec = extend_computer_agent::session::display::VideoCodec::H264;
+        }
         if config.auto_size && config.mode == extend_computer_agent::session::display::Mode::Mirror
         {
             helper::Helper::screen_size(&self.display_helper()?, &mut config)?;
@@ -355,6 +359,16 @@ impl Desktop {
             }
         });
     }
+    #[cfg(windows)]
+    fn display_helper(&self) -> Result<PathBuf> {
+        // Bundled and development builds keep the helper beside the app.
+        let executable = std::env::current_exe()?;
+        Ok(executable
+            .parent()
+            .context("Missing app directory")?
+            .join("ExtendComputerDisplay.exe"))
+    }
+    #[cfg(not(windows))]
     fn display_helper(&self) -> Result<PathBuf> {
         let helpers = self
             .helper
@@ -569,6 +583,15 @@ impl Desktop {
         mut config: Config,
         presets: Vec<(u32, u32)>,
     ) -> Result<()> {
+        // The Windows helper encodes H.264 only, and mirrors only.
+        #[cfg(windows)]
+        {
+            ensure!(
+                config.mode == extend_computer_agent::session::display::Mode::Mirror,
+                "Only display mirroring is available on Windows so far"
+            );
+            config.codec = extend_computer_agent::session::display::VideoCodec::H264;
+        }
         config.validate()?;
         ensure!(
             presets.len() <= 8
@@ -583,8 +606,8 @@ impl Desktop {
             // The source aspect is a preference. Keep automatic sizing enabled
             // so the pinned receiver can select a hardware-supported raster.
         }
-        #[cfg(not(target_os = "macos"))]
-        anyhow::bail!("Display connections currently require macOS");
+        #[cfg(not(any(target_os = "macos", windows)))]
+        anyhow::bail!("Display connections currently require macOS or Windows");
         let identity = self.identity()?;
         ensure!(
             self.store()?.peer(&peer)?.is_some(),

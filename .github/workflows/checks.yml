@@ -23,6 +23,7 @@ jobs:
     outputs:
       desktop: ${{ steps.paths.outputs.desktop }}
       core: ${{ steps.paths.outputs.core }}
+      windows: ${{ steps.paths.outputs.windows }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -63,6 +64,15 @@ jobs:
               - '.node-version'
               - '.github/workflows/checks.yml'
               - '.github/workflows/release-macos.yml'
+            windows:
+              - 'desktop/src-tauri/**'
+              - 'engine/**'
+              - 'native/windows/**'
+              - '.cargo/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'rust-toolchain*'
+              - '.github/workflows/checks.yml'
             core:
               - 'engine/**'
               - 'native/android/engine/**'
@@ -102,6 +112,38 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo test --locked --all-targets --features dev-identity
+  windows:
+    name: Windows build and tests
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.windows == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable action; compiler pinned below
+        with:
+          toolchain: 1.98.1
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+        with:
+          workspaces: |
+            .
+            native/windows/display
+            desktop/src-tauri
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Engine tests
+        run: cargo test --locked -p extend-computer-agent --all-targets
+      - name: Display helper
+        working-directory: native/windows/display
+        run: |
+          cargo fmt --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked
+      - name: Desktop app
+        working-directory: desktop/src-tauri
+        run: cargo check --locked --all-targets
   desktop:
     name: macOS build and tests
     needs: changes
