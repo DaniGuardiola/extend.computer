@@ -10,7 +10,7 @@
 
 Shared modules expose the engine interfaces; `engine/src/platform/mod.rs` selects their implementations at compile time. macOS Keychain storage and AWDL broker code live under `engine/src/platform/macos/`. Other operating systems currently use explicit unsupported identity storage and inactive Wi-Fi optimization adapters; this does not imply native desktop support. Small Unix file-permission guards remain with the shared storage code.
 
-Repository-wide versioning, Changesets, and publishing entry points live in `scripts/`. macOS build, signing, permission, updater, and two-Mac diagnostic tools live in `scripts/macos/`. Native implementations live in `native/macos/`; add future OS implementations in sibling platform directories. Shared native implementations belong in `native/shared/`.
+Repository-wide versioning, Changesets, and publishing entry points live in `scripts/`. macOS build, signing, permission, updater, and two-Mac diagnostic tools live in `scripts/macos/`; tools that drive a Windows test PC live in `scripts/windows/`. Native implementations live in `native/macos/` and `native/windows/`; add future OS implementations in sibling platform directories. Shared native implementations and the protocol fixtures both platforms test against belong in `native/shared/`.
 
 The macOS CI whitelist includes shared engine and build inputs plus the explicit macOS directories. Future `native/linux/`, `scripts/linux/`, or `engine/src/platform/linux/` changes do not trigger macOS builds; platform dispatch changes in `engine/src/platform/mod.rs` do. New platform directories need their own checks before shipping support.
 

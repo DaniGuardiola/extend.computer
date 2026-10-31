@@ -18,6 +18,7 @@ How extend.computer connects devices to share input and displays across platform
 | 7a. [Native helpers](architecture/native-helpers.md) | The capture, encoding and input helper contract per platform |
 | 8. [macOS permissions](architecture/macos-permissions.md) | Current macOS permission and optimization adapter |
 | 9. [Desktop development](development/desktop.md) | Build profiles, local workflow, and validation |
+| 9a. [Windows development](development/windows.md) | Test PC setup and remote sync, build, screenshot and UI tools |
 | 10. [Development signing](development/signing.md) | Stable development identity and permission retention |
 | 11. [CLI operation](operations/cli.md) | Terminal control sessions and diagnostic commands |
 | 12. [Releases and updates](operations/releases.md) | Current macOS CI, signing, channels, and updates |

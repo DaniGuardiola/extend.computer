@@ -3,7 +3,7 @@
 [← macOS permissions](../architecture/macos-permissions.md) · [Index](../README.md) · [Development signing →](signing.md)
 
 > [!NOTE]
-> macOS only. Other platform adapters are **not supported yet**.
+> macOS only. For the Windows port in development, see [Windows development](windows.md). Other platform adapters are **not supported yet**.
 
 The desktop uses Tauri 2, React, Tailwind CSS, Ariakit controls, and native macOS helpers. Production and development have separate application identities and data profiles.
 
