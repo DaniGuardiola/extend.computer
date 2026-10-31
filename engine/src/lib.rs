@@ -6,6 +6,7 @@ pub mod cursor;
 pub mod device_info;
 pub mod discovery;
 pub mod display;
+pub mod helper;
 pub mod identity;
 pub mod link;
 pub mod local_network;

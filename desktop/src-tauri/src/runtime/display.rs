@@ -76,7 +76,10 @@ fn physical_usb_peer(local: IpAddr, peer: IpAddr) -> bool {
         .any(|interface| IpAddr::V4(interface.ip) == local && interface.contains(peer))
 }
 
-fn viewer_state_for_transport(receiver: &receiver::Receiver, recovering: bool) -> receiver::State {
+fn viewer_state_for_transport(
+    receiver: &receiver::Receiver,
+    recovering: bool,
+) -> receiver::InputState {
     let mut state = receiver.state();
     if recovering {
         // Retire this endpoint's native queue through the original receiver

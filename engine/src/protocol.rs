@@ -8,6 +8,9 @@ pub const MAX_VERSION: u16 = 1;
 /// Encoding support only. OS adapter support is authenticated in the active input grant.
 pub const INPUT_TEXT: &str = "input-text-v1";
 pub const INPUT_SHORTCUTS: &str = "input-shortcuts-v1";
+/// Input helper READY tokens; the helper's shortcut policy, not peer capabilities.
+pub const INPUT_SHORTCUTS_COMMAND: &str = "input-shortcuts-command-v1";
+pub const INPUT_SHORTCUTS_CONTROL: &str = "input-shortcuts-control-v1";
 pub const CONTROL: &str = "control-v1";
 pub const DISPLAY_INPUT: &str = "display-input-v1";
 pub const RECEIVER_SETTINGS: &str = "receiver-settings-v1";

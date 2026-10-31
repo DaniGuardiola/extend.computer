@@ -40,16 +40,33 @@ pub struct Config {
     #[serde(default)]
     pub separate_cursor: bool,
 }
+/// The settings the session and every display helper accept.
+pub struct ConfigLimits {
+    pub width: std::ops::RangeInclusive<u32>,
+    pub height: std::ops::RangeInclusive<u32>,
+    pub fps: std::ops::RangeInclusive<u32>,
+    pub bitrate: std::ops::RangeInclusive<u32>,
+    /// Largest encoded side, after Retina doubles the size.
+    pub encoded: u32,
+}
+pub const CONFIG_LIMITS: ConfigLimits = ConfigLimits {
+    width: 640..=4096,
+    height: 480..=4096,
+    fps: 30..=120,
+    bitrate: 1_000_000..=80_000_000,
+    encoded: 4096,
+};
 impl Config {
     pub fn validate(&self) -> Result<()> {
+        let limits = &CONFIG_LIMITS;
         let scale = if self.retina { 2 } else { 1 };
         ensure!(
-            (640..=4096).contains(&self.width)
-                && (480..=4096).contains(&self.height)
-                && self.width * scale <= 4096
-                && self.height * scale <= 4096
-                && (30..=120).contains(&self.fps)
-                && (1_000_000..=80_000_000).contains(&self.bitrate),
+            limits.width.contains(&self.width)
+                && limits.height.contains(&self.height)
+                && self.width * scale <= limits.encoded
+                && self.height * scale <= limits.encoded
+                && limits.fps.contains(&self.fps)
+                && limits.bitrate.contains(&self.bitrate),
             "Invalid display configuration"
         );
         Ok(())

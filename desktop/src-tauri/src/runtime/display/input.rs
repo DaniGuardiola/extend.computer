@@ -2,10 +2,10 @@
 //! the local injector; media polling only queues commands and drains replies.
 use super::*;
 use extend_computer_agent::{
-    display::input::{Binding, Command as PointerCommand, Geometry, Message, Reason, Rect, Size},
+    display::input::{Binding, Command as PointerCommand, Message, Reason},
+    helper::{display::CaptureTarget, input::Applied},
     input::{InputEvent, ShortcutPolicy},
 };
-use serde::{Deserialize, Serialize};
 use std::{
     collections::VecDeque,
     io::{Read, Write},
@@ -18,95 +18,6 @@ use std::{
     os::fd::AsRawFd,
     process::{Command, Stdio},
 };
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Bounds {
-    pub x: f64,
-    pub y: f64,
-    pub width: f64,
-    pub height: f64,
-}
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct CaptureTarget {
-    pub configuration_id: u64,
-    pub display_id: u32,
-    pub bounds: Bounds,
-    pub canvas: Size,
-    pub content: Bounds,
-    pub raster: Size,
-}
-impl CaptureTarget {
-    pub fn validate(&self) -> Result<()> {
-        ensure!(self.display_id != 0, "Capture target has no display");
-        for r in [&self.bounds, &self.content] {
-            ensure!(
-                [r.x, r.y, r.width, r.height].iter().all(|n| n.is_finite())
-                    && r.width >= 1.0
-                    && r.height >= 1.0,
-                "Invalid capture target rectangle"
-            );
-        }
-        self.geometry()?.validate()
-    }
-    fn geometry(&self) -> Result<Geometry> {
-        ensure!(
-            self.bounds.width <= 32768.0 && self.bounds.height <= 32768.0,
-            "Capture source too large"
-        );
-        Ok(Geometry {
-            content: Rect {
-                x: self.content.x / self.canvas.width as f64,
-                y: self.content.y / self.canvas.height as f64,
-                width: self.content.width / self.canvas.width as f64,
-                height: self.content.height / self.canvas.height as f64,
-            },
-            canvas: self.canvas,
-            raster: self.raster,
-            source_size: Size {
-                width: self.bounds.width as u32,
-                height: self.bounds.height as u32,
-            },
-        })
-    }
-    fn event(
-        &self,
-        binding: &Binding,
-        sequence: u64,
-        command: &PointerCommand,
-    ) -> Result<serde_json::Value> {
-        command.validate()?;
-        let mut event = match command {
-            PointerCommand::Move { .. } => serde_json::json!({"kind":"move"}),
-            PointerCommand::Alive => serde_json::json!({"kind":"alive"}),
-            PointerCommand::Stop => serde_json::json!({"kind":"release"}),
-            PointerCommand::Input { event, .. } => serde_json::to_value(event)?,
-        };
-        let point = match command {
-            PointerCommand::Move { point } => Some(*point),
-            PointerCommand::Input { point, .. } => *point,
-            _ => None,
-        };
-        if let Some(point) = point {
-            point.validate()?;
-            let x = point.x * self.canvas.width as f64;
-            let y = point.y * self.canvas.height as f64;
-            ensure!(
-                x >= self.content.x
-                    && y >= self.content.y
-                    && x <= self.content.x + self.content.width
-                    && y <= self.content.y + self.content.height,
-                "Display input point is outside captured content"
-            );
-            event["x"] = point.x.into();
-            event["y"] = point.y.into();
-        }
-        Ok(
-            serde_json::json!({"session":binding.session,"epoch":binding.epoch,"revision":binding.revision,"sequence":sequence,"event":event}),
-        )
-    }
-}
 
 struct Driver {
     text_supported: bool,
@@ -126,11 +37,11 @@ impl Driver {
     }
     #[cfg(target_os = "macos")]
     fn start(path: &std::path::Path, binding: Binding, target: CaptureTarget) -> Result<Self> {
-        let descriptor = serde_json::json!({"session":binding.session,"epoch":binding.epoch,"revision":binding.revision,
-            "display_id":target.display_id,"bounds":target.bounds,"canvas":target.canvas,"content":target.content});
+        use extend_computer_agent::helper::input::{DisplayReady, DisplayTarget};
+        let descriptor = DisplayTarget::new(&binding, &target);
         let mut child = Command::new(path)
             .arg("inject-display")
-            .arg(descriptor.to_string())
+            .arg(descriptor.to_arg()?)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
@@ -158,44 +69,13 @@ impl Driver {
             target,
             sequence: 0,
         };
-        let ready = driver.line(Duration::from_secs(2))?;
-        let value: serde_json::Value = serde_json::from_str(
-            ready
-                .strip_prefix("READY ")
-                .context("Cursor helper did not become ready")?,
-        )?;
+        let ready = DisplayReady::parse_line(&driver.line(Duration::from_secs(2))?)?;
         ensure!(
-            value.as_object().is_some_and(|v| (7..=9).contains(&v.len())
-                && v.keys().all(|k| [
-                    "session",
-                    "epoch",
-                    "revision",
-                    "display_id",
-                    "bounds",
-                    "content",
-                    "canvas",
-                    "text_supported",
-                    "shortcut_policy"
-                ]
-                .contains(&k.as_str()))
-                && v.get("text_supported")
-                    .is_none_or(|value| value.is_boolean()))
-                && value["session"].as_str() == Some(driver.binding.session.as_str())
-                && value["epoch"].as_u64() == Some(driver.binding.epoch)
-                && value["revision"].as_u64() == Some(driver.binding.revision)
-                && value["display_id"].as_u64() == Some(driver.target.display_id as u64)
-                && serde_json::from_value::<Bounds>(value["bounds"].clone())?
-                    == driver.target.bounds
-                && serde_json::from_value::<Bounds>(value["content"].clone())?
-                    == driver.target.content
-                && value["canvas"].as_object().is_some_and(|v| v.len() == 2)
-                && value["canvas"]["width"].as_f64() == Some(driver.target.canvas.width as f64)
-                && value["canvas"]["height"].as_f64() == Some(driver.target.canvas.height as f64),
+            ready.target == descriptor,
             "Cursor helper accepted a different capture target"
         );
-        driver.text_supported = value["text_supported"].as_bool().unwrap_or(false);
-        driver.shortcut_policy = serde_json::from_value(value["shortcut_policy"].clone())
-            .context("Native helper declared an invalid shortcut policy")?;
+        driver.text_supported = ready.text_supported.unwrap_or(false);
+        driver.shortcut_policy = ready.shortcut_policy;
         Ok(driver)
     }
     fn line(&mut self, timeout: Duration) -> Result<String> {
@@ -233,19 +113,17 @@ impl Driver {
         ) {
             ensure!(self.text_supported, "Native helper does not support text");
         }
-        let bytes = serde_json::to_vec(&self.target.event(&self.binding, sequence, command)?)?;
+        let bytes = self
+            .target
+            .event(&self.binding, sequence, command)?
+            .to_bytes()?;
         ensure!(bytes.len() <= 1024, "Cursor helper command too large");
         let input = self.stdin.as_mut().context("Cursor helper stopped")?;
         input.write_all(&bytes)?;
         input.write_all(b"\n")?;
-        let ack = self.line(Duration::from_millis(400))?;
-        let expected = serde_json::json!({"session":self.binding.session,"epoch":self.binding.epoch,"revision":self.binding.revision,"sequence":sequence});
-        let actual: serde_json::Value = serde_json::from_str(
-            ack.strip_prefix("APPLIED ")
-                .context("Cursor helper rejected input")?,
-        )?;
+        let ack = Applied::parse_line(&self.line(Duration::from_millis(400))?)?;
         ensure!(
-            actual == expected,
+            ack == Applied::new(&self.binding, sequence),
             "Cursor helper acknowledgement binding differs"
         );
         self.sequence = sequence;
@@ -782,6 +660,7 @@ impl Drop for Worker {
 #[cfg(all(test, target_os = "macos"))]
 mod tests {
     use super::*;
+    use extend_computer_agent::{display::input::Size, helper::display::Bounds};
     #[test]
     fn recovery_flushes_multiple_requests_grants_and_blocks_stale_worker_epochs() {
         let now = Instant::now();
@@ -888,174 +767,6 @@ mod tests {
                 width: 1000.0,
                 height: 500.0,
             },
-        }
-    }
-    #[test]
-    fn capture_geometry_retina_negative_origin_and_bar_rejection() {
-        let target = target();
-        target.validate().unwrap();
-        let geometry = target.geometry().unwrap();
-        assert_eq!(
-            geometry.content,
-            Rect {
-                x: 0.0,
-                y: 0.1875,
-                width: 1.0,
-                height: 0.625
-            }
-        );
-        assert_eq!(
-            geometry.source_size,
-            Size {
-                width: 2000,
-                height: 1000
-            }
-        );
-        let binding = Binding::new(2, 3);
-        let good = target
-            .event(
-                &binding,
-                1,
-                &PointerCommand::Move {
-                    point: extend_computer_agent::display::input::Point {
-                        x: 0.25,
-                        y: 0.65625,
-                    },
-                },
-            )
-            .unwrap();
-        assert_eq!(good["event"]["x"], 0.25);
-        assert_eq!(good["revision"], 3);
-        assert!(target
-            .event(
-                &binding,
-                2,
-                &PointerCommand::Move {
-                    point: extend_computer_agent::display::input::Point { x: 0.25, y: 0.1 }
-                }
-            )
-            .is_err());
-        assert!(target
-            .event(
-                &binding,
-                2,
-                &PointerCommand::Input {
-                    point: Some(extend_computer_agent::display::input::Point { x: 0.5, y: 0.5 }),
-                    event: InputEvent::MacKey {
-                        code: 0,
-                        down: true,
-                        repeat: false
-                    }
-                }
-            )
-            .is_err());
-        let mut invalid = target.clone();
-        invalid.content.height = 801.0;
-        assert!(invalid.validate().is_err());
-        invalid = target.clone();
-        invalid.bounds.x = f64::NAN;
-        assert!(invalid.validate().is_err());
-        invalid = target;
-        invalid.display_id = 0;
-        assert!(invalid.validate().is_err());
-    }
-    #[test]
-    fn local_button_and_scroll_envelopes_carry_their_own_point() {
-        let target = target();
-        let binding = Binding::new(2, 3);
-        for event in [
-            InputEvent::Button {
-                button: 0,
-                down: true,
-                clicks: 1,
-            },
-            InputEvent::Scroll { dx: 2, dy: -7 },
-        ] {
-            let value = target
-                .event(
-                    &binding,
-                    12,
-                    &PointerCommand::Input {
-                        point: Some(extend_computer_agent::display::input::Point {
-                            x: 0.25,
-                            y: 0.65625,
-                        }),
-                        event,
-                    },
-                )
-                .unwrap();
-            assert_eq!(value["event"]["x"], 0.25);
-            assert_eq!(value["event"]["y"], 0.65625);
-            assert_eq!(value["sequence"], 12);
-        }
-    }
-    #[test]
-    fn keyboard_and_modifiers_use_exact_binding_without_pointer_coordinates() {
-        let target = target();
-        let binding = Binding::new(2, 3);
-        for (index, event) in [
-            InputEvent::Modifiers { mask: 9 },
-            InputEvent::MacKey {
-                code: 0,
-                down: true,
-                repeat: false,
-            },
-            InputEvent::MacKey {
-                code: 0,
-                down: true,
-                repeat: true,
-            },
-            InputEvent::MacKey {
-                code: 0,
-                down: false,
-                repeat: false,
-            },
-            InputEvent::Release,
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            let expected = serde_json::to_value(&event).unwrap();
-            let value = target
-                .event(
-                    &binding,
-                    index as u64 + 1,
-                    &PointerCommand::Input { point: None, event },
-                )
-                .unwrap();
-            assert_eq!(value["event"], expected);
-            assert_eq!(value["session"], binding.session);
-            assert_eq!(value["epoch"], 2);
-            assert_eq!(value["revision"], 3);
-            assert_eq!(value["sequence"], index as u64 + 1);
-            assert!(value["event"].get("x").is_none());
-            assert!(value["event"].get("y").is_none());
-        }
-        assert_eq!(
-            target.event(&binding, 6, &PointerCommand::Stop).unwrap()["event"],
-            serde_json::json!({"kind":"release"})
-        );
-        for event in [
-            InputEvent::Modifiers { mask: 16 },
-            InputEvent::MacKey {
-                code: 128,
-                down: true,
-                repeat: false,
-            },
-            InputEvent::MacKey {
-                code: 56,
-                down: true,
-                repeat: false,
-            },
-            InputEvent::MacKey {
-                code: 0,
-                down: false,
-                repeat: true,
-            },
-        ] {
-            assert!(target
-                .event(&binding, 7, &PointerCommand::Input { point: None, event })
-                .is_err());
         }
     }
     #[test]

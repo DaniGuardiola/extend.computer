@@ -654,7 +654,7 @@ name = "extend-computer-display"
 version = "0.3.1"
 dependencies = [
  "anyhow",
- "serde_json",
+ "extend-computer-agent",
  "windows",
 ]
 

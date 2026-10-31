@@ -1,5 +1,6 @@
 //! Native helper boundary. Starts native resources after peer authentication.
 use crate::error::EngineError;
+use crate::helper::input::ControlReady;
 use crate::session::{CursorSink, DisplaySize};
 use anyhow::{ensure, Context, Result};
 use std::{
@@ -61,32 +62,18 @@ pub(crate) fn spawn(path: &Path, mode: &str, arguments: &[String]) -> Result<Hel
     let mut ready = String::new();
     // Helper emits exactly one startup line before reading input or capturing.
     BufReader::new(child.0.stdout.as_mut().unwrap()).read_line(&mut ready)?;
-    let fields: Vec<_> = ready.split_whitespace().collect();
-    ensure!(
-        (3..=5).contains(&fields.len()) && fields[0] == "READY",
-        EngineError::HelperUnavailable
-    );
+    let ready = ControlReady::parse(&ready).context(EngineError::HelperUnavailable)?;
     let input_mode = mode == "inject-control";
-    let mut text = false;
-    let mut shortcut = None;
-    for token in &fields[3..] {
-        match *token {
-            crate::protocol::INPUT_TEXT if !text => text = true,
-            "input-shortcuts-command-v1" if shortcut.is_none() => {
-                shortcut = Some(crate::input::ShortcutPolicy::Command)
-            }
-            "input-shortcuts-control-v1" if shortcut.is_none() => {
-                shortcut = Some(crate::input::ShortcutPolicy::Control)
-            }
-            _ => anyhow::bail!(EngineError::HelperUnavailable),
-        }
-    }
-    child.2 = input_mode && text;
-    child.3 = if input_mode { shortcut } else { None };
+    child.2 = input_mode && ready.text();
+    child.3 = if input_mode {
+        ready.shortcut_policy()
+    } else {
+        None
+    };
     child.1 = Some(
         DisplaySize {
-            width: fields[1].parse()?,
-            height: fields[2].parse()?,
+            width: ready.width,
+            height: ready.height,
         }
         .validate()?,
     );

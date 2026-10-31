@@ -1,6 +1,7 @@
 #[cfg(any(test, target_os = "macos"))]
 mod readiness;
 use anyhow::{ensure, Context, Result};
+use extend_computer_agent::helper::input::Status;
 use serde::Serialize;
 use std::{
     io::Read,
@@ -88,7 +89,7 @@ pub fn permissions_for_route(path: &Path, usb: bool) -> Result<Permissions> {
     let wifi_status = crate::wifi_permission::status();
     Ok(permissions_from_status(&status, wifi_status, usb, || {
         #[cfg(not(test))]
-        return broker_ready(wifi_status, status.contains("post=true"));
+        return broker_ready(wifi_status, Status::parse(&status).post);
         #[cfg(test)]
         return status.contains("wifi=true");
     }))
@@ -101,9 +102,10 @@ fn permissions_from_status(
     wifi_probe: impl FnOnce() -> bool,
 ) -> Permissions {
     let wifi_ready = !usb && wifi_probe();
+    let status = Status::parse(status);
     Permissions {
-        listen: status.contains("listen=true"),
-        post: status.contains("post=true"),
+        listen: status.listen,
+        post: status.post,
         available: true,
         wifi: wifi_ready,
         wifi_pending: wifi_status == 2,

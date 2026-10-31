@@ -1,6 +1,13 @@
 use anyhow::{ensure, Context, Result};
 use extend_computer_agent::{
     display::Frame,
+    helper::{
+        display::{
+            CaptureTarget, Configuration, CursorPacket, HelperMessage, InputState, Launch,
+            LaunchMode, NativeEvent, RenderReady, Screen, SourceCommand, Startup, ViewerCommand,
+        },
+        packet::{frame, read_packet, write_packet, Kind, MAX_VIEWER_INPUT},
+    },
     session::display::{Config, Mode, VideoCodec},
 };
 use std::{
@@ -19,23 +26,13 @@ use std::{
 const DIAGNOSTIC_TAIL_BYTES: usize = 8192;
 const DIAGNOSTIC_DRAIN_GRACE: Duration = Duration::from_millis(100);
 
-#[derive(serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RenderReady {
-    #[serde(rename = "type")]
-    kind: String,
-    ready: bool,
-}
-
-fn update_render_ready(
-    message: &serde_json::Value,
-    source: bool,
-    ready: &AtomicBool,
-) -> Result<()> {
+fn update_render_ready(message: &HelperMessage, source: bool, ready: &AtomicBool) -> Result<()> {
     ensure!(!source, "Render readiness is a viewer-only milestone");
-    let message: RenderReady = serde_json::from_value(message.clone())?;
     ensure!(
-        message.kind == "render_ready" && message.ready,
+        matches!(
+            message,
+            HelperMessage::RenderReady(RenderReady { ready: true })
+        ),
         "Invalid native render readiness"
     );
     // GPU completion establishes render readiness. It does not substitute for
@@ -50,12 +47,11 @@ fn rendering_ready(ready: &AtomicBool, presented: &AtomicUsize) -> bool {
 
 #[derive(Default)]
 struct ViewerInput {
-    events: VecDeque<super::receiver::NativeEvent>,
+    events: VecDeque<NativeEvent>,
     overflow: bool,
 }
 impl ViewerInput {
-    fn push(&mut self, event: super::receiver::NativeEvent) {
-        use super::receiver::NativeEvent;
+    fn push(&mut self, event: NativeEvent) {
         use extend_computer_agent::display::input::Command;
         if self.overflow {
             return;
@@ -95,25 +91,6 @@ fn automatic_low_latency(
     physical_usb: bool,
 ) -> bool {
     explicit.is_none() && source && physical_usb && codec == VideoCodec::Hevc
-}
-
-#[derive(serde::Deserialize)]
-struct Screen {
-    width: u32,
-    height: u32,
-    scale: f64,
-    usable_width: Option<u32>,
-    usable_height: Option<u32>,
-    viewport_cg: Option<ViewportBounds>,
-    window_number: Option<u32>,
-}
-
-#[derive(serde::Deserialize, serde::Serialize)]
-struct ViewportBounds {
-    x: f64,
-    y: f64,
-    width: f64,
-    height: f64,
 }
 
 fn log_viewport_evidence(pid: u32, screen: &Screen, fullscreen: bool) -> Result<()> {
@@ -319,12 +296,7 @@ fn run_viewer_writer(
                     },
                     &bytes,
                 );
-                if input
-                    .write_all(&[3])
-                    .and_then(|_| input.write_all(&(bytes.len() as u32).to_be_bytes()))
-                    .and_then(|_| input.write_all(&bytes))
-                    .is_err()
-                {
+                if write_packet(&mut *input, Kind::Cursor, &bytes).is_err() {
                     closed.store(true, Ordering::SeqCst);
                     return;
                 }
@@ -342,13 +314,7 @@ fn run_viewer_writer(
             break;
         }
         if let Some(frame) = frame {
-            let bytes = frame_payload(frame);
-            if input
-                .write_all(&[1])
-                .and_then(|_| input.write_all(&(bytes.len() as u32).to_be_bytes()))
-                .and_then(|_| input.write_all(&bytes))
-                .is_err()
-            {
+            if write_packet(&mut *input, Kind::Frame, &frame_payload(frame)).is_err() {
                 break;
             }
         }
@@ -365,7 +331,7 @@ pub(super) struct Helper {
     pub cursors: [Arc<Mutex<Option<Vec<u8>>>>; 2],
     pub presented: Arc<AtomicUsize>,
     render_ready: Arc<AtomicBool>,
-    pub target: Arc<Mutex<Option<super::input::CaptureTarget>>>,
+    pub target: Arc<Mutex<Option<CaptureTarget>>>,
     writer: Option<SyncSender<Frame>>,
     writer_wake: Arc<OnceLock<std::thread::Thread>>,
     error: Arc<Mutex<String>>,
@@ -376,10 +342,7 @@ pub(super) struct Helper {
     viewer_input: Arc<Mutex<ViewerInput>>,
 }
 fn frame_payload(frame: Frame) -> Vec<u8> {
-    let mut bytes = frame.timestamp.to_be_bytes().to_vec();
-    bytes.push(u8::from(frame.keyframe));
-    bytes.extend(frame.bytes);
-    bytes
+    frame::encode(&frame)
 }
 impl Helper {
     pub fn rendering_ready(&self) -> bool {
@@ -405,12 +368,12 @@ impl Helper {
             path.is_file(),
             "Display helper is missing. Rebuild extend.computer."
         );
-        let command = if !source {
-            "viewer"
+        let mode = if !source {
+            LaunchMode::Viewer
         } else if config.mode == Mode::Extend {
-            "extend"
+            LaunchMode::Extend
         } else {
-            "mirror"
+            LaunchMode::Mirror
         };
         let mut process = extend_computer_agent::cursor::helper_command(path);
         if automatic_low_latency(
@@ -436,21 +399,7 @@ impl Helper {
             process.env("EXTEND_DISPLAY_PRESETS", presets);
         }
         let mut child = process
-            .args([
-                command,
-                &config.width.to_string(),
-                &config.height.to_string(),
-                &config.fps.to_string(),
-                &config.bitrate.to_string(),
-                if config.retina { "retina" } else { "standard" },
-                "0",
-                config.codec.name(),
-                if config.separate_cursor {
-                    "cursor"
-                } else {
-                    "embedded"
-                },
-            ])
+            .args(Launch::new(mode, config).to_args())
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -494,38 +443,18 @@ impl Helper {
         std::thread::spawn(move || {
             let mut waiting_keyframe = false;
             let result = (|| -> Result<()> {
-                loop {
-                    let mut header = [0u8; 5];
-                    output.read_exact(&mut header)?;
-                    let length = u32::from_be_bytes(header[1..].try_into().unwrap()) as usize;
-                    ensure!(length <= 16 * 1024 * 1024, "Invalid helper packet length");
-                    if header[0] == 4 {
-                        ensure!(
-                            !source && length > 0 && length <= 1024,
-                            "Invalid native viewer input packet length"
-                        );
-                    }
-                    let mut bytes = vec![0; length];
-                    output.read_exact(&mut bytes)?;
-                    match header[0] {
-                        0 if source => {
-                            let message: serde_json::Value = serde_json::from_slice(&bytes)?;
-                            if let Some(value) = message.get("target") {
-                                let parsed = serde_json::from_value::<super::input::CaptureTarget>(
-                                    value.clone(),
-                                )?;
+                while let Some((kind, bytes)) = read_packet(&mut output)? {
+                    match kind {
+                        Kind::Startup if source => {
+                            let startup: Startup = serde_json::from_slice(&bytes)?;
+                            if let Some(parsed) = startup.target {
                                 parsed.validate()?;
                                 *target_read.lock().unwrap() = Some(parsed);
                             }
                         }
-                        0 => {}
-                        1 if source => {
-                            ensure!(bytes.len() > 9 && bytes[8] < 2, "Invalid helper frame");
-                            let frame = Frame {
-                                timestamp: u64::from_be_bytes(bytes[..8].try_into().unwrap()),
-                                keyframe: bytes[8] == 1,
-                                bytes: bytes[9..].to_vec(),
-                            };
+                        Kind::Startup => {}
+                        Kind::Frame if source => {
+                            let frame = frame::decode(&bytes)?;
                             if waiting_keyframe && !frame.keyframe {
                                 continue;
                             }
@@ -541,11 +470,9 @@ impl Helper {
                                 Err(TrySendError::Disconnected(_)) => break,
                             }
                         }
-                        3 if source => {
-                            extend_computer_agent::display::validate_cursor(&bytes)?;
-                            let shape = serde_json::from_slice::<serde_json::Value>(&bytes)?
-                                .get("png")
-                                .is_some();
+                        Kind::Cursor if source => {
+                            let shape =
+                                matches!(CursorPacket::parse(&bytes)?, CursorPacket::Shape(_));
                             extend_computer_agent::display::metrics::cursor_event(
                                 if shape {
                                     "cursor_shape_helper_pipe_received"
@@ -556,62 +483,56 @@ impl Helper {
                             );
                             *cursor_read[usize::from(shape)].lock().unwrap() = Some(bytes);
                         }
-                        4 if !source => {
-                            let event: super::receiver::NativeEvent =
-                                serde_json::from_slice(&bytes)?;
-                            if let super::receiver::NativeEvent::Input { command, .. } = &event {
-                                command.validate()?;
-                            }
-                            viewer_input_read.lock().unwrap().push(event);
+                        Kind::ViewerInput if !source => {
+                            viewer_input_read
+                                .lock()
+                                .unwrap()
+                                .push(NativeEvent::parse(&bytes)?);
                         }
-                        2 => {
-                            let message: serde_json::Value = serde_json::from_slice(&bytes)?;
-                            if message["type"] == "render_ready" {
-                                update_render_ready(&message, source, &render_ready_read)?;
+                        Kind::Control => match {
+                            let value: serde_json::Value = serde_json::from_slice(&bytes)?;
+                            // Only render readiness, a viewer's viewport evidence and a
+                            // source's capture target end the session when malformed;
+                            // other malformed status messages are skipped, as before.
+                            let strict = match value["type"].as_str() {
+                                Some("render_ready") => true,
+                                Some("viewport_evidence") => !source,
+                                Some("target") => source,
+                                _ => false,
+                            };
+                            match serde_json::from_value::<HelperMessage>(value) {
+                                Ok(message) => message,
+                                Err(error) if strict => return Err(error.into()),
+                                Err(_) => continue,
                             }
-                            if !source && message["type"] == "viewport_evidence" {
-                                let screen = serde_json::from_value::<Screen>(message.clone())?;
-                                log_viewport_evidence(
-                                    helper_pid,
-                                    &screen,
-                                    message["fullscreen"].as_bool() == Some(true),
-                                )?;
+                        } {
+                            message @ HelperMessage::RenderReady(_) => {
+                                update_render_ready(&message, source, &render_ready_read)?
                             }
-                            if source && message["type"] == "target" {
-                                let parsed = serde_json::from_value::<super::input::CaptureTarget>(
-                                    message["target"].clone(),
-                                )?;
-                                parsed.validate()?;
-                                *target_read.lock().unwrap() = Some(parsed);
+                            HelperMessage::ViewportEvidence { fullscreen, screen } if !source => {
+                                log_viewport_evidence(helper_pid, &screen, fullscreen)?
                             }
-                            if message["type"] == "viewport" {
-                                if let (Some(id), Some(fullscreen), Ok(screen)) = (
-                                    message["id"].as_u64(),
-                                    message["fullscreen"].as_bool(),
-                                    serde_json::from_value::<Screen>(message.clone()),
-                                ) {
-                                    let _ = viewport.send((id, screen, fullscreen));
-                                }
+                            HelperMessage::Target { target } if source => {
+                                target.validate()?;
+                                *target_read.lock().unwrap() = Some(target);
                             }
-                            if message["type"] == "configured" {
-                                if let (Some(id), Some(ok)) =
-                                    (message["id"].as_u64(), message["ok"].as_bool())
-                                {
-                                    let _ = configured.send((id, ok));
-                                }
+                            HelperMessage::Viewport {
+                                id,
+                                fullscreen,
+                                screen,
+                            } => {
+                                let _ = viewport.send((id, screen, fullscreen));
                             }
-                            if message["type"] == "closed" {
-                                break;
+                            HelperMessage::Configured { id, ok } => {
+                                let _ = configured.send((id, ok));
                             }
-                            if message["type"] == "keyframe" {
-                                requested.store(true, Ordering::SeqCst);
+                            HelperMessage::Closed => break,
+                            HelperMessage::Keyframe => requested.store(true, Ordering::SeqCst),
+                            HelperMessage::Presented { frames } => {
+                                rendered.store(frames as usize, Ordering::SeqCst)
                             }
-                            if message["type"] == "presented" {
-                                if let Some(count) = message["frames"].as_u64() {
-                                    rendered.store(count as usize, Ordering::SeqCst);
-                                }
-                            }
-                        }
+                            _ => {}
+                        },
                         _ => anyhow::bail!("Unexpected display helper packet"),
                     }
                 }
@@ -661,22 +582,19 @@ impl Helper {
             viewer_input,
         })
     }
-    pub fn take_viewer_input(&self) -> (bool, Vec<super::receiver::NativeEvent>) {
+    pub fn take_viewer_input(&self) -> (bool, Vec<NativeEvent>) {
         let mut input = self.viewer_input.lock().unwrap();
         let overflow = std::mem::take(&mut input.overflow);
         (overflow, input.events.drain(..).collect())
     }
-    pub fn input_state(&self, state: &super::receiver::State) -> Result<()> {
+    pub fn input_state(&self, state: &InputState) -> Result<()> {
         ensure!(!self.source, "Only a viewer receives input state");
-        let bytes = serde_json::to_vec(state)?;
+        let bytes = ViewerCommand::InputState(state.clone()).to_bytes()?;
         ensure!(
-            bytes.len() <= 1024,
+            bytes.len() <= MAX_VIEWER_INPUT,
             "Native viewer input state is too large"
         );
-        let mut input = self.input.lock().unwrap();
-        input.write_all(&[2])?;
-        input.write_all(&(bytes.len() as u32).to_be_bytes())?;
-        input.write_all(&bytes)?;
+        write_packet(&mut *self.input.lock().unwrap(), Kind::Control, &bytes)?;
         Ok(())
     }
     pub fn fit_viewport(&self, config: &mut Config) -> Result<()> {
@@ -685,13 +603,8 @@ impl Helper {
         let replies = self.viewport_reply.lock().unwrap();
         loop {
             let id = self.configuration_sequence.fetch_add(1, Ordering::SeqCst) as u64 + 1;
-            let bytes = serde_json::to_vec(&serde_json::json!({"type":"viewport","id":id}))?;
-            {
-                let mut input = self.input.lock().unwrap();
-                input.write_all(&[2])?;
-                input.write_all(&(bytes.len() as u32).to_be_bytes())?;
-                input.write_all(&bytes)?;
-            }
+            let bytes = ViewerCommand::Viewport { id }.to_bytes()?;
+            write_packet(&mut *self.input.lock().unwrap(), Kind::Control, &bytes)?;
             let screen = loop {
                 let (received, screen, fullscreen) = replies
                     .recv_timeout(deadline.saturating_duration_since(Instant::now()))
@@ -716,18 +629,13 @@ impl Helper {
     pub fn configure(&self, config: &Config) -> Result<()> {
         config.validate()?;
         let id = self.configuration_sequence.fetch_add(1, Ordering::SeqCst) as u64 + 1;
-        let bytes = serde_json::to_vec(&serde_json::json!({"type":"configuration","id":id,
-            "width":config.width,"height":config.height,"retina":config.retina,"fps":config.fps,"bitrate":config.bitrate}))?;
-        {
-            let mut input = self.input.lock().unwrap();
-            if self.source {
-                input.write_all(&bytes)?;
-                input.write_all(b"\n")?;
-            } else {
-                input.write_all(&[2])?;
-                input.write_all(&(bytes.len() as u32).to_be_bytes())?;
-                input.write_all(&bytes)?;
-            }
+        let configuration = Configuration::new(id, config);
+        if self.source {
+            let line = SourceCommand::Configuration(configuration).to_line()?;
+            self.input.lock().unwrap().write_all(&line)?;
+        } else {
+            let bytes = ViewerCommand::Configuration(configuration).to_bytes()?;
+            write_packet(&mut *self.input.lock().unwrap(), Kind::Control, &bytes)?;
         }
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
         let replies = self.configuration_reply.lock().unwrap();
@@ -741,33 +649,23 @@ impl Helper {
             }
         }
     }
-    pub fn pause_capture(&self, paused: bool) -> Result<()> {
-        let control = if paused {
-            b"{\"type\":\"pause\",\"value\":true}\n".as_slice()
-        } else {
-            b"{\"type\":\"pause\",\"value\":false}\n".as_slice()
-        };
-        self.input.lock().unwrap().write_all(control)?;
+    /// A viewer's stdin is framed; these JSON lines are for a source only.
+    fn source_command(&self, command: SourceCommand) -> Result<()> {
+        ensure!(self.source, "Only a display source takes capture commands");
+        self.input.lock().unwrap().write_all(&command.to_line()?)?;
         Ok(())
+    }
+    pub fn pause_capture(&self, paused: bool) -> Result<()> {
+        self.source_command(SourceCommand::Pause { value: paused })
     }
     pub fn request_keyframe(&self) -> Result<()> {
-        self.input
-            .lock()
-            .unwrap()
-            .write_all(b"{\"type\":\"keyframe\"}\n")?;
-        Ok(())
+        self.source_command(SourceCommand::Keyframe)
     }
     pub fn set_bitrate(&self, value: u32) -> Result<()> {
-        writeln!(
-            self.input.lock().unwrap(),
-            "{{\"type\":\"bitrate\",\"value\":{value}}}"
-        )?;
-        Ok(())
+        self.source_command(SourceCommand::Bitrate { value })
     }
     pub fn cursor(&self, bytes: Vec<u8>) {
-        let shape = serde_json::from_slice::<serde_json::Value>(&bytes)
-            .ok()
-            .is_some_and(|v| v.get("png").is_some());
+        let shape = CursorPacket::is_shape(&bytes);
         extend_computer_agent::display::metrics::cursor_event(
             if shape {
                 "cursor_shape_runtime_received"
@@ -796,13 +694,11 @@ impl Drop for Helper {
         // Capture needs a graceful stop to release its virtual display before exit.
         if let Ok(mut input) = self.input.try_lock() {
             if self.source {
-                let _ = input.write_all(b"{\"type\":\"stop\"}\n");
-            } else {
-                let payload = b"{\"type\":\"stop\"}";
-                let _ = input
-                    .write_all(&[2])
-                    .and_then(|_| input.write_all(&(payload.len() as u32).to_be_bytes()))
-                    .and_then(|_| input.write_all(payload));
+                if let Ok(line) = SourceCommand::Stop.to_line() {
+                    let _ = input.write_all(&line);
+                }
+            } else if let Ok(bytes) = ViewerCommand::Stop.to_bytes() {
+                let _ = write_packet(&mut *input, Kind::Control, &bytes);
             }
         }
         let until = Instant::now() + Duration::from_secs(2);
@@ -1241,17 +1137,20 @@ mod diagnostic_tests {
 
     #[test]
     fn malformed_or_source_render_readiness_cannot_advance_viewer_startup() {
-        use super::{update_render_ready, AtomicBool, Ordering};
+        use super::{update_render_ready, AtomicBool, HelperMessage, Ordering};
         for bytes in [
             br#"{"type":"render_ready"}"#.as_slice(),
             br#"{"type":"render_ready","ready":false}"#,
             br#"{"type":"render_ready","ready":"true"}"#,
             br#"{"type":"render_ready","ready":true,"frames":60}"#,
             br#"{"type":"presented","ready":true}"#,
+            br#"{"type":"presented","frames":1}"#,
         ] {
             let ready = AtomicBool::new(false);
-            let message = serde_json::from_slice(bytes).unwrap();
-            assert!(update_render_ready(&message, false, &ready).is_err());
+            let update = serde_json::from_slice::<HelperMessage>(bytes)
+                .map_err(anyhow::Error::from)
+                .and_then(|message| update_render_ready(&message, false, &ready));
+            assert!(update.is_err());
             assert!(!ready.load(Ordering::SeqCst));
         }
         let ready = AtomicBool::new(false);

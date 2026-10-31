@@ -36,7 +36,7 @@ The macOS CI whitelist includes shared engine and build inputs plus the explicit
 
 `native/macos/input/` holds the Swift input adapter and small C compatibility boundary; `native/windows/input/` is its Windows counterpart. `native/macos/permissions/` contains the PermissionFlow bridge and MIT-licensed upstream modules. `native/macos/low-jitter/` contains the app-owned Wi-Fi optimization broker, service registration support, and standalone development tools.
 
-`display/` contains virtual-display creation, ScreenCaptureKit capture, VideoToolbox H.264 encoding/decoding, and Metal presentation. The virtual-display bridge uses runtime-checked private macOS APIs; capture, codecs, and rendering use public APIs. `engine/src/display.rs` owns the WebRTC transport; `engine/src/session/display.rs` authenticates its setup against pairing or account trust before media resources start.
+`display/` contains virtual-display creation, ScreenCaptureKit capture, VideoToolbox H.264 encoding/decoding, and Metal presentation. The virtual-display bridge uses runtime-checked private macOS APIs; capture, codecs, and rendering use public APIs. `engine/src/display.rs` owns the WebRTC transport; `engine/src/session/display.rs` authenticates its setup against pairing or account trust before media resources start. `engine/src/helper/` types the app's contract with these helpers and their Windows counterparts; see [Native helpers](native-helpers.md).
 
 The warp-suppression adjustment, background cursor visibility fallback, session AWDL leases, and blocking accepted sockets each address observed failures. Do not remove them as cosmetic compatibility code without reproducing their original cases. Diagnostic notes live in the milestone documents.
 

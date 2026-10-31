@@ -1,12 +1,12 @@
 //! Receiver-side input leases. Native viewer intent never authorizes OS input:
 //! only the authenticated source's current grant installs a binding.
 use anyhow::{ensure, Result};
+pub(super) use extend_computer_agent::helper::display::{InputState, NativeEvent};
 use extend_computer_agent::{
     display::input::{Binding, Command, Geometry, Message, Rect},
     input::{InputEvent, ShortcutPolicy},
     session::display::Config,
 };
-use serde::{Deserialize, Serialize};
 use std::{
     collections::VecDeque,
     time::{Duration, Instant},
@@ -16,26 +16,6 @@ pub(super) const TIMEOUT: Duration = Duration::from_secs(2);
 const ALIVE_INTERVAL: Duration = Duration::from_millis(500);
 const WINDOW: usize = 4;
 const QUEUE: usize = 64;
-
-#[derive(Debug, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
-pub(super) enum NativeEvent {
-    Focus { active: bool, revision: u64 },
-    Input { command: Command, revision: u64 },
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub(super) struct State {
-    #[serde(rename = "type")]
-    kind: &'static str,
-    pub available: bool,
-    pub enabled: bool,
-    pub focused: bool,
-    pub text_supported: bool,
-    pub shortcut_policy: Option<ShortcutPolicy>,
-    pub content: Rect,
-    pub revision: u64,
-}
 
 struct Lease {
     binding: Binding,
@@ -80,9 +60,8 @@ impl Receiver {
         }
     }
 
-    pub fn state(&self) -> State {
-        State {
-            kind: "input_state",
+    pub fn state(&self) -> InputState {
+        InputState {
             available: self.available,
             enabled: self.focused && self.lease.is_some(),
             focused: self.focused,

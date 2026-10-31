@@ -4,6 +4,7 @@
 //! an Annex B stream whose keyframes always carry SPS and PPS, which the
 //! receivers need to start or restart decoding.
 use anyhow::{bail, ensure, Context, Result};
+use extend_computer_agent::display::Frame;
 use std::time::{Duration, Instant};
 use windows::{
     core::Interface,
@@ -20,12 +21,6 @@ use windows::{
 /// How long a hardware encoder may take to return a submitted frame before
 /// it is collected on the next call instead.
 const OUTPUT_WAIT: Duration = Duration::from_millis(40);
-
-pub struct Frame {
-    pub timestamp: u64,
-    pub keyframe: bool,
-    pub bytes: Vec<u8>,
-}
 
 /// Where the encoder reads its input.
 pub enum Input<'a> {

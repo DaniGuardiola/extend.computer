@@ -12,7 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow.workspace = true
-serde_json.workspace = true
+extend-computer-agent = { path = "../../../engine" }
 
 [target.'cfg(windows)'.dependencies]
 windows = { workspace = true, features = [

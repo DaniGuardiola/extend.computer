@@ -201,6 +201,7 @@ jobs:
           python3 scripts/test-release.py
           sh scripts/macos/test-edge-layout.sh
           sh scripts/macos/test-input-model.sh
+          sh scripts/macos/test-display-fixtures.sh
   result:
     # Preserve the existing required check name, including validation failures
     # and intentional skips when a PR does not affect the desktop app.

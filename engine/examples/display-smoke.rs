@@ -16,17 +16,6 @@ mod helper;
 #[path = "../../desktop/src-tauri/src/runtime/display/receiver.rs"]
 #[allow(dead_code)]
 mod receiver;
-#[allow(dead_code)]
-mod input {
-    // The smoke test does not forward input, so it accepts any reported capture target.
-    #[derive(Clone, Debug, serde::Deserialize)]
-    pub struct CaptureTarget(serde_json::Value);
-    impl CaptureTarget {
-        pub fn validate(&self) -> anyhow::Result<()> {
-            Ok(())
-        }
-    }
-}
 
 fn main() -> Result<()> {
     let mode = match std::env::args().nth(1).as_deref() {

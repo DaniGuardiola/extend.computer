@@ -1,4 +1,5 @@
 //! Native encoded-video transport. SDP must travel through authenticated signaling.
+use crate::helper::display::CursorPacket;
 use crate::session::display::{DisplayFeatures, VideoCodec};
 pub mod input;
 #[cfg(target_os = "macos")]
@@ -121,45 +122,8 @@ fn local_address(ip: IpAddr) -> bool {
     }
 }
 
-fn cursor_is_shape(bytes: &[u8]) -> bool {
-    serde_json::from_slice::<serde_json::Value>(bytes)
-        .ok()
-        .is_some_and(|v| v.get("png").is_some())
-}
 pub fn validate_cursor(bytes: &[u8]) -> Result<()> {
-    ensure!(bytes.len() <= 128 * 1024, "Cursor message too large");
-    let v: serde_json::Value = serde_json::from_slice(bytes)?;
-    ensure!(v["revision"].as_u64().is_some(), "Invalid cursor revision");
-    if let Some(png) = v.get("png") {
-        ensure!(
-            png.as_str().is_some_and(|s| s.len() <= 120 * 1024),
-            "Invalid cursor image"
-        );
-        for key in ["width", "height"] {
-            ensure!(
-                v[key].as_f64().is_some_and(|n| n > 0.0 && n <= 512.0),
-                "Invalid cursor size"
-            );
-        }
-        for key in ["hotspot_x", "hotspot_y"] {
-            ensure!(
-                v[key].as_f64().is_some_and(|n| (0.0..=512.0).contains(&n)),
-                "Invalid cursor hotspot"
-            );
-        }
-    } else {
-        ensure!(
-            v["sequence"].as_u64().is_some() && v["visible"].is_boolean(),
-            "Invalid cursor position"
-        );
-        for key in ["x", "y"] {
-            ensure!(
-                v[key].as_f64().is_some_and(|n| (0.0..=1.0).contains(&n)),
-                "Invalid cursor coordinates"
-            );
-        }
-    }
-    Ok(())
+    CursorPacket::parse(bytes).map(drop)
 }
 
 // Opt-in numeric timing only: inspect the clear RTP header, never media payload.
@@ -995,7 +959,7 @@ impl Transport {
         if self.usb_recovery_active() {
             return Ok(false);
         }
-        let id = if cursor_is_shape(bytes) {
+        let id = if CursorPacket::is_shape(bytes) {
             self.cursor_shape
         } else {
             self.cursor_position
@@ -1007,7 +971,7 @@ impl Transport {
         let accepted = channel.write(true, bytes)?;
         if accepted {
             metrics::cursor_event(
-                if cursor_is_shape(bytes) {
+                if CursorPacket::is_shape(bytes) {
                     "cursor_shape_transport_submitted"
                 } else {
                     "cursor_position_transport_submitted"
@@ -1349,7 +1313,7 @@ impl Transport {
                         },
                         &data.data,
                     );
-                    self.events.retain(|event| !matches!(event, DisplayEvent::Cursor(old) if cursor_is_shape(old) == shape));
+                    self.events.retain(|event| !matches!(event, DisplayEvent::Cursor(old) if CursorPacket::is_shape(old) == shape));
                     self.events.push_back(DisplayEvent::Cursor(data.data));
                 }
                 Output::Event(Event::ChannelClose(id)) if Some(id) == self.input_channel => {

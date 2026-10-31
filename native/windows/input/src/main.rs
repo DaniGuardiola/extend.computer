@@ -34,7 +34,10 @@ mod windows_main {
         inject::{primary, Injector},
     };
     use anyhow::{bail, ensure, Context, Result};
-    use extend_computer_agent::input::InputEvent;
+    use extend_computer_agent::{
+        helper::input::{ControlReady, Status, Token},
+        input::InputEvent,
+    };
     use std::{
         io::{BufRead, Write},
         sync::mpsc,
@@ -54,7 +57,11 @@ mod windows_main {
         match args.first().map(String::as_str) {
             // Windows needs no grant to read or post input in the user's session.
             Some("status") => {
-                println!("listen=true post=true");
+                let status = Status {
+                    listen: true,
+                    post: true,
+                };
+                println!("{status}");
                 Ok(())
             }
             Some("inject-control") => receive(),
@@ -94,9 +101,12 @@ mod windows_main {
         let mut injector = Injector::new(dry_run);
         let (display, width, height) = primary();
         let input = lines();
-        reply(&format!(
-            "READY {width:.1} {height:.1} input-text-v1 input-shortcuts-control-v1"
-        ))?;
+        let ready = ControlReady {
+            width,
+            height,
+            tokens: vec![Token::InputText, Token::ShortcutsControl],
+        };
+        reply(&ready.to_string())?;
         let mut last = Instant::now();
         let result = loop {
             match input.recv_timeout(Duration::from_millis(100)) {

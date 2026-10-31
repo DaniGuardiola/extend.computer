@@ -8,7 +8,7 @@ use crate::{
     keys,
 };
 use anyhow::{bail, Context, Result};
-use extend_computer_agent::input::InputEvent;
+use extend_computer_agent::{helper::input::ControlReady, input::InputEvent};
 use std::{
     collections::BTreeSet,
     io::{BufRead, Write},
@@ -392,7 +392,12 @@ pub fn run(side: Side, args: &[String]) -> Result<()> {
     if !ok {
         bail!("Could not watch keyboard and mouse input");
     }
-    emit(&format!("READY {width:.1} {height:.1}"));
+    let ready = ControlReady {
+        width,
+        height,
+        tokens: Vec::new(),
+    };
+    emit(&ready.to_string());
 
     let (lines, input) = mpsc::channel();
     std::thread::spawn(move || {
