@@ -291,14 +291,8 @@ impl Desktop {
     }
     #[cfg(target_os = "macos")]
     fn usb_helper(&self) -> Result<PathBuf> {
-        let helper = self
-            .helper
-            .parent()
-            .and_then(|p| p.parent())
-            .and_then(|p| p.parent())
-            .and_then(|p| p.parent())
-            .context("Missing native helper directory")?
-            .join("ExtendComputerUsb/ExtendComputerUsb");
+        let helper =
+            crate::platform::helpers(&self.helper)?.join("ExtendComputerUsb/ExtendComputerUsb");
         ensure!(helper.is_file(), "Native USB helper isn't installed");
         Ok(helper)
     }

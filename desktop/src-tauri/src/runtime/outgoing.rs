@@ -157,7 +157,7 @@ impl Desktop {
         let (id, cancelled) = self.reserve(SessionKind::Outgoing, Some(peer.clone()))?;
         let app = self.clone();
         std::thread::spawn(move || {
-            let _activity = display::session_activity();
+            let _activity = crate::platform::session_activity();
             let mut connected_once = false;
             let mut retries: u32 = 0;
             let started = Instant::now();

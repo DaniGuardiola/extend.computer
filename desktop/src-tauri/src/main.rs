@@ -3,17 +3,15 @@ mod accounts;
 mod approval;
 mod discovery;
 mod native;
-#[cfg(target_os = "macos")]
-mod passkey;
 mod peers;
 mod permission_flow;
+mod platform;
 mod relay;
 mod runtime;
-#[cfg(target_os = "macos")]
-mod traffic_lights;
 mod updates;
 mod wifi_permission;
 use peers::Device;
+use platform::{passkey, traffic_lights};
 use runtime::{Desktop, LocalDeviceInfo, Snapshot};
 use std::sync::Arc;
 use tauri::Manager;
@@ -216,10 +214,7 @@ async fn account_login(
 }
 #[tauri::command]
 fn account_passkey_available() -> bool {
-    #[cfg(target_os = "macos")]
-    return passkey::available();
-    #[cfg(not(target_os = "macos"))]
-    false
+    passkey::available()
 }
 #[tauri::command]
 async fn account_passkey(
@@ -229,22 +224,14 @@ async fn account_passkey(
 ) -> Result<accounts::View, String> {
     let state = state.inner().clone();
     background(move || {
-        #[cfg(target_os = "macos")]
-        {
-            if second_factor {
-                let (ceremony, handle) = state.key_options()?;
-                let credential = passkey::sign_in(&app, &ceremony, false)?;
-                state.key_verify(handle, credential)
-            } else {
-                let (ceremony, handle) = state.passkey_options()?;
-                let credential = passkey::sign_in(&app, &ceremony, true)?;
-                state.passkey_login(handle, credential)
-            }
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            let _ = (app, state, second_factor);
-            anyhow::bail!("Passkeys in the app are not available on this platform.")
+        if second_factor {
+            let (ceremony, handle) = state.key_options()?;
+            let credential = passkey::sign_in(&app, &ceremony, false)?;
+            state.key_verify(handle, credential)
+        } else {
+            let (ceremony, handle) = state.passkey_options()?;
+            let credential = passkey::sign_in(&app, &ceremony, true)?;
+            state.passkey_login(handle, credential)
         }
     })
     .await
@@ -368,39 +355,8 @@ fn main() {
             #[cfg(not(feature = "dev-identity"))]
             let profile = "extend.computer";
             let root = app.path().data_dir()?.join(profile);
-            #[cfg(target_os = "macos")]
-            {
-                let resources = permission_flow::resources(app.handle())?;
-                wifi_permission::initialize(&resources)?;
-                let executable = std::env::current_exe()?;
-                let contents = executable
-                    .parent()
-                    .and_then(|p| p.parent())
-                    .ok_or("Missing app bundle")?;
-                extend_computer_agent::low_jitter::configure_app_helper(
-                    contents.join("Library/LaunchServices/ExtendComputerLowJitter"),
-                )?;
-            }
-            // Windows keeps its helpers beside the app executable.
-            #[cfg(windows)]
-            let packaged = std::env::current_exe()?
-                .parent()
-                .ok_or("Missing app directory")?
-                .join("ExtendComputerCursor.exe");
-            #[cfg(not(windows))]
-            let packaged = app
-                .path()
-                .resource_dir()?
-                .join("helpers/extend.computer Cursor.app/Contents/MacOS/ExtendComputerCursor");
-            #[cfg(all(debug_assertions, not(windows)))]
-            let packaged = if packaged.is_file() {
-                packaged
-            } else {
-                std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(
-                    "../../target/extend.computer Cursor.app/Contents/MacOS/ExtendComputerCursor",
-                )
-            };
-            let desktop = Desktop::new(root, packaged)?;
+            platform::initialize(app.handle())?;
+            let desktop = Desktop::new(root, platform::cursor_helper(app.handle())?)?;
             desktop.start_presence()?;
             desktop.start_display_listener()?;
             desktop.start_peer_checks();
@@ -493,7 +449,6 @@ fn main() {
             if matches!(&event, tauri::RunEvent::Ready) {
                 updates::install_menu();
             }
-            #[cfg(target_os = "macos")]
             if matches!(
                 &event,
                 tauri::RunEvent::Ready

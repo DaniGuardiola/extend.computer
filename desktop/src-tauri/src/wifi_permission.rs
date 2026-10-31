@@ -1,11 +1,10 @@
 //! App-owned ServiceManagement bridge; no shell, installer script, or sudo prompt.
-use anyhow::{ensure, Context, Result};
-use std::path::Path;
+use anyhow::Result;
 
 #[cfg(target_os = "macos")]
 mod macos {
-    use super::*;
-    use std::{ffi::CString, sync::OnceLock};
+    use anyhow::{ensure, Context, Result};
+    use std::{ffi::CString, path::Path, sync::OnceLock};
     struct Bridge {
         status: unsafe extern "C" fn() -> i32,
         allow: unsafe extern "C" fn(i32) -> i32,
@@ -48,6 +47,7 @@ mod macos {
     pub fn status() -> i32 {
         BRIDGE.get().map_or(-2, |b| unsafe { (b.status)() })
     }
+    /// Call on the GUI main thread, so ServiceManagement uses the app's identity.
     pub fn open(repair: bool) -> Result<()> {
         let bridge = BRIDGE
             .get()
@@ -63,38 +63,15 @@ fn registration_result(status: i32) -> Result<()> {
         _ => anyhow::bail!("Could not enable Wi-Fi optimization. Check Login Items & Extensions in System Settings, then try again."),
     }
 }
-pub fn initialize(resources: &Path) -> Result<()> {
-    #[cfg(target_os = "macos")]
-    {
-        macos::initialize(resources)
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = resources;
-        Ok(())
-    }
-}
+#[cfg(target_os = "macos")]
+pub use macos::{initialize, open, status};
+#[cfg(not(target_os = "macos"))]
 pub fn status() -> i32 {
-    #[cfg(target_os = "macos")]
-    {
-        macos::status()
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        -2
-    }
+    -2
 }
-/// Call on the GUI main thread, so ServiceManagement uses the app's identity.
-pub fn open(repair: bool) -> Result<()> {
-    #[cfg(target_os = "macos")]
-    {
-        macos::open(repair)
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = repair;
-        anyhow::bail!("Wi-Fi optimization is available on macOS.")
-    }
+#[cfg(not(target_os = "macos"))]
+pub fn open(_: bool) -> Result<()> {
+    anyhow::bail!("Wi-Fi optimization is available on macOS.")
 }
 #[cfg(test)]
 mod tests {

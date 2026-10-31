@@ -4,10 +4,8 @@ use crate::runtime::Desktop;
 use anyhow::{ensure, Result};
 use serde::Serialize;
 use std::sync::{Arc, OnceLock, Weak};
-use tauri::Manager;
 
 static DESKTOP: OnceLock<Weak<Desktop>> = OnceLock::new();
-#[cfg(target_os = "macos")]
 static LIBRARY: OnceLock<usize> = OnceLock::new();
 
 #[derive(Serialize)]
@@ -52,10 +50,15 @@ unsafe fn symbol<T: Copy>(name: &std::ffi::CStr) -> Result<T> {
     );
     Ok(std::mem::transmute_copy(&pointer))
 }
+#[cfg(not(target_os = "macos"))]
+unsafe fn symbol<T>(_: &std::ffi::CStr) -> Result<T> {
+    anyhow::bail!("Updates are unavailable in this build.")
+}
 pub fn initialize(app: &tauri::AppHandle, desktop: &Arc<Desktop>) -> Result<()> {
     let _ = DESKTOP.set(Arc::downgrade(desktop));
     #[cfg(target_os = "macos")]
     {
+        use tauri::Manager;
         let path = app.path().resource_dir()?.join("libExtendUpdater.dylib");
         if !path.is_file() {
             // Unbundled development has no updater; production must package it.
@@ -87,7 +90,6 @@ pub fn settings() -> Result<UpdateSettings> {
         channel: "stable".into(),
         version: env!("CARGO_PKG_VERSION"),
     };
-    #[cfg(target_os = "macos")]
     if LIBRARY.get().is_some() {
         let status: unsafe extern "C" fn() -> i32 = unsafe { symbol(c"extend_updates_status")? };
         let channel: unsafe extern "C" fn() -> *const std::ffi::c_char =
@@ -103,7 +105,6 @@ pub fn settings() -> Result<UpdateSettings> {
     Ok(value)
 }
 pub fn install_menu() {
-    #[cfg(target_os = "macos")]
     if LIBRARY.get().is_some() {
         if let Ok(install) =
             unsafe { symbol::<unsafe extern "C" fn()>(c"extend_updates_install_menu") }
@@ -118,11 +119,8 @@ pub fn check() -> Result<()> {
         "Updates are unavailable in this development build."
     );
     ensure!(!busy(), "Finish sharing before checking for updates.");
-    #[cfg(target_os = "macos")]
-    {
-        let check: unsafe extern "C" fn() = unsafe { symbol(c"extend_updates_check")? };
-        unsafe { check() };
-    }
+    let check: unsafe extern "C" fn() = unsafe { symbol(c"extend_updates_check")? };
+    unsafe { check() };
     Ok(())
 }
 pub fn configure(checks: bool, downloads: bool, channel: &str) -> Result<UpdateSettings> {
@@ -134,13 +132,10 @@ pub fn configure(checks: bool, downloads: bool, channel: &str) -> Result<UpdateS
         settings()?.available,
         "Updates are unavailable in this development build."
     );
-    #[cfg(target_os = "macos")]
-    {
-        let configure: unsafe extern "C" fn(bool, bool, *const std::ffi::c_char) =
-            unsafe { symbol(c"extend_updates_preferences")? };
-        let channel = std::ffi::CString::new(channel)?;
-        unsafe { configure(checks, checks && downloads, channel.as_ptr()) };
-    }
+    let configure: unsafe extern "C" fn(bool, bool, *const std::ffi::c_char) =
+        unsafe { symbol(c"extend_updates_preferences")? };
+    let channel = std::ffi::CString::new(channel)?;
+    unsafe { configure(checks, checks && downloads, channel.as_ptr()) };
     settings()
 }
 

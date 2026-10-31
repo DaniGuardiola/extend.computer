@@ -153,32 +153,6 @@ fn validate_settings(previous: &Config, next: &Config) -> Result<()> {
     Ok(())
 }
 
-// Keep realtime scheduling active while the app is in the background, where
-// App Nap would otherwise throttle input and display relaying. The activity
-// ends with the session; it does not change system power settings.
-struct SessionActivity<F: FnOnce()>(Option<F>);
-impl<F: FnOnce()> Drop for SessionActivity<F> {
-    fn drop(&mut self) {
-        if let Some(end) = self.0.take() {
-            end();
-        }
-    }
-}
-#[cfg(target_os = "macos")]
-pub(super) fn session_activity() -> impl Drop {
-    use objc2_foundation::{NSActivityOptions, NSProcessInfo, NSString};
-    let process = NSProcessInfo::processInfo();
-    let activity = process.beginActivityWithOptions_reason(
-        NSActivityOptions::UserInitiated | NSActivityOptions::LatencyCritical,
-        &NSString::from_str("Device connection"),
-    );
-    SessionActivity(Some(move || unsafe { process.endActivity(&activity) }))
-}
-#[cfg(not(target_os = "macos"))]
-pub(super) fn session_activity() -> impl Drop {
-    SessionActivity(Some(|| {}))
-}
-
 impl Desktop {
     pub fn update_display(&self, session: u64, mut config: Config) -> Result<()> {
         #[cfg(windows)]
@@ -360,25 +334,8 @@ impl Desktop {
             }
         });
     }
-    #[cfg(windows)]
     fn display_helper(&self) -> Result<PathBuf> {
-        // Bundled and development builds keep the helper beside the app.
-        let executable = std::env::current_exe()?;
-        Ok(executable
-            .parent()
-            .context("Missing app directory")?
-            .join("ExtendComputerDisplay.exe"))
-    }
-    #[cfg(not(windows))]
-    fn display_helper(&self) -> Result<PathBuf> {
-        let helpers = self
-            .helper
-            .parent()
-            .and_then(|p| p.parent())
-            .and_then(|p| p.parent())
-            .and_then(|p| p.parent())
-            .context("Missing native helper directory")?;
-        Ok(helpers.join("extend.computer Display.app/Contents/MacOS/ExtendComputerDisplay"))
+        crate::platform::helper(&self.helper, "Display")
     }
     pub fn start_display_listener(self: &Arc<Self>) -> Result<()> {
         let mut listener =
@@ -880,7 +837,7 @@ impl Desktop {
         if source {
             media.set_target_bitrate(config.bitrate)?;
         }
-        let _activity = session_activity();
+        let _activity = crate::platform::session_activity();
         let until = Instant::now() + Duration::from_secs(15);
         let mut waiting_keyframe = false;
         let mut announced = false;

@@ -1,11 +1,6 @@
 //! Main-thread adapter for extend.computer's bundled Swift PermissionFlow bridge.
 use anyhow::{ensure, Context, Result};
 use std::path::Path;
-#[cfg(target_os = "macos")]
-use std::{
-    ffi::{CStr, CString},
-    sync::OnceLock,
-};
 
 pub fn open(resources: &Path, permission: &str) -> Result<()> {
     ensure!(
@@ -14,6 +9,7 @@ pub fn open(resources: &Path, permission: &str) -> Result<()> {
     );
     #[cfg(target_os = "macos")]
     {
+        use std::{ffi::CStr, ffi::CString, sync::OnceLock};
         static LIBRARY: OnceLock<Result<usize, String>> = OnceLock::new();
         let library = LIBRARY
             .get_or_init(|| {

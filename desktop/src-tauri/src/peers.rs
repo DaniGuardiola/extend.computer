@@ -45,12 +45,7 @@ pub fn save(root: &Path, devices: &BTreeMap<String, Device>) -> Result<()> {
 }
 
 pub fn local_name() -> String {
-    std::process::Command::new("/usr/sbin/scutil")
-        .args(["--get", "ComputerName"])
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .and_then(|o| String::from_utf8(o.stdout).ok())
+    crate::platform::computer_name()
         .map(|s| s.trim().to_owned())
         .filter(|s| extend_computer_agent::session::validate_device_name(s).is_ok())
         .unwrap_or_else(|| "extend.computer device".into())

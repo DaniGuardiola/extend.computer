@@ -26,7 +26,7 @@ The macOS CI whitelist includes shared engine and build inputs plus the explicit
 - `runtime/errors.rs`: user-facing translation of typed engine errors and transport failures.
 - `runtime/tests.rs`: encrypted pairing/control lifecycle tests with a fake native input helper.
 
-`approval.rs` owns pending pairing confirmations, `peers.rs` device metadata, `native.rs` helper permission preflight, and `permission_flow.rs` main-thread access to native permission guidance. Device metadata never grants trust. GUI IPC exposes implemented UI actions; GUI unpair removes local trust and tracks removal metadata; CLI revocation remains a separate persistent block.
+`platform/` holds per-OS code (helper paths, computer name, startup, passkeys, window chrome), `approval.rs` owns pending pairing confirmations, `peers.rs` device metadata, `native.rs` helper permission preflight, and `permission_flow.rs` main-thread access to native permission guidance. Device metadata never grants trust. GUI IPC exposes implemented UI actions; GUI unpair removes local trust and tracks removal metadata; CLI revocation remains a separate persistent block.
 
 `accounts.rs` owns account sessions and browser sign-in; `relay.rs` bridges account WebSockets to the existing encrypted engine. `runtime/presence.rs` checks peer reachability and availability independently of control sessions. See [accounts and routing](accounts-and-routing.md).
 

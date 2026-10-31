@@ -22,7 +22,8 @@ use zeroize::Zeroizing;
 const OFFICIAL: &str = "https://extend.computer";
 /// The relying party the official account server registers passkeys under.
 pub const RELYING_PARTY: &str = "extend.computer";
-/// A passkey challenge from the account server.
+/// A passkey challenge from the account server. Only macOS signs it in-app.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub struct Ceremony {
     pub challenge: String,
     /// Credential IDs (base64url) the server accepts; empty lets the user
