@@ -14,7 +14,7 @@
 /desktop/target/
 /desktop/src-tauri/target/
 /desktop/src-tauri/gen/
-/native/windows/*/target/
+/native/windows/target/
 
 /native/macos/Permissions/.build/
 /desktop/src-tauri/permission-resources/

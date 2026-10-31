@@ -676,6 +676,8 @@ pub struct Transport {
     last_keyframe: Option<Instant>,
     diagnostics: Option<(Instant, [u64; 7])>,
     timing: Option<TransportTiming>,
+    // Kernel receive timestamps exist only on macOS.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     kernel_timestamping: bool,
     #[cfg(target_os = "macos")]
     kernel_arrival: Option<kernel_arrival::Receiver>,

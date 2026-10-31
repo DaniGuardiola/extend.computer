@@ -47,6 +47,7 @@ mod windows_main {
         inject::{primary, Injector},
     };
     use anyhow::{bail, ensure, Context, Result};
+    use extend_computer_agent::input::InputEvent;
     use std::{
         io::{BufRead, Write},
         sync::mpsc,
@@ -146,7 +147,7 @@ mod windows_main {
             return Ok(());
         }
         if line.starts_with('{') {
-            let event: serde_json::Value = serde_json::from_str(line)?;
+            let event: InputEvent = serde_json::from_str(line)?;
             return injector.event(&event);
         }
         let mut parts = line.split_whitespace();

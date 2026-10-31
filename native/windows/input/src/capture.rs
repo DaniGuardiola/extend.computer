@@ -8,6 +8,7 @@ use crate::{
     keys,
 };
 use anyhow::{bail, Context, Result};
+use extend_computer_agent::input::InputEvent;
 use std::{
     collections::BTreeSet,
     io::{BufRead, Write},
@@ -54,8 +55,8 @@ fn emit(line: &str) {
     let _ = out.flush();
 }
 
-fn emit_event(value: serde_json::Value) {
-    emit(&value.to_string());
+fn emit_event(event: InputEvent) {
+    emit(&serde_json::to_string(&event).unwrap_or_default());
 }
 
 impl State {
@@ -87,7 +88,7 @@ impl State {
     /// Hands control back: releases whatever the peer holds and shows the
     /// local pointer at `point`.
     fn return_local(&mut self, point: Point) {
-        emit_event(serde_json::json!({"kind": "release"}));
+        emit_event(InputEvent::Release);
         self.swallow_up.extend(self.remote_keys.iter().copied());
         self.swallow_up
             .extend(self.remote_modifier_keys.iter().copied());
@@ -190,9 +191,11 @@ impl State {
             return true;
         }
         let clicks = self.clicks.map_or(1, |c| c.3);
-        emit_event(
-            serde_json::json!({"kind": "button", "button": button, "down": down, "clicks": clicks}),
-        );
+        emit_event(InputEvent::Button {
+            button,
+            down,
+            clicks,
+        });
         true
     }
 
@@ -207,7 +210,7 @@ impl State {
         } else {
             (0, pixels)
         };
-        emit_event(serde_json::json!({"kind": "scroll", "dx": dx, "dy": dy}));
+        emit_event(InputEvent::Scroll { dx, dy });
         true
     }
 
@@ -244,7 +247,7 @@ impl State {
             let mask = self.mask();
             if mask != self.modifiers {
                 self.modifiers = mask;
-                emit_event(serde_json::json!({"kind": "modifiers", "mask": mask}));
+                emit_event(InputEvent::Modifiers { mask });
             }
             return true;
         }
@@ -254,14 +257,18 @@ impl State {
         let held = self.remote_keys.contains(&scan);
         if down {
             self.remote_keys.insert(scan);
-            emit_event(
-                serde_json::json!({"kind": "mac_key", "code": code, "down": true, "repeat": held}),
-            );
+            emit_event(InputEvent::MacKey {
+                code,
+                down: true,
+                repeat: held,
+            });
         } else if held {
             self.remote_keys.remove(&scan);
-            emit_event(
-                serde_json::json!({"kind": "mac_key", "code": code, "down": false, "repeat": false}),
-            );
+            emit_event(InputEvent::MacKey {
+                code,
+                down: false,
+                repeat: false,
+            });
         }
         true
     }

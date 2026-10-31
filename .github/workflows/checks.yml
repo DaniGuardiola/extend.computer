@@ -130,20 +130,13 @@ jobs:
         with:
           workspaces: |
             .
-            native/windows/display
-            native/windows/input
+            native/windows
             desktop/src-tauri
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Engine tests
         run: cargo test --locked -p extend-computer-agent --all-targets
-      - name: Display helper
-        working-directory: native/windows/display
-        run: |
-          cargo fmt --check
-          cargo clippy --locked --all-targets -- -D warnings
-          cargo test --locked
-      - name: Input helper
-        working-directory: native/windows/input
+      - name: Windows helpers
+        working-directory: native/windows
         run: |
           cargo fmt --check
           cargo clippy --locked --all-targets -- -D warnings

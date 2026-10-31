@@ -132,11 +132,6 @@ pub const MODIFIERS: [(u8, u16, u16); 4] = [
     (COMMAND, 0xE05B, 0xE05C),
 ];
 
-/// The wire's key codes exclude the modifiers and Caps Lock (54..=63).
-pub fn valid_mac_key(code: u16) -> bool {
-    code < 128 && !(54..=63).contains(&code)
-}
-
 pub fn mac_to_scan(code: u16) -> Option<u16> {
     MAC_TO_SCAN
         .iter()
@@ -188,7 +183,10 @@ mod tests {
     #[test]
     fn mapping_is_one_to_one_and_skips_modifiers() {
         for &(mac, scan) in MAC_TO_SCAN {
-            assert!(valid_mac_key(mac), "{mac} is not a wire key");
+            assert!(
+                mac < 128 && !(54..=63).contains(&mac),
+                "{mac} is not a wire key"
+            );
             assert_eq!(scan_to_mac(scan), Some(mac));
             assert!(modifier_of(scan).is_none());
         }

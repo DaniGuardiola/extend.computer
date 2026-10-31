@@ -24,6 +24,8 @@ pub mod low_jitter {
     pub fn required_for_peer(_: IpAddr) -> Result<bool> {
         Ok(false)
     }
+    // Windows reports ready through its own adapter.
+    #[cfg_attr(windows, allow(dead_code))]
     pub fn ready() -> bool {
         false
     }

@@ -1,7 +1,8 @@
 //! Posts keyboard and mouse input with SendInput and remembers everything it
 //! holds down, so every exit path can release it.
 use crate::keys;
-use anyhow::{bail, ensure, Context, Result};
+use anyhow::{bail, ensure, Result};
+use extend_computer_agent::input::InputEvent;
 use std::collections::BTreeSet;
 use windows::Win32::{
     Foundation::RECT,
@@ -109,7 +110,7 @@ impl Injector {
         self.send(&[mouse(ax, ay, 0, MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE)])
     }
 
-    pub fn button(&mut self, button: u8, down: bool) -> Result<()> {
+    fn button(&mut self, button: u8, down: bool) -> Result<()> {
         let flags = match (button, down) {
             (0, true) => MOUSEEVENTF_LEFTDOWN,
             (0, false) => MOUSEEVENTF_LEFTUP,
@@ -132,8 +133,7 @@ impl Injector {
         Ok(())
     }
 
-    pub fn scroll(&mut self, dx: i32, dy: i32) -> Result<()> {
-        ensure!(dx.abs() <= 4096 && dy.abs() <= 4096, "Invalid scroll");
+    fn scroll(&mut self, dx: i32, dy: i32) -> Result<()> {
         let mut inputs = Vec::new();
         if dy != 0 {
             inputs.push(mouse(0, 0, dy * WHEEL_PER_PIXEL, MOUSEEVENTF_WHEEL));
@@ -145,9 +145,7 @@ impl Injector {
         self.send(&inputs)
     }
 
-    pub fn key(&mut self, code: u16, down: bool, repeat: bool) -> Result<()> {
-        ensure!(keys::valid_mac_key(code), "Invalid key");
-        ensure!(!repeat || down, "Invalid key repeat");
+    fn key(&mut self, code: u16, down: bool, repeat: bool) -> Result<()> {
         // Keys with no Windows equivalent are accepted and dropped.
         let Some(scan) = keys::mac_to_scan(code) else {
             return Ok(());
@@ -165,13 +163,7 @@ impl Injector {
         Ok(())
     }
 
-    pub fn modifiers(&mut self, mask: u8) -> Result<()> {
-        for (index, &(bit, _, _)) in keys::MODIFIERS.iter().enumerate() {
-            ensure!(
-                mask & (keys::RIGHT << index) == 0 || mask & bit != 0,
-                "Invalid modifiers"
-            );
-        }
+    fn modifiers(&mut self, mask: u8) -> Result<()> {
         let wanted = keys::modifier_keys(mask);
         let mut inputs = Vec::new();
         // Release first so switching sides never holds both keys.
@@ -191,14 +183,7 @@ impl Injector {
         Ok(())
     }
 
-    pub fn text(&mut self, value: &str) -> Result<()> {
-        ensure!(
-            !value.is_empty()
-                && value.len() <= 256
-                && value.chars().count() <= 64
-                && !value.chars().any(char::is_control),
-            "Invalid text"
-        );
+    fn text(&mut self, value: &str) -> Result<()> {
         ensure!(
             self.keys.is_empty() && self.modifiers == 0,
             "Text cannot be typed while keys are held"
@@ -223,40 +208,16 @@ impl Injector {
         self.send(&inputs)
     }
 
-    /// Applies one wire InputEvent.
-    pub fn event(&mut self, event: &serde_json::Value) -> Result<()> {
-        let object = event.as_object().context("Invalid input event")?;
-        let field = |name: &str| object.get(name).context("Invalid input event");
-        let allowed: &[&str] = match event["kind"].as_str() {
-            Some("button") => &["kind", "button", "down", "clicks"],
-            Some("scroll") => &["kind", "dx", "dy"],
-            Some("mac_key") => &["kind", "code", "down", "repeat"],
-            Some("modifiers") => &["kind", "mask"],
-            Some("text") => &["kind", "value"],
-            Some("release") => &["kind"],
-            _ => bail!("Invalid input event"),
-        };
-        ensure!(
-            object.len() == allowed.len() && object.keys().all(|k| allowed.contains(&k.as_str())),
-            "Invalid input event"
-        );
-        let int =
-            |name: &str| -> Result<i64> { field(name)?.as_i64().context("Invalid input event") };
-        let flag =
-            |name: &str| -> Result<bool> { field(name)?.as_bool().context("Invalid input event") };
-        match event["kind"].as_str().unwrap() {
-            "button" => {
-                let clicks = int("clicks")?;
-                ensure!((1..=3).contains(&clicks), "Invalid click count");
-                let button = u8::try_from(int("button")?).context("Invalid mouse button")?;
-                self.button(button, flag("down")?)
-            }
-            "scroll" => self.scroll(i32::try_from(int("dx")?)?, i32::try_from(int("dy")?)?),
-            "mac_key" => self.key(u16::try_from(int("code")?)?, flag("down")?, flag("repeat")?),
-            "modifiers" => self.modifiers(u8::try_from(int("mask")?)?),
-            "text" => self.text(field("value")?.as_str().context("Invalid text")?),
-            "release" => self.release(),
-            _ => unreachable!(),
+    /// Applies one wire event after the engine's own validation.
+    pub fn event(&mut self, event: &InputEvent) -> Result<()> {
+        event.validate()?;
+        match event {
+            InputEvent::Button { button, down, .. } => self.button(*button, *down),
+            InputEvent::Scroll { dx, dy } => self.scroll(*dx, *dy),
+            InputEvent::MacKey { code, down, repeat } => self.key(*code, *down, *repeat),
+            InputEvent::Modifiers { mask } => self.modifiers(*mask),
+            InputEvent::Text { value } => self.text(value),
+            InputEvent::Release => self.release(),
         }
     }
 

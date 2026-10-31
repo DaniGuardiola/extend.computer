@@ -1,24 +1,21 @@
 [package]
 name = "extend-computer-display"
-version = "0.3.1"
-edition = "2021"
-license = "MIT"
-publish = false
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
 description = "Windows display helper: captures the screen and streams encoded video to the desktop app"
-
-# Standalone: the root workspace and macOS CI never build Windows helpers.
-[workspace]
 
 [[bin]]
 name = "ExtendComputerDisplay"
 path = "src/main.rs"
 
 [dependencies]
-anyhow = "1"
-serde_json = "1"
+anyhow.workspace = true
+serde_json.workspace = true
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.61", features = [
+windows = { workspace = true, features = [
   "Win32_Foundation",
   "Win32_Graphics_Direct3D",
   "Win32_Graphics_Direct3D10",
@@ -34,8 +31,3 @@ windows = { version = "0.61", features = [
   "Win32_UI_HiDpi",
   "Win32_UI_WindowsAndMessaging",
 ] }
-windows-core = "0.61"
-
-[profile.release]
-codegen-units = 1
-lto = true
