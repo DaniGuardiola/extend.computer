@@ -1,4 +1,6 @@
 //! Windows input helper. Protocol: docs/architecture/native-helpers.md.
+// Spawned by the GUI app over pipes; a console subsystem would flash a window.
+#![windows_subsystem = "windows"]
 #[cfg(windows)]
 mod capture;
 #[cfg_attr(not(windows), allow(dead_code))]
