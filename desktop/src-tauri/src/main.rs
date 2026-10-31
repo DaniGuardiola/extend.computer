@@ -368,16 +368,19 @@ fn main() {
             #[cfg(not(feature = "dev-identity"))]
             let profile = "extend.computer";
             let root = app.path().data_dir()?.join(profile);
-            let resources = permission_flow::resources(app.handle())?;
-            wifi_permission::initialize(&resources)?;
-            let executable = std::env::current_exe()?;
-            let contents = executable
-                .parent()
-                .and_then(|p| p.parent())
-                .ok_or("Missing app bundle")?;
-            extend_computer_agent::low_jitter::configure_app_helper(
-                contents.join("Library/LaunchServices/ExtendComputerLowJitter"),
-            )?;
+            #[cfg(target_os = "macos")]
+            {
+                let resources = permission_flow::resources(app.handle())?;
+                wifi_permission::initialize(&resources)?;
+                let executable = std::env::current_exe()?;
+                let contents = executable
+                    .parent()
+                    .and_then(|p| p.parent())
+                    .ok_or("Missing app bundle")?;
+                extend_computer_agent::low_jitter::configure_app_helper(
+                    contents.join("Library/LaunchServices/ExtendComputerLowJitter"),
+                )?;
+            }
             let packaged = app
                 .path()
                 .resource_dir()?

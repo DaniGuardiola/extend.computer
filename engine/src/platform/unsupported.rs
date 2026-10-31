@@ -2,6 +2,7 @@
 use crate::identity::Identity;
 use anyhow::Result;
 
+#[cfg_attr(windows, allow(dead_code))]
 pub(crate) fn load_identity(_: &str) -> Result<Identity> {
     anyhow::bail!("persistent identity adapter not implemented on this OS")
 }

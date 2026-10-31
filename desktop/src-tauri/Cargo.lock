@@ -1484,6 +1484,7 @@ dependencies = [
  "fs2",
  "hex",
  "hkdf",
+ "keyring",
  "libc",
  "mdns-sd",
  "rand 0.8.8",

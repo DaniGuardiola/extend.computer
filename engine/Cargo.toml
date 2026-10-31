@@ -37,6 +37,9 @@ url = { version = "2", optional = true }
 libc = "0.2"
 security-framework = "3"
 
+[target.'cfg(windows)'.dependencies]
+keyring = { version = "3", features = ["windows-native"] }
+
 [[bin]]
 name = "extend-computer"
 path = "src/main.rs"
