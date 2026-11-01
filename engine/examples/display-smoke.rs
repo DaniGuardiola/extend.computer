@@ -73,7 +73,14 @@ fn main() -> Result<()> {
             if let Some(event) = receiver.poll()? {
                 match event {
                     DisplayEvent::Connected => {
-                        viewer = Some(helper::Helper::start(&path, &config, false, false, &[])?)
+                        viewer = Some(helper::Helper::start(
+                            &path,
+                            &config,
+                            false,
+                            false,
+                            &[],
+                            None,
+                        )?)
                     }
                     DisplayEvent::Frame(frame) => {
                         if let Some(viewer) = &viewer {
@@ -90,7 +97,14 @@ fn main() -> Result<()> {
                 }
             }
             if connected && capture.is_none() {
-                capture = Some(helper::Helper::start(&path, &config, true, false, &[])?);
+                capture = Some(helper::Helper::start(
+                    &path,
+                    &config,
+                    true,
+                    false,
+                    &[],
+                    None,
+                )?);
             }
             if let Some(capture) = &capture {
                 ensure!(

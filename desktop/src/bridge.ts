@@ -5,6 +5,11 @@ export const native = isTauri();
 const os = navigator.platform;
 export const localNoun = os.startsWith("Mac") ? "Mac" : "computer";
 export const unavailableHere = `Not available on ${os.startsWith("Win") ? "Windows" : `this ${localNoun}`} yet.`;
+/** Why Extend display is off here: Windows extends through a display driver,
+ * which the app looks for once, at launch. */
+export const extendUnavailableHere = os.startsWith("Win")
+  ? "Extending needs the extend.computer display driver. After installing it, restart extend.computer."
+  : unavailableHere;
 /** What this device can start, and which OS grants apply to it. */
 export type Capabilities = {
   extend_display: boolean;

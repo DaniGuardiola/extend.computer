@@ -581,7 +581,7 @@ impl Desktop {
             if config.auto_size {
                 let path = self.display_helper()?;
                 helper::Helper::screen_size(&path, config)?;
-                let viewer = helper::Helper::start(&path, config, false, false, &[])?;
+                let viewer = helper::Helper::start(&path, config, false, false, &[], None)?;
                 viewer.fit_viewport(config)?;
                 viewer.configure(config)?;
                 prepared_viewer = Some(viewer);
@@ -1138,6 +1138,7 @@ impl Desktop {
                             source,
                             physical_usb,
                             &presets,
+                            Some(peer),
                         )?);
                         if fixed_bitrate {
                             helper.as_ref().unwrap().set_bitrate(config.bitrate)?;

@@ -3,8 +3,9 @@ use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
 // The display helper mirrors the screen in H.264 with the pointer drawn in,
-// and views another screen in H.264. There's no virtual display driver or
-// display input injection yet.
+// and views another screen in H.264. Extending needs the extend.computer
+// display driver, so only the helper's report adds it, on a PC that has the
+// driver. There's no display input injection yet.
 pub const ABILITIES: crate::runtime::Abilities = crate::runtime::Abilities {
     source_mirror: true,
     source_extend: false,

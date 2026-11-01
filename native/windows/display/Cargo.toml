@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "Windows display helper: streams the screen to the desktop app and shows a peer's screen"
+description = "Windows display helper: streams the screen or an extended display to the desktop app and shows a peer's screen"
 
 [[bin]]
 name = "ExtendComputerDisplay"
@@ -17,6 +17,8 @@ extend-computer-agent = { path = "../../../engine" }
 
 [target.'cfg(windows)'.dependencies]
 windows = { workspace = true, features = [
+  "Win32_Devices_DeviceAndDriverInstallation",
+  "Win32_Devices_Display",
   "Win32_Foundation",
   "Win32_Graphics_Direct3D",
   "Win32_Graphics_Direct3D10",
@@ -25,8 +27,11 @@ windows = { workspace = true, features = [
   "Win32_Graphics_Dxgi_Common",
   "Win32_Graphics_Gdi",
   "Win32_Media_MediaFoundation",
+  "Win32_Security",
+  "Win32_Storage_FileSystem",
   "Win32_System_Com",
   "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_IO",
   "Win32_System_LibraryLoader",
   "Win32_System_Ole",
   "Win32_System_Performance",

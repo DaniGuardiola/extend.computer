@@ -340,23 +340,55 @@ mod tests {
         assert!(Offers::known(defaults.offers()).is_some());
     }
 
-    #[test]
-    fn platform_defaults_match_what_each_helper_reports() {
+    /// The first `capabilities` report from `from` in the shared fixture
+    /// whose name starts with `name`.
+    fn report(from: &str, name: &str) -> HelperAbilities {
         let fixture: serde_json::Value = serde_json::from_str(include_str!(
             "../../../../native/shared/fixtures/display-helper.json"
         ))
         .unwrap();
-        let report = |from: &str| {
-            let vector = fixture["messages"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .find(|v| v["channel"] == "capabilities" && v["from"] == from)
-                .unwrap();
-            HelperAbilities::parse(vector["json"].as_str().unwrap()).unwrap()
-        };
-        assert_eq!(mac().refined(&report("macos")), mac());
-        assert_eq!(windows().refined(&report("windows")), windows());
+        let vector = fixture["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|v| {
+                v["channel"] == "capabilities"
+                    && v["from"] == from
+                    && v["name"].as_str().unwrap().starts_with(name)
+            })
+            .unwrap();
+        HelperAbilities::parse(vector["json"].as_str().unwrap()).unwrap()
+    }
+
+    #[test]
+    fn platform_defaults_match_what_each_helper_reports() {
+        assert_eq!(mac().refined(&report("macos", "")), mac());
+        assert_eq!(windows().refined(&report("windows", "")), windows());
+    }
+
+    #[test]
+    fn a_windows_helper_with_the_display_driver_adds_extend() {
+        let refined = windows().refined(&report("windows", "Windows display abilities with"));
+        assert_eq!(
+            refined,
+            Abilities {
+                source_extend: true,
+                ..windows()
+            }
+        );
+        assert!(refined.capabilities().extend_display);
+        assert!(refined.sources(Mode::Extend));
+        assert!(refined.offers().iter().any(|o| o == DISPLAY_SOURCE_EXTEND));
+        // A Windows source still encodes H.264 with the pointer drawn in.
+        let mut chosen = config(VideoCodec::Hevc, true);
+        chosen.mode = Mode::Extend;
+        refined.choose(&mut chosen, &offers(mac()));
+        assert_eq!(
+            (chosen.codec, chosen.separate_cursor),
+            (VideoCodec::H264, false)
+        );
+        // And a Mac shows what it sends.
+        assert_eq!(mac().admit(&mut chosen), Ok(()));
     }
 
     #[test]

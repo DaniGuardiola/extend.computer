@@ -5,7 +5,12 @@
 #   run [seconds]            sync, build the debug app and helpers, relaunch the app, print its log
 #   shot [file.png]          screenshot the PC's desktop (default /tmp/extend-dev-shot.png)
 #   ui Action=... [Key=...]  UI Automation in the desktop session, elevated; see ui.ps1
-#   display-test [software]  run the display helper for ~5 s while sweeping the pointer, summarize its stream
+#   display-test [extend] [software] [WxH [WxH]] [retina] [replace] [kill] [idle] [serial=N]
+#                            run the display helper for ~5 s while sweeping the pointer, summarize its stream;
+#                            extend adds the virtual monitor at the first size, switches to the second halfway
+#                            (a mode it offers, or a new monitor with replace) and checks the cleanup; kill
+#                            kills the helper instead of stopping it; idle parks the pointer for 10 s before the
+#                            stop; serial=N sets EXTEND_DISPLAY_SERIAL. Exits 1 if any check failed
 #   input-test [drive]       run capture-control-left against injected input; drive only injects it
 #   viewer-test [W H]        sync, build the display helper, run its viewer full screen on a synthetic stream
 #   driver-build             sync, then compile+sign the display driver and build the acceptance tool
@@ -107,13 +112,120 @@ ui() {
 }
 
 display_test() {
+    local mode=mirror encoder= size= change= retina= replace= kill= idle= serial= status=0 arg
+    for arg; do
+        case $arg in
+            extend | mirror) mode=$arg ;;
+            software) encoder=software ;;
+            retina) retina=1 ;;
+            replace) replace=1 ;;
+            kill) kill=1 ;;
+            idle) idle=10 ;;
+            serial=[0-9]*) serial=${arg#serial=} ;;
+            [0-9]*x[0-9]*) if [ -z "$size" ]; then size=$arg; else change=$arg; fi ;;
+            *) echo "display-test: unknown argument $arg" >&2; return 2 ;;
+        esac
+    done
+    size=${size:-1920x1080}
+    # The stream's sizes in pixels, as the helper encodes them: twice the points with Retina, even.
+    local scale=1 sizes= wanted
+    [ -z "$retina" ] || scale=2
+    for wanted in $size $change; do
+        sizes+="${sizes:+,}$(( ${wanted%x*} * scale & ~1 ))x$(( ${wanted#*x} * scale & ~1 ))"
+    done
     prepare
-    session display-test '-Timeout 30' "Bin=$target\\debug" "Encoder=${1:-}"
-    scp -q "$host:$(slashes "$work")/display.bin" /tmp/extend-dev-display.bin
-    python3 - /tmp/extend-dev-display.bin /tmp/extend-dev-display.h264 <<'PY'
+    # A run that fails before it starts must not leave the last run's stream to summarize.
+    remote "Remove-Item $(quote "$work\\display.bin") -ErrorAction SilentlyContinue"
+    rm -f /tmp/extend-dev-display.bin
+    # A failed check still shows the stream's summary; the exit status reports both.
+    session display-test '-Timeout 90' "Bin=$target\\debug" "Encoder=$encoder" "Mode=$mode" \
+        "Width=${size%x*}" "Height=${size#*x}" "Retina=$retina" "Change=$change" "Replace=$replace" "Kill=$kill" \
+        "Idle=$idle" "Serial=$serial" || status=$?
+    scp -q "$host:$(slashes "$work")/display.bin" /tmp/extend-dev-display.bin || status=1
+    python3 - /tmp/extend-dev-display.bin /tmp/extend-dev-display.h264 "$sizes" <<'PY' || status=1
 import struct, sys
+
+def nals(data):
+    """NAL units of an Annex B stream, without their start codes."""
+    starts, i = [], 0
+    while i + 3 <= len(data):
+        if data[i:i + 3] == b'\0\0\1':
+            starts.append(i + 3)
+            i += 3
+        else:
+            i += 1
+    return [data[a:(starts[n + 1] - 3 if n + 1 < len(starts) else len(data))].rstrip(b'\0') or b'\0'
+            for n, a in enumerate(starts)]
+
+class Bits:
+    def __init__(self, nal):
+        self.data, self.pos, zeros = bytearray(), 0, 0
+        for b in nal:  # drop emulation prevention bytes
+            if zeros >= 2 and b == 3:
+                zeros = 0
+                continue
+            self.data.append(b)
+            zeros = zeros + 1 if b == 0 else 0
+    def u(self, n):
+        v = 0
+        for _ in range(n):
+            v = v << 1 | (self.data[self.pos >> 3] >> (7 - (self.pos & 7)) & 1)
+            self.pos += 1
+        return v
+    def ue(self):
+        z = 0
+        while self.u(1) == 0:
+            z += 1
+        return (1 << z) - 1 + self.u(z)
+    def se(self):
+        v = self.ue()
+        return (v + 1) // 2 if v & 1 else -(v // 2)
+
+def sps_size(nal):
+    """The picture size an H.264 sequence parameter set describes."""
+    b = Bits(nal[1:])
+    profile = b.u(8)
+    b.u(16)
+    b.ue()
+    chroma = 1
+    if profile in (100, 110, 122, 244, 44, 83, 86, 118, 128, 138, 139, 134, 135):
+        chroma = b.ue()
+        if chroma == 3:
+            b.u(1)
+        b.ue(); b.ue(); b.u(1)
+        if b.u(1):
+            for i in range(12 if chroma == 3 else 8):
+                if b.u(1):
+                    last = scale = 8
+                    for _ in range(16 if i < 6 else 64):
+                        if scale:
+                            scale = (last + b.se() + 256) % 256
+                        last = scale or last
+    b.ue()
+    order = b.ue()
+    if order == 0:
+        b.ue()
+    elif order == 1:
+        b.u(1); b.se(); b.se()
+        for _ in range(b.ue()):
+            b.se()
+    b.ue(); b.u(1)
+    width, height = (b.ue() + 1) * 16, b.ue() + 1
+    frames_only = b.u(1)
+    if not frames_only:
+        b.u(1)
+    b.u(1)
+    height *= 16 * (2 - frames_only)
+    if b.u(1):
+        left, right, top, bottom = b.ue(), b.ue(), b.ue(), b.ue()
+        cx = 2 if chroma in (1, 2) else 1
+        cy = (2 if chroma == 1 else 1) * (2 - frames_only)
+        width -= cx * (left + right)
+        height -= cy * (top + bottom)
+    return width, height
+
 data = open(sys.argv[1], 'rb').read()
-frames, i = [], 0
+frames, sizes, failures, i = [], [], [], 0
 with open(sys.argv[2], 'wb') as video:
     while i + 5 <= len(data):
         kind, size = data[i], struct.unpack('>I', data[i + 1:i + 5])[0]
@@ -122,14 +234,52 @@ with open(sys.argv[2], 'wb') as video:
         if kind == 1:
             frames.append((struct.unpack('>Q', payload[:8])[0], payload[8], len(payload) - 9))
             video.write(payload[9:])
+            for nal in nals(payload[9:]) if payload[8] else []:
+                if nal[0] & 31 == 7:
+                    picture = sps_size(nal)
+                    if not sizes or sizes[-1][0] != picture:
+                        sizes.append((picture, len(frames) - 1))
         else:
-            print('kind', kind, payload[:120])
+            print('kind', kind, payload[:160])
+            if kind == 2 and b'"ok":false' in payload.replace(b' ', b''):
+                failures.append('a configuration failed')
 if len(frames) > 1:
     span = (frames[-1][0] - frames[0][0]) / 1e9
+    gap = max(b[0] - a[0] for a, b in zip(frames, frames[1:])) / 1e6
     print(f'{len(frames)} frames in {span:.2f}s = {len(frames) / span:.1f} fps; '
-          f'keyframes {sum(f[1] for f in frames)}; avg {sum(f[2] for f in frames) // len(frames)} B')
+          f'keyframes {sum(f[1] for f in frames)}; avg {sum(f[2] for f in frames) // len(frames)} B; '
+          f'longest gap {gap:.0f} ms')
+if not frames:
+    failures.append('no frames')
+for n, (picture, first) in enumerate(sizes):
+    last = sizes[n + 1][1] - 1 if n + 1 < len(sizes) else len(frames) - 1
+    rate = ''
+    if last > first:
+        rate = f', {(last - first) / ((frames[last][0] - frames[first][0]) / 1e9):.1f} fps'
+    print(f'frame size {picture[0]}x{picture[1]}: frames {first}-{last}{rate}')
+expected = [tuple(map(int, wanted.split('x'))) for wanted in sys.argv[3].split(',') if wanted]
+if frames and [picture for picture, _ in sizes] != expected:
+    failures.append('frame sizes ' + ', '.join(f'{w}x{h}' for (w, h), _ in sizes) + ' instead of '
+                    + ', '.join(f'{w}x{h}' for w, h in expected))
+if sizes:
+    # The pointer sweeps over the source after the last change, so Windows draws at about 40 fps; a stream that
+    # repeats one picture has only the 500 ms idle refresh.
+    times = [f[0] for f in frames[sizes[-1][1]:]]
+    busiest, start = 0, 0
+    for end, time in enumerate(times):
+        while time - times[start] >= 1e9:
+            start += 1
+        busiest = max(busiest, end - start + 1)
+    print(f'busiest second at {sizes[-1][0][0]}x{sizes[-1][0][1]}: {busiest} frames')
+    if busiest < 10:
+        failures.append(f'at most {busiest} frames in any second at the last size: the picture looks frozen')
 print('stream:', sys.argv[2])
+if failures:
+    print('FAIL stream:', '; '.join(failures))
+    sys.exit(1)
 PY
+    if [ "$status" -ne 0 ]; then echo "display-test: FAIL" >&2; fi
+    return "$status"
 }
 
 input_test() {

@@ -1,6 +1,7 @@
 //! Primary-display capture with DXGI Desktop Duplication. The pointer is drawn
 //! into a copy of each desktop image, and the D3D11 video processor scales the
-//! result to the stream size and converts it to NV12 on the GPU.
+//! result to the stream size and converts it to NV12 on the GPU
+//! ([`Converter`], which the extended display shares).
 use anyhow::{bail, Context, Result};
 use std::time::Duration;
 use windows::{
@@ -73,60 +74,61 @@ struct Converted {
     view: ID3D11VideoProcessorOutputView,
 }
 
-pub struct Capture {
+/// A D3D11 device on `adapter` that the video processor and hardware
+/// encoders can use.
+pub fn video_device(adapter: &IDXGIAdapter) -> Result<(ID3D11Device, ID3D11DeviceContext)> {
+    let mut device = None;
+    let mut context = None;
+    unsafe {
+        D3D11CreateDevice(
+            adapter,
+            D3D_DRIVER_TYPE_UNKNOWN,
+            HMODULE::default(),
+            D3D11_CREATE_DEVICE_BGRA_SUPPORT | D3D11_CREATE_DEVICE_VIDEO_SUPPORT,
+            None,
+            D3D11_SDK_VERSION,
+            Some(&mut device),
+            None,
+            Some(&mut context),
+        )
+        .context("Could not start the graphics device")?;
+    }
+    let device = device.context("Missing graphics device")?;
+    let context = context.context("Missing graphics context")?;
+    // Hardware encoders use the device from their own threads.
+    unsafe {
+        let _ = context
+            .cast::<ID3D10Multithread>()?
+            .SetMultithreadProtected(true);
+    }
+    Ok((device, context))
+}
+
+/// Scales a desktop image to the stream size and converts it to NV12 with
+/// the D3D11 video processor, into a small ring of textures an encoder can
+/// read, or back to memory for the software encoder.
+pub struct Converter {
     device: ID3D11Device,
     context: ID3D11DeviceContext,
-    output: IDXGIOutput1,
-    duplication: Option<IDXGIOutputDuplication>,
-    /// Latest desktop image without the pointer, kept so unchanged screens
-    /// and pointer-only moves can be re-encoded.
-    desktop: Option<ID3D11Texture2D>,
-    /// The desktop image with the pointer drawn in; GDI-compatible when the
-    /// desktop format allows it.
-    composed: Option<(ID3D11Texture2D, bool)>,
-    source_size: (u32, u32),
-    width: u32,
-    height: u32,
     video: ID3D11VideoDevice,
     video_context: ID3D11VideoContext,
     processor: Option<(ID3D11VideoProcessorEnumerator, ID3D11VideoProcessor)>,
+    source_size: (u32, u32),
+    width: u32,
+    height: u32,
     ring: Vec<Converted>,
     next: usize,
     staging: ID3D11Texture2D,
     buffer: Vec<u8>,
 }
 
-impl Capture {
-    pub fn new(width: u32, height: u32) -> Result<Self> {
-        let (adapter, output, _) = primary_output()?;
-        let mut device = None;
-        let mut context = None;
-        unsafe {
-            D3D11CreateDevice(
-                &adapter,
-                D3D_DRIVER_TYPE_UNKNOWN,
-                HMODULE::default(),
-                D3D11_CREATE_DEVICE_BGRA_SUPPORT | D3D11_CREATE_DEVICE_VIDEO_SUPPORT,
-                None,
-                D3D11_SDK_VERSION,
-                Some(&mut device),
-                None,
-                Some(&mut context),
-            )
-            .context("Could not start the graphics device")?;
-        }
-        let device = device.context("Missing graphics device")?;
-        let context = context.context("Missing graphics context")?;
-        // Hardware encoders use the device from their own threads.
-        unsafe {
-            let _ = context
-                .cast::<ID3D10Multithread>()?
-                .SetMultithreadProtected(true);
-        }
-        let video: ID3D11VideoDevice = device.cast()?;
-        let video_context: ID3D11VideoContext = context.cast()?;
+impl Converter {
+    /// Converts to `width` x `height` on `device`, once [`Self::set_source`]
+    /// gives the source size.
+    pub fn new(device: &ID3D11Device, width: u32, height: u32) -> Result<Self> {
+        let context = unsafe { device.GetImmediateContext()? };
         let staging = texture(
-            &device,
+            device,
             width,
             height,
             DXGI_FORMAT_NV12,
@@ -135,46 +137,42 @@ impl Capture {
             D3D11_CPU_ACCESS_READ.0 as u32,
             0,
         )?;
-        let mut capture = Self {
-            device,
+        Ok(Self {
+            device: device.clone(),
+            video: device.cast()?,
+            video_context: context.cast()?,
             context,
-            output,
-            duplication: None,
-            desktop: None,
-            composed: None,
+            processor: None,
             source_size: (0, 0),
             width,
             height,
-            video,
-            video_context,
-            processor: None,
             ring: Vec::new(),
             next: 0,
             staging,
             buffer: vec![0; (width * height * 3 / 2) as usize],
-        };
-        capture.duplicate()?;
-        Ok(capture)
+        })
     }
 
     pub fn device(&self) -> &ID3D11Device {
         &self.device
     }
 
-    fn duplicate(&mut self) -> Result<()> {
-        self.duplication = None;
-        let duplication = unsafe { self.output.DuplicateOutput(&self.device) }
-            .context("Could not capture the screen")?;
-        let desc = unsafe { duplication.GetDesc() };
-        let size = (desc.ModeDesc.Width, desc.ModeDesc.Height);
-        if size != self.source_size || self.processor.is_none() {
-            self.source_size = size;
-            self.desktop = None;
-            self.composed = None;
-            self.build_processor()?;
+    pub fn context(&self) -> &ID3D11DeviceContext {
+        &self.context
+    }
+
+    pub fn source_size(&self) -> (u32, u32) {
+        self.source_size
+    }
+
+    /// Prepares for source images of `size`; rebuilds only when it changed.
+    pub fn set_source(&mut self, size: (u32, u32)) -> Result<()> {
+        if size == self.source_size && self.processor.is_some() {
+            return Ok(());
         }
-        self.duplication = Some(duplication);
-        Ok(())
+        self.processor = None;
+        self.source_size = size;
+        self.build_processor()
     }
 
     fn build_processor(&mut self) -> Result<()> {
@@ -250,6 +248,118 @@ impl Capture {
         Ok(())
     }
 
+    /// Converts `image`, which has the source size, to NV12. Returns the
+    /// ring slot holding the result.
+    pub fn convert(&mut self, image: &ID3D11Texture2D) -> Result<usize> {
+        let (enumerator, processor) = self
+            .processor
+            .as_ref()
+            .context("The video processor has no source size")?;
+        let input_desc = D3D11_VIDEO_PROCESSOR_INPUT_VIEW_DESC {
+            FourCC: 0,
+            ViewDimension: D3D11_VPIV_DIMENSION_TEXTURE2D,
+            ..Default::default()
+        };
+        let mut input = None;
+        unsafe {
+            self.video.CreateVideoProcessorInputView(
+                image,
+                enumerator,
+                &input_desc,
+                Some(&mut input),
+            )?;
+        }
+        let slot = self.next;
+        self.next = (self.next + 1) % self.ring.len();
+        let streams = [D3D11_VIDEO_PROCESSOR_STREAM {
+            Enable: true.into(),
+            pInputSurface: std::mem::ManuallyDrop::new(input),
+            ..Default::default()
+        }];
+        let result = unsafe {
+            self.video_context
+                .VideoProcessorBlt(processor, &self.ring[slot].view, 0, &streams)
+        };
+        let [stream] = streams;
+        drop(std::mem::ManuallyDrop::into_inner(stream.pInputSurface));
+        result.context("Could not convert the screen image")?;
+        Ok(slot)
+    }
+
+    pub fn texture(&self, slot: usize) -> &ID3D11Texture2D {
+        &self.ring[slot].texture
+    }
+
+    /// Reads a converted frame back as tightly packed NV12.
+    pub fn read(&mut self, slot: usize) -> Result<&[u8]> {
+        unsafe {
+            self.context
+                .CopyResource(&self.staging, &self.ring[slot].texture)
+        };
+        let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
+        unsafe {
+            self.context
+                .Map(&self.staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))?;
+        }
+        let (width, height) = (self.width as usize, self.height as usize);
+        let pitch = mapped.RowPitch as usize;
+        let source = mapped.pData as *const u8;
+        // NV12 stores the interleaved chroma plane directly after `height` luma rows.
+        for row in 0..height + height / 2 {
+            let from = unsafe { std::slice::from_raw_parts(source.add(row * pitch), width) };
+            self.buffer[row * width..(row + 1) * width].copy_from_slice(from);
+        }
+        unsafe { self.context.Unmap(&self.staging, 0) };
+        Ok(&self.buffer)
+    }
+}
+
+pub struct Capture {
+    output: IDXGIOutput1,
+    duplication: Option<IDXGIOutputDuplication>,
+    /// Latest desktop image without the pointer, kept so unchanged screens
+    /// and pointer-only moves can be re-encoded.
+    desktop: Option<ID3D11Texture2D>,
+    /// The desktop image with the pointer drawn in; GDI-compatible when the
+    /// desktop format allows it.
+    composed: Option<(ID3D11Texture2D, bool)>,
+    converter: Converter,
+}
+
+impl Capture {
+    pub fn new(width: u32, height: u32) -> Result<Self> {
+        let (adapter, output, _) = primary_output()?;
+        let (device, _) = video_device(&adapter.cast()?)?;
+        let mut capture = Self {
+            output,
+            duplication: None,
+            desktop: None,
+            composed: None,
+            converter: Converter::new(&device, width, height)?,
+        };
+        capture.duplicate()?;
+        Ok(capture)
+    }
+
+    pub fn device(&self) -> &ID3D11Device {
+        self.converter.device()
+    }
+
+    fn duplicate(&mut self) -> Result<()> {
+        self.duplication = None;
+        let duplication = unsafe { self.output.DuplicateOutput(self.converter.device()) }
+            .context("Could not capture the screen")?;
+        let desc = unsafe { duplication.GetDesc() };
+        let size = (desc.ModeDesc.Width, desc.ModeDesc.Height);
+        if size != self.converter.source_size() {
+            self.desktop = None;
+            self.composed = None;
+        }
+        self.converter.set_source(size)?;
+        self.duplication = Some(duplication);
+        Ok(())
+    }
+
     /// Waits up to `timeout` for a new desktop image or pointer change.
     /// Returns whether anything changed; the latest image stays available.
     pub fn next_frame(&mut self, timeout: Duration) -> Result<bool> {
@@ -279,11 +389,12 @@ impl Capture {
         if image_changed || self.desktop.is_none() {
             let resource = resource.context("Missing desktop image")?;
             let image: ID3D11Texture2D = resource.cast()?;
+            let device = self.converter.device();
             if self.desktop.is_none() {
                 let mut desc = D3D11_TEXTURE2D_DESC::default();
                 unsafe { image.GetDesc(&mut desc) };
                 self.desktop = Some(texture(
-                    &self.device,
+                    device,
                     desc.Width,
                     desc.Height,
                     desc.Format,
@@ -296,7 +407,7 @@ impl Capture {
                 let gdi = desc.Format == DXGI_FORMAT_B8G8R8A8_UNORM;
                 self.composed = Some((
                     texture(
-                        &self.device,
+                        device,
                         desc.Width,
                         desc.Height,
                         desc.Format,
@@ -313,7 +424,8 @@ impl Capture {
                 ));
             }
             unsafe {
-                self.context
+                self.converter
+                    .context()
                     .CopyResource(self.desktop.as_ref().unwrap(), &image)
             };
         }
@@ -326,74 +438,26 @@ impl Capture {
     /// Draws the pointer over the latest desktop image and converts it to
     /// NV12. Returns the ring slot holding the result.
     pub fn convert(&mut self) -> Result<Option<usize>> {
-        let (Some(desktop), Some((composed, gdi)), Some((enumerator, processor))) =
-            (&self.desktop, &self.composed, &self.processor)
-        else {
+        let (Some(desktop), Some((composed, gdi))) = (&self.desktop, &self.composed) else {
             return Ok(None);
         };
-        unsafe { self.context.CopyResource(composed, desktop) };
+        unsafe { self.converter.context().CopyResource(composed, desktop) };
         if *gdi {
             // A pointer that cannot be drawn should not stop the stream.
             if let Err(error) = draw_pointer(composed) {
                 eprintln!("Display pointer: {error:#}");
             }
         }
-        let input_desc = D3D11_VIDEO_PROCESSOR_INPUT_VIEW_DESC {
-            FourCC: 0,
-            ViewDimension: D3D11_VPIV_DIMENSION_TEXTURE2D,
-            ..Default::default()
-        };
-        let mut input = None;
-        unsafe {
-            self.video.CreateVideoProcessorInputView(
-                composed,
-                enumerator,
-                &input_desc,
-                Some(&mut input),
-            )?;
-        }
-        let slot = self.next;
-        self.next = (self.next + 1) % self.ring.len();
-        let streams = [D3D11_VIDEO_PROCESSOR_STREAM {
-            Enable: true.into(),
-            pInputSurface: std::mem::ManuallyDrop::new(input),
-            ..Default::default()
-        }];
-        let result = unsafe {
-            self.video_context
-                .VideoProcessorBlt(processor, &self.ring[slot].view, 0, &streams)
-        };
-        let [stream] = streams;
-        drop(std::mem::ManuallyDrop::into_inner(stream.pInputSurface));
-        result.context("Could not convert the screen image")?;
-        Ok(Some(slot))
+        let composed = composed.clone();
+        self.converter.convert(&composed).map(Some)
     }
 
     pub fn texture(&self, slot: usize) -> &ID3D11Texture2D {
-        &self.ring[slot].texture
+        self.converter.texture(slot)
     }
 
-    /// Reads a converted frame back as tightly packed NV12.
     pub fn read(&mut self, slot: usize) -> Result<&[u8]> {
-        unsafe {
-            self.context
-                .CopyResource(&self.staging, &self.ring[slot].texture)
-        };
-        let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
-        unsafe {
-            self.context
-                .Map(&self.staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))?;
-        }
-        let (width, height) = (self.width as usize, self.height as usize);
-        let pitch = mapped.RowPitch as usize;
-        let source = mapped.pData as *const u8;
-        // NV12 stores the interleaved chroma plane directly after `height` luma rows.
-        for row in 0..height + height / 2 {
-            let from = unsafe { std::slice::from_raw_parts(source.add(row * pitch), width) };
-            self.buffer[row * width..(row + 1) * width].copy_from_slice(from);
-        }
-        unsafe { self.context.Unmap(&self.staging, 0) };
-        Ok(&self.buffer)
+        self.converter.read(slot)
     }
 }
 
@@ -439,7 +503,7 @@ fn draw_pointer(target: &ID3D11Texture2D) -> Result<()> {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn texture(
+pub(crate) fn texture(
     device: &ID3D11Device,
     width: u32,
     height: u32,

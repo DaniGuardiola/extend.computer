@@ -292,7 +292,9 @@ fn watch_parent(shared: Arc<Shared>) {
     });
 }
 
-fn parent_process() -> Option<HANDLE> {
+/// The process that started this one, if it still runs. Display sources
+/// stop with it too.
+pub(crate) fn parent_process() -> Option<HANDLE> {
     let created = |process: HANDLE| -> Option<u64> {
         let mut times = [FILETIME::default(); 4];
         let [creation, exit, kernel, user] = &mut times;

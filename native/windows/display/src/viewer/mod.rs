@@ -15,4 +15,6 @@ pub mod protocol;
 mod window;
 
 #[cfg(windows)]
+pub(crate) use window::parent_process;
+#[cfg(windows)]
 pub use window::run;

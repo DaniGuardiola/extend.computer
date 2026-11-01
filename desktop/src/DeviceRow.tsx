@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import {
   api,
+  extendUnavailableHere,
   localNoun,
   native,
   peerOffers,
@@ -322,7 +323,11 @@ export function DeviceRow({
           {sessionMode === "extend" ? (
             stopAction
           ) : !capabilities.extend_display ? (
-            unavailable(<MonitorUp size={18} />, "Extend display")
+            unavailable(
+              <MonitorUp size={18} />,
+              "Extend display",
+              extendUnavailableHere,
+            )
           ) : !showsDisplays ? (
             unavailable(<MonitorUp size={18} />, "Extend display", noDisplays)
           ) : (

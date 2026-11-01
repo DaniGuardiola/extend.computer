@@ -93,6 +93,18 @@ fn automatic_low_latency(
     explicit.is_none() && source && physical_usb && codec == VideoCodec::Hevc
 }
 
+/// The extended display's serial for `peer`: FNV-1a of its id, the same in
+/// every session and build, and never 0. Windows keys its display layout on
+/// the monitor's identity, so each device's display returns where the user
+/// arranged it.
+fn display_serial(peer: &str) -> u32 {
+    peer.bytes()
+        .fold(0x811c_9dc5u32, |hash, byte| {
+            (hash ^ u32::from(byte)).wrapping_mul(0x0100_0193)
+        })
+        .max(1)
+}
+
 fn log_viewport_evidence(pid: u32, screen: &Screen, fullscreen: bool) -> Result<()> {
     if !fullscreen || std::env::var_os("EXTEND_DISPLAY_METRICS").is_none() {
         return Ok(());
@@ -357,12 +369,14 @@ impl Helper {
         let screen: Screen = serde_json::from_slice(&output.stdout)?;
         fit_screen(&screen, config)
     }
+    /// `peer` names the device a source streams to.
     pub fn start(
         path: &Path,
         config: &Config,
         source: bool,
         physical_usb: bool,
         presets: &[(u32, u32)],
+        peer: Option<&str>,
     ) -> Result<Self> {
         ensure!(
             path.is_file(),
@@ -398,6 +412,10 @@ impl Helper {
         } else {
             process.env("EXTEND_DISPLAY_PRESETS", presets);
         }
+        match peer.filter(|_| mode == LaunchMode::Extend) {
+            Some(peer) => process.env("EXTEND_DISPLAY_SERIAL", display_serial(peer).to_string()),
+            None => process.env_remove("EXTEND_DISPLAY_SERIAL"),
+        };
         let mut child = process
             .args(Launch::new(mode, config).to_args())
             .stdin(Stdio::piped())
@@ -1039,8 +1057,8 @@ mod viewer_writer_tests {
 #[cfg(test)]
 mod diagnostic_tests {
     use super::{
-        automatic_low_latency, drain_diagnostics, finish_helper_output, fit_screen, Config, Mode,
-        Screen, DIAGNOSTIC_DRAIN_GRACE, DIAGNOSTIC_TAIL_BYTES,
+        automatic_low_latency, display_serial, drain_diagnostics, finish_helper_output, fit_screen,
+        Config, Mode, Screen, DIAGNOSTIC_DRAIN_GRACE, DIAGNOSTIC_TAIL_BYTES,
     };
     use extend_computer_agent::session::display::VideoCodec;
     use std::{io::Read, sync::Mutex};
@@ -1076,6 +1094,15 @@ mod diagnostic_tests {
             *diagnostics.lock().unwrap(),
             "Screen capture did not provide video frames."
         );
+    }
+
+    #[test]
+    fn extended_display_serial_is_stable_per_peer() {
+        // FNV-1a test vectors: the serial never depends on the build.
+        assert_eq!(display_serial("a"), 0xe40c_292c);
+        assert_eq!(display_serial("foobar"), 0xbf9c_f968);
+        assert_eq!(display_serial(""), 0x811c_9dc5);
+        assert_ne!(display_serial("peer-1"), display_serial("peer-2"));
     }
 
     #[test]
