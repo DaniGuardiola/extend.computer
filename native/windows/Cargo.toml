@@ -1,6 +1,6 @@
 # Windows helpers. Separate from the root workspace so macOS CI never builds them.
 [workspace]
-members = ["display", "input"]
+members = ["display", "driver-test", "input"]
 resolver = "2"
 
 [workspace.package]

@@ -1,0 +1,90 @@
+;
+; ExtendComputerDisplay.inf
+;
+; extend.computer indirect display driver (UMDF 2 / IddCx).
+; Portions of the driver sources are derived from Microsoft's IddSampleDriver
+; (MS-PL); see native/windows/driver/README.md and LICENSE-MS-PL.
+;
+
+[Version]
+PnpLockDown=1
+Signature="$WINDOWS NT$"
+Class=Display
+ClassGuid={4d36e968-e325-11ce-bfc1-08002be10318}
+ClassVer=2.0
+Provider=%ManufacturerName%
+CatalogFile=ExtendComputerDisplay.cat
+DriverVer= ; stampinf fills this in per build
+
+[Manufacturer]
+%ManufacturerName%=Standard,NTamd64.10.0...19041
+
+[Standard.NTamd64.10.0...19041]
+%DeviceName%=ExtendDisplay_Install, Root\ExtendComputerDisplay
+%DeviceName%=ExtendDisplay_Install, ExtendComputerDisplay
+
+[SourceDisksFiles]
+ExtendComputerDisplay.dll=1
+
+[SourceDisksNames]
+1=%DiskName%
+
+; =================== UMDF Device ==================================
+
+[ExtendDisplay_Install.NT]
+Include=WUDFRD.inf
+Needs=WUDFRD.NT
+CopyFiles=UMDriverCopy
+
+[ExtendDisplay_Install.NT.hw]
+Include=WUDFRD.inf
+Needs=WUDFRD.NT.HW
+AddReg=ExtendDisplay_HardwareDeviceSettings
+
+[ExtendDisplay_HardwareDeviceSettings]
+HKR,, "UpperFilters", %REG_MULTI_SZ%, "IndirectKmd"
+HKR, "WUDF", "DeviceGroupId", %REG_SZ%, "ExtendComputerDisplayGroup"
+; Device-object security. Full control to SYSTEM and the local Administrators
+; group (so an elevated admin over any logon, ssh included, can open it); a
+; signed-in interactive user may open the device with GENERIC_READ|GENERIC_WRITE
+; to send the control IOCTLs. Non-admin service, network and other
+; non-interactive logons are denied. This DACL does not keep low-integrity
+; processes out (the device object has no mandatory label, and PnP drops one
+; given here), so the driver refuses every open below Medium integrity itself
+; (ExtendFileCreate). See native/windows/driver/README.md.
+HKR,, "Security",, "D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;IU)"
+; FILE_DEVICE_SECURE_OPEN: apply the device SD across the whole device namespace.
+HKR,, "DeviceCharacteristics", 0x10001, 0x0100
+
+[ExtendDisplay_Install.NT.Services]
+Include=WUDFRD.inf
+Needs=WUDFRD.NT.Services
+
+[ExtendDisplay_Install.NT.Wdf]
+UmdfService=ExtendComputerDisplay,ExtendDisplay_Install
+UmdfServiceOrder=ExtendComputerDisplay
+UmdfKernelModeClientPolicy=AllowKernelModeClients
+; ADD_MONITOR reads the caller's logon SID through WdfRequestImpersonate at
+; identification level (the default, stated here because the driver needs it).
+UmdfImpersonationLevel=Identification
+
+[ExtendDisplay_Install]
+UmdfLibraryVersion=$UMDFVERSION$
+ServiceBinary=%12%\UMDF\ExtendComputerDisplay.dll
+UmdfExtensions=IddCx0102
+
+[DestinationDirs]
+UMDriverCopy=12,UMDF ; copy to drivers\umdf
+
+[UMDriverCopy]
+ExtendComputerDisplay.dll
+
+; =================== Strings ==================================
+
+[Strings]
+ManufacturerName="extend.computer"
+DiskName="extend.computer Display Installation Disk"
+DeviceName="extend.computer Virtual Display"
+
+REG_MULTI_SZ = 0x00010000
+REG_SZ       = 0x00000000

@@ -1,0 +1,18 @@
+#include <windows.h>
+#include <ntverp.h>
+
+#ifdef EXTEND_HAVE_VERSION_H
+// Written per build by scripts/windows/driver.ps1, so the DLL's file version
+// matches the package's DriverVer.
+#include "ExtendVersion.h"
+#define VER_FILEVERSION             EXTEND_VER_MAJOR,EXTEND_VER_MINOR,EXTEND_VER_BUILD,EXTEND_VER_REVISION
+#define VER_FILEVERSION_STR         EXTEND_VER_STR
+#endif
+
+#define VER_FILETYPE                VFT_DLL
+#define VER_FILESUBTYPE             VFT_UNKNOWN
+#define VER_FILEDESCRIPTION_STR     "extend.computer Indirect Display Driver"
+#define VER_INTERNALNAME_STR        "ExtendComputerDisplay"
+#define VER_ORIGINALFILENAME_STR    "ExtendComputerDisplay.dll"
+
+#include "common.ver"

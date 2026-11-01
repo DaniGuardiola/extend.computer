@@ -8,6 +8,14 @@
 #   display-test [software]  run the display helper for ~5 s while sweeping the pointer, summarize its stream
 #   input-test [drive]       run capture-control-left against injected input; drive only injects it
 #   viewer-test [W H]        sync, build the display helper, run its viewer full screen on a synthetic stream
+#   driver-build             sync, then compile+sign the display driver and build the acceptance tool
+#   driver-install           trust the dev cert, install or update the driver, prune old packages and certs (elevated)
+#   driver-remove            remove the devnode, delete the packages and the dev certs (elevated)
+#   driver-accept [args]     run the acceptance tool in the signed-in session (non-elevated), with its arguments
+#                            (none: the full test; churn|spaced [N [MIN MAX]], cycles [N], sustain [S], state); prints
+#                            the driver host's handle count before and after; exits 1 on FAIL or if the driver host
+#                            restarted meanwhile
+#   driver-ssh [args]        the same over plain SSH: session 0, elevated, a network logon
 #
 # EXTEND_WINDOWS_HOST (default windows-pc) names the SSH host, whose default shell must be Windows
 # PowerShell, and EXTEND_WINDOWS_REPO (default C:\src\extend.computer) the checkout there.
@@ -140,9 +148,65 @@ if (\$LASTEXITCODE) { \"helper build failed (\$LASTEXITCODE)\"; exit 1 }; exit 0
     session viewer-test '-Timeout 120' "Bin=$target\\debug" "Width=${1:-1920}" "Height=${2:-1080}"
 }
 
+# Runs scripts/windows/driver.ps1 from the PC's checkout over plain SSH (an admin
+# ssh session is already elevated), for the build/sign/install/remove actions.
+driver_ps1() {
+    remote "powershell -NoProfile -ExecutionPolicy Bypass -File $(quote "$repo\\scripts\\windows\\driver.ps1") -Action $1; exit \$LASTEXITCODE"
+}
+
+driver_build() {
+    sync
+    prepare
+    driver_ps1 build
+    driver_ps1 sign
+    # Build the Rust acceptance tool beside the helpers.
+    remote "\$env:CARGO_TARGET_DIR = $(quote "$target"); Set-Location $(quote "$repo\\native\\windows"); \
+cargo build -p extend-computer-driver-test 2>&1 | Select-String '^error|Finished' -Context 0,8 | Out-String -Width 300; \
+if (\$LASTEXITCODE) { \"acceptance-tool build failed (\$LASTEXITCODE)\"; exit 1 }; exit 0"
+}
+
+driver_install() { driver_ps1 install; }
+driver_remove() { driver_ps1 remove; }
+
+# "<pid> <handle count>" of the WUDFHost that hosts the driver (its command line names the INF's device
+# group), readable over the admin SSH session.
+driver_host() {
+    remote "@(Get-CimInstance Win32_Process -Filter \"Name='WUDFHost.exe'\" | \
+Where-Object CommandLine -match 'ExtendComputerDisplayGroup' | ForEach-Object { \"\$(\$_.ProcessId) \$(\$_.HandleCount)\" }) -join ','"
+}
+
+# Runs the given command (an acceptance-tool run), then reports whether the driver host ran throughout
+# and how its handle count moved.
+with_host_check() {
+    local before after status=0
+    before=$(driver_host)
+    "$@" || status=$?
+    # A host crash ends that process; UMDF restarts the device in a new one.
+    after=$(driver_host)
+    echo "driver host WUDFHost (pid handles) before: ${before:-none}, after: ${after:-none}"
+    if [ -z "$before" ] || [ "${before%% *}" != "${after%% *}" ]; then
+        echo "FAIL: the driver host did not run throughout" >&2
+        status=1
+    fi
+    return "$status"
+}
+
+driver_accept() {
+    prepare
+    # Non-elevated interactive session, like the display helper: the token
+    # carries INTERACTIVE for the device SDDL, and its logon SID gets the textures.
+    with_host_check session driver '-Timeout 900' "Action=accept" \
+        "Bin=$target\\debug\\extend-computer-driver-test.exe" "Arguments=$*"
+}
+
+driver_ssh() {
+    prepare
+    with_host_check remote "& $(quote "$target\\debug\\extend-computer-driver-test.exe") $*; exit \$LASTEXITCODE"
+}
+
 command=${1:-}
 case $command in
-    sync | run | shot | ui | display-test | input-test | viewer-test)
+    sync | run | shot | ui | display-test | input-test | viewer-test | driver-build | driver-install | driver-remove | driver-accept | driver-ssh)
         shift
         "${command//-/_}" "$@"
         ;;
