@@ -14,7 +14,7 @@ Pod::Spec.new do |s|
   s.dependency 'ExpoModulesCore'
 
   # Subfolders are listed explicitly so ExtendEngine.xcframework headers stay out.
-  s.source_files = ['*.{h,m,swift}', 'Core/**/*.{h,m,swift}', 'Display/**/*.{h,m,swift}', 'Input/**/*.{h,m,swift}', 'Sharing/**/*.{h,m,swift}']
+  s.source_files = ['*.{h,m,swift}', 'Core/**/*.{h,m,swift}', 'Display/**/*.{h,m,swift}', 'Input/**/*.{h,m,swift}', 'Sharing/**/*.{h,m,swift}', 'Accounts/**/*.{h,m,swift}', 'Views/**/*.{h,m,swift}']
   xcconfig = { 'DEFINES_MODULE' => 'YES' }
 
   # Rust engine built by mobile/scripts/build-engine-ios.sh (run by

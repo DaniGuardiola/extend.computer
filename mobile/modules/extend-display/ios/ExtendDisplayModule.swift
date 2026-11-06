@@ -13,6 +13,22 @@ private func unavailable(_ what: String) -> Exception {
 
 private func json(_ value: Any) -> String { JSONText.encode(value) }
 
+/// Account errors reach JS with their plain message, like Android exceptions.
+private func accounts<T>(_ body: () throws -> T) throws -> T {
+  do { return try body() } catch let error as AccountError {
+    throw Exception(name: "ExtendAccountError", description: error.description)
+  } catch let error as EngineError {
+    throw Exception(name: "ExtendError", description: error.message)
+  }
+}
+
+/// Native input errors (stale shortcut token, held keys) reach JS as messages.
+private func inputCall<T>(_ body: () throws -> T) throws -> T {
+  do { return try body() } catch let error as InputError {
+    throw Exception(name: "ExtendInputError", description: error.message)
+  }
+}
+
 /// Engine errors reach JS with their plain message, like Android exceptions.
 private func bridged<T>(_ body: () throws -> T) throws -> T {
   do { return try body() } catch let error as EngineError {
@@ -109,7 +125,7 @@ private enum SharingOptions {
   static func apply(_ on: Bool) {
     enabled = on
     UIApplication.shared.setStatusBarHidden(on, with: .fade)
-    UIApplication.shared.isIdleTimerDisabled = on
+    UIApplication.shared.isIdleTimerDisabled = on || KeepAwake.active
     for scene in UIApplication.shared.connectedScenes {
       for window in (scene as? UIWindowScene)?.windows ?? [] {
         guard let root = window.rootViewController else { continue }
@@ -168,11 +184,6 @@ private enum SharingOptions {
 }
 
 public class ExtendDisplayModule: Module {
-  private static let idleAccount: [String: Any] = [
-    "server": "https://extend.computer", "email": NSNull(), "device_id": NSNull(), "devices": [],
-    "browser_pending": false, "native_pending": false, "busy": false, "loaded": true,
-    "storage_error": false, "directory_fresh": false, "error": NSNull(),
-  ]
   private var nearby: NearbyDiscovery?
   private let incoming = IncomingPairing()
   private let visual = VisualPairing()
@@ -185,10 +196,10 @@ public class ExtendDisplayModule: Module {
     return made
   }
   private func connectionActive() -> Bool {
-    // TODO(sharing): include the broadcast extension's consent/connecting/streaming states.
     let media = Engine.displayState()["state"] as? String ?? ""
     let control = Engine.controlState()["state"] as? String ?? ""
-    return ["offered", "connecting", "configuring", "streaming"].contains(media) || ["connecting", "connected"].contains(control)
+    return ScreenSharing.active ||
+      ["offered", "connecting", "configuring", "streaming"].contains(media) || ["connecting", "connected"].contains(control)
   }
   private func requireIdle(_ message: String) throws {
     if connectionActive() { throw Exception(name: "ExtendBusy", description: message) }
@@ -230,11 +241,15 @@ public class ExtendDisplayModule: Module {
         LocalDevice.prepare()
         Engine.deviceKind = UIDevice.current.userInterfaceIdiom == .pad ? "tablet" : "phone"
         if value != "system" { applyAppearance(value) }
+        // Decoder capabilities turn on the display receiver (probed once, on main).
+        let capabilities = try? DecoderCapabilities.json()
+        Receiving.displayCapabilities = { capabilities }
         Self.foreground()
       }
     }
     OnAppBecomesActive {
       AppFocus.set(true)
+      Engine.queue.async { SharedAccounts.resume() }
       self.nearby?.resume()
       Self.foreground()
     }
@@ -253,16 +268,38 @@ public class ExtendDisplayModule: Module {
     }
 
     // MARK: Accounts
-    AsyncFunction("getAccountState") { () -> String in json(Self.idleAccount) } // TODO(accounts)
-    AsyncFunction("resumeAccount") { } // TODO(accounts)
-    AsyncFunction("refreshAccount") { () -> String in json(Self.idleAccount) } // TODO(accounts)
-    AsyncFunction("startAccountBrowser") { () throws -> String in throw unavailable("Account sign-in") } // TODO(accounts)
-    AsyncFunction("startAccountPassword") { () throws in throw unavailable("Account sign-in") } // TODO(accounts)
-    AsyncFunction("cancelAccountSignIn") { () -> String in json(Self.idleAccount) } // TODO(accounts)
-    AsyncFunction("logoutAccount") { () -> String in json(Self.idleAccount) } // TODO(accounts)
-    AsyncFunction("configureAccount") { (_: String) throws -> String in throw unavailable("Changing the account server") } // TODO(accounts)
-    AsyncFunction("removeAccountDevice") { (_: String) throws -> String in throw unavailable("Removing account devices") } // TODO(accounts)
-    AsyncFunction("openAccountPage") { (_: String) throws in throw unavailable("Account pages") } // TODO(accounts)
+    AsyncFunction("getAccountState") { () throws -> String in try accounts { try SharedAccounts.get().state() } }
+      .runOnQueue(Engine.queue)
+    AsyncFunction("resumeAccount") { () throws in try accounts { try SharedAccounts.get().resume() } }
+      .runOnQueue(Engine.queue)
+    AsyncFunction("refreshAccount") { () throws -> String in try accounts { try SharedAccounts.get().refresh() } }
+      .runOnQueue(Engine.queue)
+    AsyncFunction("startAccountBrowser") { () throws -> String in
+      try accounts {
+        try AppFocus.require("Return to the app to sign in")
+        return try SharedAccounts.get().startBrowser()
+      }
+    }.runOnQueue(Engine.queue)
+    AsyncFunction("startAccountPassword") { () throws in
+      try accounts {
+        let account = try SharedAccounts.get()
+        try account.prepare()
+        try AppFocus.require("Return to the app to sign in")
+        try account.startPassword()
+      }
+    }.runOnQueue(Engine.queue)
+    AsyncFunction("cancelAccountSignIn") { () throws -> String in try accounts { try SharedAccounts.get().cancel() } }
+      .runOnQueue(Engine.queue)
+    AsyncFunction("logoutAccount") { () throws -> String in try accounts { try SharedAccounts.get().logout() } }
+      .runOnQueue(Engine.queue)
+    AsyncFunction("configureAccount") { (server: String) throws -> String in
+      try accounts { try SharedAccounts.get().configure(server) }
+    }.runOnQueue(Engine.queue)
+    AsyncFunction("removeAccountDevice") { (id: String) throws -> String in
+      try accounts { try SharedAccounts.get().removeDevice(id) }
+    }.runOnQueue(Engine.queue)
+    AsyncFunction("openAccountPage") { (page: String) throws in try accounts { try SharedAccounts.get().openPage(page) } }
+      .runOnQueue(Engine.queue)
     Function("hasActiveConnection") { self.connectionActive() }
 
     // MARK: Discovery and pairing
@@ -430,16 +467,19 @@ public class ExtendDisplayModule: Module {
     }
 
     // MARK: Screen sharing
-    AsyncFunction("startScreenSharing") { (_: String) -> [String: Any] in // TODO(sharing)
-      ["started": false, "error": "Screen sharing isn't available on iPhone yet"]
-    }
-    Function("getScreenSharingState") { () -> String in json(["state": "idle", "error": "", "peer": ""]) } // TODO(sharing)
+    // Capture runs in the ReplayKit broadcast extension (Sharing/, targets/broadcast).
+    AsyncFunction("startScreenSharing") { (peer: String) -> [String: Any] in
+      ScreenSharing.start(peer: peer, preferences: SharingOptions.read(peer))
+    }.runOnQueue(Engine.queue)
+    Function("getScreenSharingState") { () -> String in ScreenSharing.state() }
     Function("getScreenSharingPreferences") { (peer: String) -> String in json(SharingOptions.read(peer)) }
     Function("setScreenSharingPreferences") { (peer: String, value: String) throws in try SharingOptions.save(peer, value) }
-    AsyncFunction("updateScreenSharingPreferences") { (_: String, _: String) -> [String: Any] in // TODO(sharing)
-      ["applied": false, "error": "Screen sharing isn't running", "preferences": ""]
+    AsyncFunction("updateScreenSharingPreferences") { (peer: String, value: String) async -> [String: Any] in
+      let result = await ScreenSharing.update(peer: peer, value: value)
+      if result["applied"] as? Bool == true, let saved = result["preferences"] as? String { try? SharingOptions.save(peer, saved) }
+      return result
     }
-    Function("stopScreenSharing") { } // TODO(sharing)
+    Function("stopScreenSharing") { ScreenSharing.stop() }
 
     // MARK: Window
     Function("setImmersive") { (enabled: Bool) in
@@ -457,7 +497,9 @@ public class ExtendDisplayModule: Module {
     // MARK: Views
     View(ExtendDisplayView.self) {
       Events("onStatus", "onInputStatus", "onKeyboardStatus")
-      AsyncFunction("editingShortcut") { (_: ExtendDisplayView, _: String, _: String) -> Bool in false } // TODO(engine)
+      AsyncFunction("editingShortcut") { (view: ExtendDisplayView, token: String, action: String) throws -> Bool in
+        try inputCall { try view.editingShortcut(token: token, action: action) }
+      }.runOnQueue(.main)
       Prop("touchEnabled") { (view: ExtendDisplayView, enabled: Bool) in view.touchEnabled = enabled }
       Prop("keyboardEnabled") { (view: ExtendDisplayView, enabled: Bool) in view.keyboardEnabled = enabled }
       Prop("sessionId") { (view: ExtendDisplayView, id: String?) in view.sessionId = id }
@@ -465,37 +507,11 @@ public class ExtendDisplayModule: Module {
     View(ExtendControlView.self) {
       ViewName("Control")
       Events("onStatus")
-      AsyncFunction("editingShortcut") { (_: ExtendControlView, _: String, _: String) -> Bool in false } // TODO(engine)
+      AsyncFunction("editingShortcut") { (view: ExtendControlView, token: String, action: String) throws -> Bool in
+        try inputCall { try view.editingShortcut(token: token, action: action) }
+      }.runOnQueue(.main)
       Prop("sessionId") { (view: ExtendControlView, id: String?) in view.sessionId = id }
       Prop("keyboard") { (view: ExtendControlView, enabled: Bool) in view.keyboard = enabled }
     }
-  }
-}
-
-// TODO(engine): render the received stream (AVSampleBufferDisplayLayer) with a cursor layer.
-class ExtendDisplayView: ExpoView {
-  let onStatus = EventDispatcher()
-  let onInputStatus = EventDispatcher()
-  let onKeyboardStatus = EventDispatcher()
-  var sessionId: String?
-  var touchEnabled = false
-  var keyboardEnabled = false
-
-  required init(appContext: AppContext? = nil) {
-    super.init(appContext: appContext)
-    backgroundColor = .black
-    clipsToBounds = true
-  }
-}
-
-// TODO(engine): forward touch/keyboard to the control session.
-class ExtendControlView: ExpoView {
-  let onStatus = EventDispatcher()
-  var sessionId: String?
-  var keyboard = false
-
-  required init(appContext: AppContext? = nil) {
-    super.init(appContext: appContext)
-    clipsToBounds = true
   }
 }

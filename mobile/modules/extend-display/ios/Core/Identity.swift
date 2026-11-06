@@ -47,6 +47,13 @@ enum DeviceIdentity {
     }
   }
 
+  /// The seed if the app already created one. The broadcast extension uses
+  /// this: it must never mint an identity of its own.
+  static func existingSeed() throws -> Data? {
+    lock.lock(); defer { lock.unlock() }
+    return try read()
+  }
+
   /// Returns the seed, creating it on first use. Never replaces an existing
   /// item that can't be read: that would silently orphan every pairing.
   static func seed() throws -> Data {
@@ -76,7 +83,9 @@ enum DeviceIdentity {
 // Engine storage (trust store, peer names, app peer metadata). Lives in the App
 // Group container when the app has one (shared with the broadcast extension),
 // otherwise Application Support. Excluded from backup: trust belongs to the
-// this-device-only identity above.
+// this-device-only identity above. Builds before the App Group existed kept the
+// root in the app's own Application Support; the app moves it into the group on
+// first launch so existing pairings survive.
 enum EngineStorage {
   private static let lock = NSLock()
   private static var cached: URL?
@@ -90,13 +99,13 @@ enum EngineStorage {
     lock.lock(); defer { lock.unlock() }
     if let cached { return cached }
     let manager = FileManager.default
-    let base: URL
+    let local = try manager.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+      .appendingPathComponent("engine", isDirectory: true)
+    var root = local
     if let group = appGroup, let container = manager.containerURL(forSecurityApplicationGroupIdentifier: group) {
-      base = container.appendingPathComponent("Library/Application Support", isDirectory: true)
-    } else {
-      base = try manager.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+      root = container.appendingPathComponent("Library/Application Support/engine", isDirectory: true)
+      try migrate(from: local, to: root)
     }
-    var root = base.appendingPathComponent("engine", isDirectory: true)
     do {
       try manager.createDirectory(at: root, withIntermediateDirectories: true,
                                   attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication])
@@ -108,5 +117,28 @@ enum EngineStorage {
     }
     cached = root
     return root
+  }
+
+  /// One-time move of a pre-App-Group root. Only an absent or empty group root
+  /// is replaced; if both hold data the group copy wins and the old one stays
+  /// in place untouched. In the extension `legacy` (its own container) never exists.
+  static func migrate(from legacy: URL, to root: URL) throws {
+    let manager = FileManager.default
+    var directory: ObjCBool = false
+    guard manager.fileExists(atPath: legacy.path, isDirectory: &directory), directory.boolValue,
+          let moving = try? manager.contentsOfDirectory(atPath: legacy.path), !moving.isEmpty else { return }
+    if manager.fileExists(atPath: root.path) {
+      guard (try? manager.contentsOfDirectory(atPath: root.path))?.isEmpty == true else {
+        NSLog("extend.computer: engine storage exists in both locations; keeping the App Group copy")
+        return
+      }
+      try? manager.removeItem(at: root)
+    }
+    do {
+      try manager.createDirectory(at: root.deletingLastPathComponent(), withIntermediateDirectories: true)
+      try manager.moveItem(at: legacy, to: root)
+    } catch {
+      throw EngineError("Couldn't move device storage (\(error.localizedDescription)).")
+    }
   }
 }

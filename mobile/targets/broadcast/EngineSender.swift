@@ -26,8 +26,7 @@ struct EngineSenderState {
 }
 
 /// The outgoing display path of the Rust engine (native/android/engine/src/sender.rs
-/// via the `ext_*_display_sender` C functions). Injected so the handler can be
-/// built and exercised before the engine is linked into the extension.
+/// via the `ext_*_display_sender` C functions); see NativeEngineSender.
 ///
 /// Frame contract (same as Android's `pushDisplayFrame`): one complete access
 /// unit per call, Annex-B with 4-byte start codes, keyframes prefixed with the
@@ -44,7 +43,6 @@ protocol EngineSender: AnyObject {
 }
 
 enum BroadcastEngine {
-  /// Replaced by the engine wiring with an `ext_*`-backed sender once
-  /// ExtendEngine.xcframework is linked into the extension.
-  static var make: () throws -> EngineSender = { throw SharingError("Screen sharing isn't available on iPhone yet") }
+  /// Injection point for tests; the extension uses the linked Rust engine.
+  static var make: () throws -> EngineSender = { try NativeEngineSender() }
 }

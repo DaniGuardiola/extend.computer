@@ -34,6 +34,7 @@
       "./plugins/with-account-network",
       "./plugins/with-standalone-debuggable",
       "./plugins/with-identity-backup",
+      "./plugins/with-broadcast-extension",
       [
         "expo-build-properties",
         {

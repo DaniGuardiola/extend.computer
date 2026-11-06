@@ -29,12 +29,29 @@ final class FrameTransform {
   deinit { invalidate() }
 
   /// nil means "drop this frame" (pool exhausted); errors are fatal.
+  /// Scales before rotating so every intermediate buffer is encoder-sized: a
+  /// full-resolution rotated copy of a landscape screen would cost several MB
+  /// of IOSurface per buffer against the extension's memory limit.
   func process(_ source: CVPixelBuffer, orientation: CGImagePropertyOrientation, width: Int, height: Int) throws -> CVPixelBuffer? {
     var image = source
     let format = CVPixelBufferGetPixelFormatType(source)
-    if let angle = Self.angle(orientation) {
-      let size = Self.uprightSize(width: CVPixelBufferGetWidth(source), height: CVPixelBufferGetHeight(source), orientation: orientation)
-      guard let target = try buffer(&rotatedPool, width: size.width, height: size.height, format: format) else { return nil }
+    let angle = Self.angle(orientation)
+    // Size the scaled (still unrotated) frame must have to rotate into width × height.
+    let unrotated = angle == nil ? (width: width, height: height)
+      : Self.uprightSize(width: width, height: height, orientation: orientation)
+    if CVPixelBufferGetWidth(image) != unrotated.width || CVPixelBufferGetHeight(image) != unrotated.height {
+      guard let target = try buffer(&scaledPool, width: unrotated.width, height: unrotated.height, format: format) else { return nil }
+      if transfer == nil {
+        var created: VTPixelTransferSession?
+        try check(VTPixelTransferSessionCreate(allocator: nil, pixelTransferSessionOut: &created), "Create scaler")
+        transfer = created
+      }
+      guard let transfer else { throw SharingError("Scaler unavailable.") }
+      try check(VTPixelTransferSessionTransferImage(transfer, from: image, to: target), "Scale frame")
+      image = target
+    }
+    if let angle {
+      guard let target = try buffer(&rotatedPool, width: width, height: height, format: format) else { return nil }
       if rotation == nil {
         var created: VTPixelRotationSession?
         try check(VTPixelRotationSessionCreate(nil, &created), "Create rotation")
@@ -43,17 +60,6 @@ final class FrameTransform {
       guard let rotation else { throw SharingError("Rotation unavailable.") }
       try check(VTSessionSetProperty(rotation, key: kVTPixelRotationPropertyKey_Rotation, value: angle), "Set rotation")
       try check(VTPixelRotationSessionRotateImage(rotation, image, target), "Rotate frame")
-      image = target
-    }
-    if CVPixelBufferGetWidth(image) != width || CVPixelBufferGetHeight(image) != height {
-      guard let target = try buffer(&scaledPool, width: width, height: height, format: format) else { return nil }
-      if transfer == nil {
-        var created: VTPixelTransferSession?
-        try check(VTPixelTransferSessionCreate(allocator: nil, pixelTransferSessionOut: &created), "Create scaler")
-        transfer = created
-      }
-      guard let transfer else { throw SharingError("Scaler unavailable.") }
-      try check(VTPixelTransferSessionTransferImage(transfer, from: image, to: target), "Scale frame")
       image = target
     }
     return image

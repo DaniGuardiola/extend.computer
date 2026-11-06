@@ -1,4 +1,7 @@
 import UIKit
+import os
+
+private let controlLog = Logger(subsystem: "computer.extend.ios", category: "control")
 
 struct InputError: LocalizedError {
   let message: String
@@ -155,7 +158,7 @@ final class ControlInputView: RemoteKeyInputView {
       onKeepAwake?(connected)
       let sent = (state["sent"] as? NSNumber)?.int64Value ?? 0
       if phase != lastPhase || (sent > 0 && sent / 32 != lastSent / 32) {
-        NSLog("ExtendControl: Control stats: %@", String(describing: state))
+        controlLog.notice("ExtendControl stats \(String(describing: state), privacy: .public)")
         lastPhase = phase
         lastSent = sent
       }

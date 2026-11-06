@@ -212,7 +212,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
   private func publish(force: Bool) {
     var value: [String: Any] = [
       "session": request?.session ?? "", "peer": request?.peer ?? "", "state": phase, "error": failure,
-      "encoded": encoded, "resizes": resizes,
+      "encoded": encoded, "resizes": resizes, "footprint": Self.footprint(),
     ]
     if let engine, startedEngine { value["transport"] = engine.state().raw }
     let changed = value["state"] as? String != published["state"] as? String
@@ -223,6 +223,17 @@ final class SampleHandler: RPBroadcastSampleHandler {
     value["updated"] = lastPublished.timeIntervalSince1970
     BroadcastGroup.write(BroadcastGroup.stateKey, value)
     BroadcastGroup.post(.state)
+  }
+
+  /// Physical footprint in bytes: what jetsam compares to the extension's
+  /// ~50 MB limit. Published so the app (and on-device checks) can watch it.
+  private static func footprint() -> Int {
+    var info = task_vm_info_data_t()
+    var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
+    let status = withUnsafeMutablePointer(to: &info) {
+      $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count) }
+    }
+    return status == KERN_SUCCESS ? Int(info.phys_footprint) : 0
   }
 
   private func fail(_ error: Error, stopped: Bool = false) {

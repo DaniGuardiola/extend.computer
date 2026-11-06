@@ -38,7 +38,12 @@ test("prebuild copies the extension sources, shared contract, Info.plist and ent
     const directory = path.join(root, plugin.TARGET);
     const files = (await readdir(directory)).sort();
     const sources = (await readdir(path.join(__dirname, "../targets/broadcast"))).filter(name => name.endsWith(".swift"));
-    assert.deepEqual(files, [...sources, "BroadcastShared.swift", "ExtendBroadcast-Info.plist", "ExtendBroadcast.entitlements"].sort());
+    assert.deepEqual(files, [...sources, "BroadcastShared.swift", "Engine.swift", "Identity.swift",
+      "ExtendBroadcast-Info.plist", "ExtendBroadcast.entitlements"].sort());
+    // The extension compiles the engine facade, which must stay free of Expo.
+    for (const name of ["Engine.swift", "Identity.swift", ...sources]) {
+      assert.doesNotMatch(await readFile(path.join(directory, name), "utf8"), /import (ExpoModulesCore|React)/, name);
+    }
     assert.ok(sources.includes("SampleHandler.swift"));
     const info = await readFile(path.join(directory, "ExtendBroadcast-Info.plist"), "utf8");
     for (const expected of ["com.apple.broadcast-services-upload", "$(PRODUCT_MODULE_NAME).SampleHandler",
@@ -57,8 +62,8 @@ test("Xcode project gains one embedded, signed extension target", async () => {
   project.parseSync();
   const app = project.getFirstTarget().uuid;
   const config = plugin(structuredClone(base));
-  await run(config.mods, "xcodeproj", project);
-  await run(config.mods, "xcodeproj", project); // idempotent on an existing project
+  await run(config.mods, "xcodeproj", project, { root: path.join(__dirname, "../ios") });
+  await run(config.mods, "xcodeproj", project, { root: path.join(__dirname, "../ios") }); // idempotent on an existing project
   const objects = project.hash.project.objects;
   const targets = Object.entries(objects.PBXNativeTarget).filter(([, t]) => typeof t === "object" && t.name === `"${plugin.TARGET}"`);
   assert.equal(targets.length, 1);
@@ -67,7 +72,7 @@ test("Xcode project gains one embedded, signed extension target", async () => {
   const phases = target.buildPhases.map(phase => phase.comment);
   assert.deepEqual(phases, ["Sources", "Resources", "Frameworks"]);
   const sources = objects.PBXSourcesBuildPhase[target.buildPhases[0].value].files.map(file => file.comment.replace(/"/g, "")).sort();
-  assert.ok(sources.includes("SampleHandler.swift in Sources") && sources.includes("BroadcastShared.swift in Sources"));
+  for (const name of ["SampleHandler", "BroadcastShared", "Engine", "Identity"]) assert.ok(sources.includes(`${name}.swift in Sources`), name);
   assert.ok(sources.every(name => name.endsWith(".swift in Sources")));
 
   const embed = Object.values(objects.PBXCopyFilesBuildPhase).filter(phase => typeof phase === "object" && phase.files.some(file => file.comment.includes("ExtendBroadcast.appex")));
@@ -87,6 +92,13 @@ test("Xcode project gains one embedded, signed extension target", async () => {
     assert.equal(value.DEVELOPMENT_TEAM, "TEAM123456");
     assert.equal(value.APPLICATION_EXTENSION_API_ONLY, "YES");
     assert.equal(value.MARKETING_VERSION, '"1.2.3"');
+    assert.equal(value.DEAD_CODE_STRIPPING, "YES");
+    assert.equal(value.SWIFT_INCLUDE_PATHS, '"$(SRCROOT)/../modules/extend-display/ios/ExtendEngine.xcframework/ios-arm64/Headers"');
+    for (const [sdk, slice] of [["iphoneos", "ios-arm64"], ["iphonesimulator", "ios-arm64-simulator"]]) {
+      const flags = value[`"OTHER_LDFLAGS[sdk=${sdk}*]"`];
+      assert.ok(flags.includes(`"$(SRCROOT)/../modules/extend-display/ios/ExtendEngine.xcframework/${slice}/libextend_ios_engine.a"`), sdk);
+      assert.ok(flags.includes('"Security"'));
+    }
   }
   assert.equal(project.pbxProjectSection()[project.getFirstProject().uuid].attributes.TargetAttributes[uuid].DevelopmentTeam, "TEAM123456");
   assert.doesNotThrow(() => project.writeSync());

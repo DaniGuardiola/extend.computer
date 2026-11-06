@@ -60,7 +60,7 @@ final class BroadcastController {
     }
   }
 
-  /// `{state, error, peer[, encoded, resizes, transport]}` like Android's
+  /// `{state, error, peer[, encoded, resizes, footprint, transport]}` like Android's
   /// ScreenSharingService.state().
   func state() -> [String: Any] {
     lock.lock(); defer { lock.unlock() }
@@ -165,7 +165,7 @@ final class BroadcastController {
 
   private func snapshot(_ remote: [String: Any], state: String, error: String) -> [String: Any] {
     var result: [String: Any] = ["state": state, "error": error, "peer": remote["peer"] as? String ?? peer]
-    for key in ["encoded", "resizes", "transport"] { if let value = remote[key] { result[key] = value } }
+    for key in ["encoded", "resizes", "footprint", "transport"] { if let value = remote[key] { result[key] = value } }
     return result
   }
 }
