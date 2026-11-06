@@ -2584,6 +2584,15 @@ mod tests {
         unrelated
             .send_to(&[1, 2, 3], receiver.socket.local_addr().unwrap())
             .unwrap();
+        // Loopback delivery is asynchronous; poll only after the datagram is queued.
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let DatagramSocket::Udp(socket) = &receiver.socket else {
+            unreachable!("Transport::new uses UDP")
+        };
+        while socket.peek_from(&mut [0; 16]).is_err() {
+            assert!(Instant::now() < deadline, "datagram never arrived");
+            std::thread::sleep(Duration::from_millis(1));
+        }
         receiver.events.push_back(DisplayEvent::Connected);
         assert!(matches!(
             receiver.poll().unwrap(),
