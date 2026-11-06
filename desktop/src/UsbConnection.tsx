@@ -10,6 +10,9 @@ import {
 import { Dialog } from "./Dialog";
 import { Select } from "./Select";
 
+/** usbmuxd vendor for iPhone and iPad; these connect to the open app, not as an accessory. */
+const APPLE_VENDOR = "05ac";
+
 // Selecting a USB descriptor only selects a cable. The existing paired peer
 // still authenticates signaling and pinned encrypted media independently.
 export function UsbConnection({
@@ -145,7 +148,7 @@ export function UsbConnection({
         >
           <p className="text-sm leading-6 text-muted">
             USB carries display, keyboard and mouse in either direction. Open
-            extend.computer on Android, then select its cable.
+            extend.computer on the phone or tablet, then select its cable.
           </p>
           {ownConnection ? (
             <p className="mt-4 text-sm" role="status">
@@ -156,7 +159,9 @@ export function UsbConnection({
           ) : starting ? (
             <p className="mt-4 flex items-center gap-2 text-sm" role="status">
               <LoaderCircle size={16} className="motion-safe:animate-spin" />
-              Connecting… Allow the accessory on your Mac and Android device.
+              {chosen?.vendor === APPLE_VENDOR
+                ? "Connecting… Keep extend.computer open on the iPhone or iPad."
+                : "Connecting… Allow the accessory on your Mac and Android device."}
             </p>
           ) : occupied ? (
             <p className="mt-4 text-sm text-muted">
@@ -171,7 +176,7 @@ export function UsbConnection({
                   disabled={scanning || hasSession}
                   onChange={setSelected}
                   options={[
-                    { value: "", label: "Choose the connected Android device" },
+                    { value: "", label: "Choose the connected phone or tablet" },
                     ...devices.map((device) => ({
                       value: key(device),
                       label: `${device.name} · ${device.serial}${device.accessory ? " (reconnect cable)" : ""}`,
@@ -185,7 +190,7 @@ export function UsbConnection({
                   : reconnectNeeded && !chosen
                     ? "USB disconnected. Unplug and reconnect the cable, then choose Check again."
                     : devices.length === 0
-                      ? "No compatible Android device found. Plug in a data cable, unlock Android, and allow the accessory on your Mac."
+                      ? "No compatible device found. Plug in a data cable and unlock the device. On Android, allow the accessory on your Mac; on iPhone or iPad, trust this Mac and open extend.computer."
                       : chosen?.accessory
                         ? "Unplug and reconnect this cable to leave its previous accessory connection."
                         : "Choose this tablet or phone’s cable. Its paired identity is checked before USB becomes ready."}
