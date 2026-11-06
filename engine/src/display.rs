@@ -15,6 +15,7 @@ mod udp_recovery;
 pub mod usb_host;
 pub mod usb_link;
 pub mod usb_stream;
+pub mod usbmux;
 use anyhow::{ensure, Context, Result};
 use std::{
     collections::VecDeque,

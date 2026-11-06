@@ -116,6 +116,30 @@ fn inventory_result(bytes: &[u8]) -> Result<serde_json::Value> {
     }
     Ok(serde_json::to_value(devices)?)
 }
+/// Cable-attached iPhones and iPads, keyed by UDID. usbmuxd is optional.
+#[cfg(target_os = "macos")]
+fn usbmux_inventory() -> Vec<UsbDevice> {
+    use extend_computer_agent::display::usbmux::{Usbmux, APPLE_USB_VENDOR};
+    let mux = Usbmux::default();
+    if !mux.available() {
+        return Vec::new();
+    }
+    match mux.usb_devices() {
+        Ok(devices) => devices
+            .into_iter()
+            .map(|device| UsbDevice {
+                vendor: APPLE_USB_VENDOR.into(),
+                serial: device.udid,
+                name: device.name,
+                accessory: false,
+            })
+            .collect(),
+        Err(error) => {
+            eprintln!("iPhone USB discovery failed: {error:#}");
+            Vec::new()
+        }
+    }
+}
 impl Desktop {
     pub(super) fn receiving_permissions(&self, permissions: &Permissions) -> bool {
         permissions.can_receive()
@@ -306,41 +330,59 @@ impl Desktop {
                 !self.closing.load(Ordering::Acquire),
                 "Application is closing"
             );
-            // File-backed output avoids waiting on an unread pipe. A bounded
-            // helper deadline also covers slow OS USB permission responses.
-            let output = tempfile::NamedTempFile::new()?;
-            let mut child = std::process::Command::new(self.usb_helper()?)
-                .arg("--list")
-                .stdin(std::process::Stdio::null())
-                .stdout(output.reopen()?)
-                .stderr(std::process::Stdio::null())
-                .spawn()?;
-            let deadline = Instant::now() + Duration::from_secs(8);
-            let status = loop {
-                match child.try_wait() {
-                    Ok(Some(status)) => break status,
-                    Ok(None)
-                        if Instant::now() < deadline && !self.closing.load(Ordering::Acquire) =>
-                    {
-                        std::thread::sleep(Duration::from_millis(30));
-                    }
-                    result => {
-                        let _ = child.kill();
-                        let _ = child.wait();
-                        if let Err(error) = result {
-                            return Err(error.into());
-                        }
-                        anyhow::bail!("USB discovery timed out. Check the cable and allow this accessory on your Mac.");
-                    }
+            // iPhones never answer the accessory probe; usbmuxd lists them.
+            // Without usbmuxd (or with no iPhone) the Android inventory alone decides.
+            let apple = usbmux_inventory();
+            let android = self.accessory_inventory();
+            let mut devices = match (android, apple.is_empty()) {
+                (Ok(devices), _) => devices,
+                (Err(error), true) => return Err(error),
+                (Err(error), false) => {
+                    eprintln!("Android USB discovery failed: {error:#}");
+                    Vec::new()
                 }
             };
-            ensure!(status.success(), "Could not check connected USB devices");
-            ensure!(
-                output.as_file().metadata()?.len() <= 16_384,
-                "USB discovery output is too large"
-            );
-            inventory_result(&std::fs::read(output.path())?)
+            devices.extend(apple);
+            devices.truncate(16);
+            inventory_result(&serde_json::to_vec(&devices)?)
         }
+    }
+    #[cfg(target_os = "macos")]
+    fn accessory_inventory(&self) -> Result<Vec<UsbDevice>> {
+        // File-backed output avoids waiting on an unread pipe. A bounded
+        // helper deadline also covers slow OS USB permission responses.
+        let output = tempfile::NamedTempFile::new()?;
+        let mut child = std::process::Command::new(self.usb_helper()?)
+            .arg("--list")
+            .stdin(std::process::Stdio::null())
+            .stdout(output.reopen()?)
+            .stderr(std::process::Stdio::null())
+            .spawn()?;
+        let deadline = Instant::now() + Duration::from_secs(8);
+        let status = loop {
+            match child.try_wait() {
+                Ok(Some(status)) => break status,
+                Ok(None) if Instant::now() < deadline && !self.closing.load(Ordering::Acquire) => {
+                    std::thread::sleep(Duration::from_millis(30));
+                }
+                result => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    if let Err(error) = result {
+                        return Err(error.into());
+                    }
+                    anyhow::bail!("USB discovery timed out. Check the cable and allow this accessory on your Mac.");
+                }
+            }
+        };
+        ensure!(status.success(), "Could not check connected USB devices");
+        ensure!(
+            output.as_file().metadata()?.len() <= 16_384,
+            "USB discovery output is too large"
+        );
+        Ok(serde_json::from_value(inventory_result(&std::fs::read(
+            output.path(),
+        )?)?)?)
     }
 
     #[cfg(any(debug_assertions, feature = "display-benchmark"))]
@@ -438,14 +480,22 @@ impl Desktop {
                 self.usb.lock().unwrap().is_none(),
                 "Disconnect the current USB connection first"
             );
-            let helper = self.usb_helper()?;
             let identity = self.identity()?;
-            let host = extend_computer_agent::display::usb_host::NativeUsbHost::connect(
-                &helper,
-                vendor,
-                serial,
-                &identity.fingerprint(),
-            )?;
+            let host = if vendor
+                .eq_ignore_ascii_case(extend_computer_agent::display::usbmux::APPLE_USB_VENDOR)
+            {
+                extend_computer_agent::display::usb_host::NativeUsbHost::connect_usbmux(
+                    serial,
+                    &identity.fingerprint(),
+                )?
+            } else {
+                extend_computer_agent::display::usb_host::NativeUsbHost::connect(
+                    &self.usb_helper()?,
+                    vendor,
+                    serial,
+                    &identity.fingerprint(),
+                )?
+            };
             // The cable switch can take seconds. Never install a late connection
             // after shutdown or after its authenticated peer was removed.
             let hub = host.hub();
