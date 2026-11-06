@@ -3,7 +3,7 @@
 // disconnect or hiding an actual transport, permission, or decoder failure.
 export function displayEndMessage(message?: string): string | undefined {
   const detail = message?.trim();
-  if (!detail || /^(?:Display ended\s*:?|Display session ended\.|Connection ended\.)$/.test(detail)) {
+  if (!detail || /^(?:Display ended\s*:?|Display session ended\.?|Connection ended\.)$/.test(detail)) {
     return undefined;
   }
   return detail;

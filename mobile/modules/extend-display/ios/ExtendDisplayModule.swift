@@ -115,21 +115,22 @@ private enum SharingOptions {
 }
 
 // Immersive display: status bar, home indicator and system edge gestures, plus
-// keep-awake. Info.plist sets UIViewControllerBasedStatusBarAppearance=NO (Expo
-// default), so the application-level status bar API applies. The home indicator
-// and edge deferral are answered by the window's root view controller, so that
-// one instance gets an isa-swizzled subclass that reads `Immersive.enabled`.
+// keep-awake. Under the UIScene lifecycle the application-level status bar API
+// is ignored, so Info.plist sets UIViewControllerBasedStatusBarAppearance=YES
+// (app.json) and, like the home indicator and edge deferral, status bar
+// visibility is answered by the window's root view controller: that one
+// instance gets an isa-swizzled subclass that reads `Immersive.enabled`.
 @MainActor enum Immersive {
   static var enabled = false
 
   static func apply(_ on: Bool) {
     enabled = on
-    UIApplication.shared.setStatusBarHidden(on, with: .fade)
     UIApplication.shared.isIdleTimerDisabled = on || KeepAwake.active
     for scene in UIApplication.shared.connectedScenes {
       for window in (scene as? UIWindowScene)?.windows ?? [] {
         guard let root = window.rootViewController else { continue }
         install(root)
+        UIView.animate(withDuration: 0.2) { root.setNeedsStatusBarAppearanceUpdate() }
         root.setNeedsUpdateOfHomeIndicatorAutoHidden()
         root.setNeedsUpdateOfScreenEdgesDeferringSystemGestures()
       }
@@ -155,8 +156,11 @@ private enum SharingOptions {
       let edgesSel = #selector(getter: UIViewController.preferredScreenEdgesDeferringSystemGestures)
       let childHomeSel = #selector(getter: UIViewController.childForHomeIndicatorAutoHidden)
       let childEdgesSel = #selector(getter: UIViewController.childForScreenEdgesDeferringSystemGestures)
+      let statusSel = #selector(getter: UIViewController.prefersStatusBarHidden)
+      let childStatusSel = #selector(getter: UIViewController.childForStatusBarHidden)
       let hidesBase = original(hidesSel, BoolGetter.self), edgesBase = original(edgesSel, EdgeGetter.self)
       let childHomeBase = original(childHomeSel, Getter.self), childEdgesBase = original(childEdgesSel, Getter.self)
+      let statusBase = original(statusSel, BoolGetter.self), childStatusBase = original(childStatusSel, Getter.self)
       let hides: @convention(block) (UIViewController) -> Bool = { vc in
         MainActor.assumeIsolated { Immersive.enabled } || hidesBase(vc, hidesSel)
       }
@@ -169,7 +173,15 @@ private enum SharingOptions {
       let childEdges: @convention(block) (UIViewController) -> UnsafeRawPointer? = { vc in
         MainActor.assumeIsolated { Immersive.enabled } ? nil : childEdgesBase(vc, childEdgesSel)
       }
+      let status: @convention(block) (UIViewController) -> Bool = { vc in
+        MainActor.assumeIsolated { Immersive.enabled } || statusBase(vc, statusSel)
+      }
+      let childStatus: @convention(block) (UIViewController) -> UnsafeRawPointer? = { vc in
+        MainActor.assumeIsolated { Immersive.enabled } ? nil : childStatusBase(vc, childStatusSel)
+      }
       add(made, hidesSel, hides, "B@:")
+      add(made, statusSel, status, "B@:")
+      add(made, childStatusSel, childStatus, "@@:")
       add(made, childHomeSel, childHome, "@@:")
       add(made, childEdgesSel, childEdges, "@@:")
       add(made, edgesSel, edges, "Q@:")

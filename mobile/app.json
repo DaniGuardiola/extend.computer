@@ -11,6 +11,7 @@
       "supportsTablet": true,
       "appleTeamId": "59QTVLL4JP",
       "infoPlist": {
+        "UIViewControllerBasedStatusBarAppearance": true,
         "NSLocalNetworkUsageDescription": "extend.computer finds and connects to your paired computers and devices on this network.",
         "NSBonjourServices": [
           "_extendpair._tcp",
@@ -38,6 +39,9 @@
       [
         "expo-build-properties",
         {
+          "ios": {
+            "enableSceneSupport": true
+          },
           "android": {
             "minSdkVersion": 29,
             "buildArchs": [

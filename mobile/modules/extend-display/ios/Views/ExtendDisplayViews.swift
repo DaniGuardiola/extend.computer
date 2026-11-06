@@ -29,6 +29,15 @@ func errorMessage(_ error: Error?, _ fallback: String) -> String {
   return text.isEmpty ? fallback : text
 }
 
+/// "" for a reasonless end (the engine's "Display ended: ", EngineDisplay's
+/// "Display session ended"),
+/// otherwise the trimmed message. Mirrors `displayEndMessage` in
+/// src/display/end-message.ts.
+func displayEndDetail(_ message: String) -> String {
+  let detail = message.trimmingCharacters(in: .whitespacesAndNewlines)
+  return detail.range(of: #"^(Display ended\s*:?|Display session ended\.?)$"#, options: .regularExpression) != nil ? "" : detail
+}
+
 /// Received display: Metal video + cursor overlay (DisplayRenderer), the
 /// engine frame pump (DisplayReceiver) and display-scoped touch/keyboard
 /// input (DisplayInputView) above it.
@@ -169,11 +178,16 @@ class ExtendDisplayView: ExpoView {
   private func ended(_ session: Int, _ error: Error?) {
     guard session == generation else { return }
     stats?.invalidate(); stats = nil
-    if let error { displayLog.error("ExtendDisplay ended: \(errorMessage(error, ""), privacy: .public)") }
+    // The engine reports a source-side stop as "Display ended: <reason>" with
+    // an empty reason. That's a normal end, like Android's "Display session
+    // ended."; only a real reason is an error worth showing and logging.
+    let message = displayEndDetail(errorMessage(error, ""))
+    if message.isEmpty { displayLog.notice("ExtendDisplay ended by the source") }
+    else { displayLog.error("ExtendDisplay ended: \(message, privacy: .public)") }
     input.streamStopped()
     streamingRevision = -1
     KeepAwake.set(self, false)
-    status(["state": "disconnected", "message": errorMessage(error, "Display session ended.")])
+    status(["state": "disconnected", "message": message.isEmpty ? "Display session ended." : message])
   }
 
   private func stop() {

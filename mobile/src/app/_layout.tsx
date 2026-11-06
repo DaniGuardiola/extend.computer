@@ -6,6 +6,7 @@ import { display } from "../../modules/extend-display";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { ThemeProvider, useTheme } from "../theme";
+import { isIOS } from "../platform";
 
 function Screens() {
   const { colors, dark } = useTheme();
@@ -23,7 +24,10 @@ function Screens() {
     return () => clearInterval(timer);
   }, [pathname]);
   return <>
-    <StatusBar style={dark ? "light" : "dark"} />
+    {/* iOS uses view-controller-based status bar appearance (the app-level
+        API is ignored under the UIScene lifecycle): the default style follows
+        the window's appearance, and Immersive hides it on the display screen. */}
+    {!isIOS && <StatusBar style={dark ? "light" : "dark"} />}
     <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.canvas } }}>
       <Stack.Screen name="index" />
       <Stack.Screen name="settings" />

@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { displayEndMessage } from "./end-message.ts";
 
 test("terminal source stop has no empty native error detail", () => {
-  for (const message of [undefined, "", "  ", "Display ended: ", "Display ended", "Display session ended.", "Connection ended."]) {
+  for (const message of [undefined, "", "  ", "Display ended: ", "Display ended", "Display session ended.", "Display session ended", "Connection ended."]) {
     assert.equal(displayEndMessage(message), undefined);
   }
 });

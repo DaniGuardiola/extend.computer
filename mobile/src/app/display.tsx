@@ -129,7 +129,8 @@ export default function Display() {
   ><Expand size={20} color="white" /></Pressable>;
   return (
     <View className="flex-1 bg-black">
-      <StatusBar hidden />
+      {/* iOS: display.setImmersive hides the status bar natively. */}
+      {!isIOS && <StatusBar hidden />}
       {session.available && (
         <NativeDisplay
           ref={inputView}
