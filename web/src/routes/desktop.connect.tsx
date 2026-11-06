@@ -84,10 +84,10 @@ function DesktopConnect() {
       <ThemeHeader />
       <div className="auth-box w-full max-w-[360px]">
         <Brand appearance="app" />
-        <h1>Connect the desktop app</h1>
+        <h1>Connect the app</h1>
         <p>
-          Only continue if you started this sign-in from extend.computer on this
-          computer.
+          Only continue if you started this sign-in from the extend.computer app
+          on this device.
         </p>
         {error && (
           <p role="alert" className="message error-message">
