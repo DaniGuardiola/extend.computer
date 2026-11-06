@@ -1,4 +1,5 @@
 {
-  "platforms": ["android"],
-  "android": { "modules": ["computer.extend.android.ExtendDisplayModule"] }
+  "platforms": ["android", "apple"],
+  "android": { "modules": ["computer.extend.android.ExtendDisplayModule"] },
+  "apple": { "modules": ["ExtendDisplayModule"] }
 }

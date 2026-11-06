@@ -35,7 +35,9 @@
   "scripts": {
     "start": "expo start",
     "android": "expo run:android",
+    "ios": "expo run:ios --device",
     "prebuild": "expo prebuild --platform android",
+    "prebuild:ios": "expo prebuild --platform ios",
     "theme:sync": "node scripts/sync-theme.mjs",
     "check": "npm run theme:sync && tsc --noEmit && expo lint",
     "lint": "expo lint"
