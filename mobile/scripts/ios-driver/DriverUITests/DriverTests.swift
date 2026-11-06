@@ -7,6 +7,7 @@ import XCTest
 ///   tapcontains <text>       tap the first element whose label contains text
 ///   tapxy <x> <y>            tap normalized screen coordinates (0...1)
 ///   type <text>              type into the focused element
+///   field <label>=<text>     replace the text of the text field with that label
 ///   swipe up|down|left|right
 ///   wait <seconds>
 ///   waitfor <label> [secs]   wait for an element to exist
@@ -45,6 +46,14 @@ final class DriverTests: XCTestCase {
           let n = arg.split(separator: " ").compactMap { Double($0) }
           app.coordinate(withNormalizedOffset: CGVector(dx: n[0], dy: n[1])).tap()
         case "type": app.typeText(arg)
+        case "field":
+          let parts = arg.split(separator: "=", maxSplits: 1).map(String.init)
+          let field = app.textFields[parts[0]].firstMatch
+          if field.waitForExistence(timeout: 5) {
+            field.tap()
+            let old = field.value as? String ?? ""
+            field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: old.count + 4) + (parts.count > 1 ? parts[1] : ""))
+          } else { XCTFail("not found: \(parts[0])") }
         case "swipe":
           switch arg { case "up": app.swipeUp(); case "down": app.swipeDown(); case "left": app.swipeLeft(); default: app.swipeRight() }
         case "wait": Thread.sleep(forTimeInterval: Double(arg) ?? 1)

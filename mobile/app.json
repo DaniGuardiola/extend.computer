@@ -9,7 +9,15 @@
     "ios": {
       "bundleIdentifier": "computer.extend.ios.development",
       "supportsTablet": true,
-      "appleTeamId": "59QTVLL4JP"
+      "appleTeamId": "59QTVLL4JP",
+      "infoPlist": {
+        "NSLocalNetworkUsageDescription": "extend.computer finds and connects to your paired computers and devices on this network.",
+        "NSBonjourServices": [
+          "_extendpair._tcp",
+          "_extendprobe._tcp",
+          "_extendpresence._tcp"
+        ]
+      }
     },
     "android": {
       "package": "computer.extend.android.development",

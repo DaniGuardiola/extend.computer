@@ -735,7 +735,9 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "extend-android-engine",
+ "extend-computer-agent",
  "serde_json",
+ "socket2",
  "zeroize",
 ]
 

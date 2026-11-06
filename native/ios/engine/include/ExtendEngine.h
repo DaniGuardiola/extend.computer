@@ -184,6 +184,17 @@ char *ext_push_display_frame(const char *id,
 
 char *ext_stop_display_sender(const char *id);
 
+// Listens on `127.0.0.1:port` for the desktop's usbmuxd tunnel and attaches
+// each hello-authenticated paired host as the USB carrier. Idempotent.
+// Returns `{"ok":{"port":..}}`.
+char *ext_start_usb_listener(uint16_t port);
+
+// Stops the USB listener and detaches its carrier. Safe when stopped.
+char *ext_stop_usb_listener(void);
+
+// Returns `{"ok":{"listening":..,"port":..,"carrier":{"id","peer"}|null,"error":".."}}`.
+char *ext_usb_listener_state(void);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus

@@ -3,56 +3,64 @@ import UIKit
 
 // iOS bridge for the JS API in ../index.tsx. Names, arguments and JSON shapes
 // mirror android/.../ExtendDisplayModule.kt so the screens stay platform-neutral.
-// Every `TODO(engine)` returns the idle value the Android engine reports before
-// anything has started; the engine wave replaces them with ExtendEngine calls.
+// Engine-backed features live in Core/ (ports of native/android/src/.../*.java).
+// `TODO(accounts|sharing|engine)` stubs return the idle value Android reports
+// before anything has started.
 
 private func unavailable(_ what: String) -> Exception {
   Exception(name: "ExtendUnavailable", description: "\(what) isn't available on iPhone yet")
 }
 
-private func json(_ value: Any) -> String {
-  guard let data = try? JSONSerialization.data(withJSONObject: value, options: [.fragmentsAllowed]),
-        let text = String(data: data, encoding: .utf8) else { return "{}" }
-  return text
+private func json(_ value: Any) -> String { JSONText.encode(value) }
+
+/// Engine errors reach JS with their plain message, like Android exceptions.
+private func bridged<T>(_ body: () throws -> T) throws -> T {
+  do { return try body() } catch let error as EngineError {
+    throw Exception(name: "ExtendError", description: error.message)
+  }
 }
 
 private enum Store {
   static let defaults = UserDefaults.standard
   static let appearanceKey = "appearance.value"
-  static let localNameKey = "engine-local.name"
   static let sharingPrefix = "engine-screen-sharing."
 }
 
-private enum LocalDevice {
-  static func systemName() -> String {
+enum LocalDevice {
+  private static let lock = NSLock()
+  private static var system: String?
+  /// Must run on the main thread once before `systemName()` is read elsewhere.
+  @MainActor static func prepare() {
     // iOS 16+ returns the model ("iPhone") without the device-name entitlement.
     let name = UIDevice.current.name.trimmingCharacters(in: .whitespacesAndNewlines)
-    return name.isEmpty ? UIDevice.current.model : name
+    lock.lock(); system = name.isEmpty ? UIDevice.current.model : name; lock.unlock()
   }
-  static func name() -> String {
-    Store.defaults.string(forKey: Store.localNameKey) ?? systemName()
+  static func systemName() -> String {
+    lock.lock(); defer { lock.unlock() }
+    return system ?? "iPhone"
   }
-  static func info() -> [String: Any] {
+  static func name() -> String { LocalStore.customName ?? systemName() }
+  static func info() throws -> [String: Any] {
+    let identity = try Engine.identity()
     let bundle = Bundle.main.infoDictionary ?? [:]
-    let saved = Store.defaults.string(forKey: Store.localNameKey)
     return [
-      "name": saved ?? systemName(),
+      "name": name(),
       "defaultName": systemName(),
-      "customName": saved != nil,
-      // TODO(engine): fingerprint from the engine identity.
-      "fingerprint": "",
+      "customName": LocalStore.customName != nil,
+      "fingerprint": identity["fingerprint"] as? String ?? "",
       "version": bundle["CFBundleShortVersionString"] as? String ?? "",
       "build": bundle["CFBundleVersion"] as? String ?? "",
     ]
   }
   static func setName(_ raw: String) throws {
-    let name = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-    if name.isEmpty || name.utf8.count > 100 || name.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) {
-      throw Exception(name: "InvalidDeviceName", description: "Enter a device name up to 100 bytes")
+    try Engine.identity()
+    let name = try Devices.normalizeName(raw)
+    if name.isEmpty || name == systemName() {
+      do { try LocalStore.setCustomName(nil) } catch { throw EngineError("Couldn't reset device name.") }
+    } else {
+      do { try LocalStore.setCustomName(name) } catch { throw EngineError("Couldn't save device name") }
     }
-    if name == systemName() { Store.defaults.removeObject(forKey: Store.localNameKey) }
-    else { Store.defaults.set(name, forKey: Store.localNameKey) }
-    // TODO(engine): push the new name to the engine so peers see it.
+    try Engine.updateLocalDeviceName(self.name())
   }
 }
 
@@ -165,54 +173,155 @@ public class ExtendDisplayModule: Module {
     "browser_pending": false, "native_pending": false, "busy": false, "loaded": true,
     "storage_error": false, "directory_fresh": false, "error": NSNull(),
   ]
-  private static let closedIncoming: [String: Any] = [
-    "state": "closed", "port": 0, "code": NSNull(), "secondsRemaining": 0, "addresses": [], "request": NSNull(),
-  ]
+  private var nearby: NearbyDiscovery?
+  private let incoming = IncomingPairing()
+  private let visual = VisualPairing()
+  private let manual = ManualPairing()
+
+  private func discovery() -> NearbyDiscovery {
+    if let nearby { return nearby }
+    let made = NearbyDiscovery()
+    nearby = made
+    return made
+  }
+  private func connectionActive() -> Bool {
+    // TODO(sharing): include the broadcast extension's consent/connecting/streaming states.
+    let media = Engine.displayState()["state"] as? String ?? ""
+    let control = Engine.controlState()["state"] as? String ?? ""
+    return ["offered", "connecting", "configuring", "streaming"].contains(media) || ["connecting", "connected"].contains(control)
+  }
+  private func requireIdle(_ message: String) throws {
+    if connectionActive() { throw Exception(name: "ExtendBusy", description: message) }
+  }
+  /// Route for a session: USB carrier, internet relay, or the saved LAN hint.
+  private func route(_ peer: String) throws -> String {
+    let checked = try Devices.check(peer)
+    switch checked["route"] as? String {
+    case "usb": return "usb:\(checked["carrier_id"] as? String ?? "")"
+    case "internet": return ""
+    default:
+      guard let address = LocalStore.peer(peer)?["address"] as? String, !address.isEmpty else {
+        throw EngineError("Device address unavailable")
+      }
+      return address
+    }
+  }
+  /// Foreground-only engine services: USB listener and availability.
+  private static func foreground() {
+    Engine.queue.async {
+      do {
+        try Engine.identity()
+        try Engine.startUsbListener()
+      } catch {
+        NSLog("extend.computer: USB listener unavailable: \(error.localizedDescription)")
+      }
+      Receiving.resume()
+    }
+  }
 
   public func definition() -> ModuleDefinition {
     Name("ExtendDisplay")
 
     OnCreate {
       let value = Store.defaults.string(forKey: Store.appearanceKey) ?? "system"
-      if value != "system" { DispatchQueue.main.async { applyAppearance(value) } }
+      Engine.localName = { LocalDevice.name() }
+      DispatchQueue.main.async {
+        AppFocus.install()
+        LocalDevice.prepare()
+        Engine.deviceKind = UIDevice.current.userInterfaceIdiom == .pad ? "tablet" : "phone"
+        if value != "system" { applyAppearance(value) }
+        Self.foreground()
+      }
+    }
+    OnAppBecomesActive {
+      AppFocus.set(true)
+      self.nearby?.resume()
+      Self.foreground()
+    }
+    OnAppEntersBackground {
+      AppFocus.set(false)
+      self.nearby?.suspend()
+      self.incoming.stop(); self.visual.stop(); self.manual.stop()
+      Engine.queue.async {
+        Receiving.pause()
+        Engine.stopUsbListener()
+      }
+    }
+    OnDestroy {
+      self.nearby?.stop(); self.nearby = nil
+      self.incoming.stop(); self.visual.stop(); self.manual.stop()
     }
 
     // MARK: Accounts
-    AsyncFunction("getAccountState") { () -> String in json(Self.idleAccount) } // TODO(engine)
-    AsyncFunction("resumeAccount") { } // TODO(engine)
-    AsyncFunction("refreshAccount") { () -> String in json(Self.idleAccount) } // TODO(engine)
-    AsyncFunction("startAccountBrowser") { () throws -> String in throw unavailable("Account sign-in") } // TODO(engine)
-    AsyncFunction("startAccountPassword") { () throws in throw unavailable("Account sign-in") } // TODO(engine)
-    AsyncFunction("cancelAccountSignIn") { () -> String in json(Self.idleAccount) } // TODO(engine)
-    AsyncFunction("logoutAccount") { () -> String in json(Self.idleAccount) } // TODO(engine)
-    AsyncFunction("configureAccount") { (_: String) throws -> String in throw unavailable("Changing the account server") } // TODO(engine)
-    AsyncFunction("removeAccountDevice") { (_: String) throws -> String in throw unavailable("Removing account devices") } // TODO(engine)
-    AsyncFunction("openAccountPage") { (_: String) throws in throw unavailable("Account pages") } // TODO(engine)
-    Function("hasActiveConnection") { false } // TODO(engine)
+    AsyncFunction("getAccountState") { () -> String in json(Self.idleAccount) } // TODO(accounts)
+    AsyncFunction("resumeAccount") { } // TODO(accounts)
+    AsyncFunction("refreshAccount") { () -> String in json(Self.idleAccount) } // TODO(accounts)
+    AsyncFunction("startAccountBrowser") { () throws -> String in throw unavailable("Account sign-in") } // TODO(accounts)
+    AsyncFunction("startAccountPassword") { () throws in throw unavailable("Account sign-in") } // TODO(accounts)
+    AsyncFunction("cancelAccountSignIn") { () -> String in json(Self.idleAccount) } // TODO(accounts)
+    AsyncFunction("logoutAccount") { () -> String in json(Self.idleAccount) } // TODO(accounts)
+    AsyncFunction("configureAccount") { (_: String) throws -> String in throw unavailable("Changing the account server") } // TODO(accounts)
+    AsyncFunction("removeAccountDevice") { (_: String) throws -> String in throw unavailable("Removing account devices") } // TODO(accounts)
+    AsyncFunction("openAccountPage") { (_: String) throws in throw unavailable("Account pages") } // TODO(accounts)
+    Function("hasActiveConnection") { self.connectionActive() }
 
     // MARK: Discovery and pairing
-    Function("startDiscovery") { } // TODO(engine)
-    Function("stopDiscovery") { } // TODO(engine)
-    Function("getNearbyDevices") { () -> [String: Any] in ["state": "idle", "candidates": [[String: Any]]()] } // TODO(engine)
-    AsyncFunction("startVisualPairing") { (_: String, _: String) throws -> String in throw unavailable("Nearby pairing") } // TODO(engine)
-    Function("getVisualPairing") { (id: String) -> String in // TODO(engine)
-      json(["id": id, "state": "closed", "request": NSNull(), "secondsRemaining": 0])
+    Function("startDiscovery") { self.discovery().start() }
+    Function("stopDiscovery") { self.nearby?.stop() }
+    Function("getNearbyDevices") { () -> [String: Any] in self.discovery().snapshot() }
+    AsyncFunction("startVisualPairing") { (address: String, name: String) throws -> String in
+      try bridged {
+        try AppFocus.require("Return to the app to pair a device")
+        try self.requireIdle("Stop the current connection before pairing")
+        return try self.visual.start(address: address, name: name, localName: LocalDevice.name())
+      }
+    }.runOnQueue(Engine.queue)
+    Function("getVisualPairing") { (id: String) throws -> String in try bridged { try self.visual.state(id: id) } }
+    Function("respondVisualPairing") { (id: String, request: String, allow: Bool) throws in
+      try bridged {
+        try AppFocus.require("Return to the app to confirm pairing")
+        try self.visual.respond(id: id, request: request, allow: allow)
+      }
     }
-    Function("respondVisualPairing") { (_: String, _: String, _: Bool) throws in throw unavailable("Nearby pairing") } // TODO(engine)
-    Function("stopVisualPairing") { (_: String) in } // TODO(engine)
-    Function("startIncomingPairing") { () -> String in json(Self.closedIncoming) } // TODO(engine)
-    Function("getIncomingPairing") { () -> String in json(Self.closedIncoming) } // TODO(engine)
-    Function("respondIncomingPairing") { (_: String, _: Bool) throws in throw unavailable("Pairing") } // TODO(engine)
-    Function("stopIncomingPairing") { } // TODO(engine)
-    Function("reserveManualPairing") { () throws -> String in throw unavailable("Manual pairing") } // TODO(engine)
-    AsyncFunction("startManualPairing") { (_: String, _: String, _: String, _: String) throws -> String in throw unavailable("Manual pairing") } // TODO(engine)
-    AsyncFunction("getManualPairing") { (id: String) -> String in json(["id": id, "state": "closed", "error": ""]) } // TODO(engine)
-    Function("stopManualPairing") { (_: String) in } // TODO(engine)
-    AsyncFunction("pairDevice") { (_: String, _: String, _: String) throws -> [String: Any] in throw unavailable("Pairing") } // TODO(engine)
+    Function("stopVisualPairing") { (id: String) throws in try bridged { try self.visual.stop(id: id) } }
+    Function("startIncomingPairing") { () throws -> String in
+      try bridged {
+        try self.requireIdle("Stop the current connection before pairing")
+        return try self.incoming.start(name: LocalDevice.name())
+      }
+    }
+    Function("getIncomingPairing") { () throws -> String in try bridged { try self.incoming.state() } }
+    Function("respondIncomingPairing") { (request: String, allow: Bool) throws in
+      try bridged {
+        try AppFocus.require("Return to the app to confirm pairing")
+        try Engine.respondIncoming(request, allow)
+      }
+    }
+    Function("stopIncomingPairing") { self.incoming.stop() }
+    Function("reserveManualPairing") { () throws -> String in
+      try bridged {
+        try self.requireIdle("Stop the current connection before pairing")
+        return try self.manual.reserve()
+      }
+    }
+    AsyncFunction("startManualPairing") { (id: String, address: String, code: String, name: String) throws -> String in
+      try bridged {
+        try self.requireIdle("Stop the current connection before pairing")
+        return try self.manual.start(id: id, address: address, code: code, name: name)
+      }
+    }.runOnQueue(Engine.queue)
+    AsyncFunction("getManualPairing") { (id: String) throws -> String in try bridged { try self.manual.state(id: id) } }
+    Function("stopManualPairing") { (id: String) in self.manual.stop(id: id) }
+    AsyncFunction("pairDevice") { (address: String, code: String, name: String) throws -> [String: Any] in
+      try bridged {
+        try self.requireIdle("Stop the current connection before pairing")
+        return try Devices.pair(address: address, code: code, name: name)
+      }
+    }.runOnQueue(Engine.queue)
 
     // MARK: Receiving
-    Function("setReceivingEnabled") { (_: Bool) in } // TODO(engine)
-    Function("getReceivingState") { () -> String in json(["enabled": false, "state": "stopped", "port": 0]) } // TODO(engine)
+    Function("setReceivingEnabled") { (enabled: Bool) throws in try bridged { try Receiving.setEnabled(enabled) } }
+    Function("getReceivingState") { () -> String in Receiving.state() }
     // iOS has no public API for injecting input into other apps: report the
     // Android "off" shape and make the toggles no-ops (src/platform.ts hides them).
     Function("getInputReceivingState") { () -> String in
@@ -220,52 +329,117 @@ public class ExtendDisplayModule: Module {
     }
     Function("setInputReceivingEnabled") { (_: Bool) in }
     Function("openInputReceivingSettings") { }
-    Function("resumeReceiving") { } // TODO(engine)
+    Function("resumeReceiving") { Engine.queue.async { Receiving.resume() } }
 
     // MARK: Devices
-    // TODO(engine): load or create the Keychain identity and return its real fingerprint/key.
-    AsyncFunction("getEngineIdentity") { () -> [String: String] in ["fingerprint": "", "publicKey": ""] }
-    AsyncFunction("getLocalDeviceInfo") { () -> [String: Any] in LocalDevice.info() }
+    AsyncFunction("getEngineIdentity") { () throws -> [String: String] in
+      try bridged {
+        let identity = try Engine.identity()
+        return ["fingerprint": identity["fingerprint"] as? String ?? "", "publicKey": identity["public_key"] as? String ?? ""]
+      }
+    }.runOnQueue(Engine.queue)
+    AsyncFunction("getLocalDeviceInfo") { () throws -> [String: Any] in try bridged { try LocalDevice.info() } }
+      .runOnQueue(Engine.queue)
     AsyncFunction("setLocalDeviceName") { (name: String) throws -> [String: Any] in
-      try LocalDevice.setName(name)
-      return LocalDevice.info()
-    }
-    AsyncFunction("getPeerDeviceInfo") { (_: String) throws -> [String: Any] in throw unavailable("Paired devices") } // TODO(engine)
-    AsyncFunction("setPeerDeviceLabel") { (_: String, _: String) throws -> [String: Any] in throw unavailable("Paired devices") } // TODO(engine)
-    AsyncFunction("setPeerDeviceAddress") { (_: String, _: String) throws -> [String: Any] in throw unavailable("Paired devices") } // TODO(engine)
-    AsyncFunction("getPairedDevices") { () -> [[String: Any]] in [] } // TODO(engine)
-    AsyncFunction("getDeviceAvailability") { (_: String) -> [String: Any] in // TODO(engine)
-      ["state": "unavailable", "reason": "Not available on iPhone yet", "route": "lan"]
-    }
-    AsyncFunction("checkDevice") { (_: String) throws -> [String: Double] in throw unavailable("Checking devices") } // TODO(engine)
-    AsyncFunction("forgetDevice") { (_: String) throws in throw unavailable("Forgetting devices") } // TODO(engine)
-    AsyncFunction("getRemovedPeers") { () -> [[String: String]] in [] } // TODO(engine)
-    AsyncFunction("dismissRemovedPeer") { (_: String) -> String in json([String: Any]()) } // TODO(engine)
+      try bridged {
+        try AppFocus.require("Return to the app to change device name")
+        try LocalDevice.setName(name)
+        return try LocalDevice.info()
+      }
+    }.runOnQueue(Engine.queue)
+    AsyncFunction("getPeerDeviceInfo") { (peer: String) throws -> [String: Any] in try bridged { try Devices.info(peer) } }
+      .runOnQueue(Engine.queue)
+    AsyncFunction("setPeerDeviceLabel") { (peer: String, label: String) throws -> [String: Any] in
+      try bridged {
+        try AppFocus.require("Return to the app to change device label")
+        return try Devices.setLabel(peer, label)
+      }
+    }.runOnQueue(Engine.queue)
+    AsyncFunction("setPeerDeviceAddress") { (peer: String, address: String) throws -> [String: Any] in
+      try bridged {
+        try AppFocus.require("Return to the app to change device address")
+        return try Devices.setAddress(peer, address)
+      }
+    }.runOnQueue(Engine.queue)
+    AsyncFunction("getPairedDevices") { () throws -> [[String: Any]] in try bridged { try Devices.list() } }
+      .runOnQueue(Engine.queue)
+    AsyncFunction("getDeviceAvailability") { (peer: String) throws -> [String: Any] in
+      if !AppFocus.active { return ["state": "unavailable", "reason": "Return to the app to check availability"] }
+      return try bridged {
+        var result = try DeviceAvailability.read(peer)
+        if result["route"] == nil { result["route"] = "lan" }
+        return result
+      }
+    }.runOnQueue(Engine.queue)
+    AsyncFunction("checkDevice") { (peer: String) throws -> [String: Double] in
+      try bridged {
+        try self.requireIdle("Stop the current connection before probing another device")
+        let result = try Devices.check(peer)
+        return ["rttMs": (result["rtt_ms"] as? NSNumber)?.doubleValue ?? 0]
+      }
+    }.runOnQueue(Engine.queue)
+    AsyncFunction("forgetDevice") { (peer: String) throws in
+      try bridged {
+        try self.requireIdle("Stop the current connection before forgetting a device")
+        try Devices.forget(peer)
+      }
+    }.runOnQueue(Engine.queue)
+    AsyncFunction("getRemovedPeers") { () throws -> [[String: String]] in
+      try bridged {
+        try Engine.identity()
+        return try Engine.removedPeers().map { ["peer": $0.key, "name": $0.value] }
+      }
+    }.runOnQueue(Engine.queue)
+    AsyncFunction("dismissRemovedPeer") { (peer: String) throws -> String in
+      try bridged {
+        try Engine.identity()
+        return json(try Engine.dismissRemovedPeer(peer))
+      }
+    }.runOnQueue(Engine.queue)
     Function("getDeviceName") { LocalDevice.name() }
 
     // MARK: Control
-    AsyncFunction("startControl") { (_: String) throws -> String in throw unavailable("Controlling devices") } // TODO(engine)
-    Function("stopControl") { (_: String) in } // TODO(engine)
-    Function("controlEvent") { (_: String, _: String) in } // TODO(engine)
+    AsyncFunction("startControl") { (peer: String) throws -> String in
+      try bridged { json(try Engine.startControl(peer, try self.route(peer))) }
+    }.runOnQueue(Engine.queue)
+    Function("stopControl") { (id: String) in Engine.stopControl(id) }
+    Function("controlEvent") { (id: String, event: String) throws in try bridged { try Engine.controlEvent(id, event) } }
 
     // MARK: Display receive
-    Function("getLaunchSession") { () -> [String: Any] in ["available": false, "host": "Mac", "mode": "extend"] } // TODO(engine)
-    Function("clearLaunchSession") { (_: String?) in } // TODO(engine)
-    Function("getMediaState") { () -> String in json(["state": "idle"]) } // TODO(engine)
-    AsyncFunction("getDisplayReceiverSettings") { (_: String) throws -> String in throw unavailable("Display settings") } // TODO(engine)
-    AsyncFunction("requestDisplayReceiverSettings") { (_: String, _: Double, _: String) throws -> String in throw unavailable("Display settings") } // TODO(engine)
+    Function("getLaunchSession") { () -> [String: Any] in
+      let media = Engine.displayState()
+      guard ["offered", "connecting", "streaming"].contains(media["state"] as? String ?? ""),
+            let peer = media["peer"] as? String else {
+        return ["available": false, "host": "Mac", "mode": "extend"]
+      }
+      let saved = LocalStore.peer(peer)?["name"] as? String
+      let name = saved?.isEmpty == false ? saved! : ((try? Engine.peerNames())?[peer] ?? "Paired device")
+      return ["available": true, "host": name, "mode": (media["config"] as? JSON)?["mode"] as? String ?? "extend",
+              "id": media["id"] as? String ?? ""]
+    }
+    Function("clearLaunchSession") { (id: String?) in if let id { Engine.cancelDisplay(id) } }
+    Function("getMediaState") { () -> String in json(Engine.displayState()) }
+    AsyncFunction("getDisplayReceiverSettings") { (id: String) throws -> String in
+      try bridged { json(try Engine.displayReceiverSettings(id)) }
+    }
+    AsyncFunction("requestDisplayReceiverSettings") { (id: String, revision: Double, settings: String) throws -> String in
+      try bridged {
+        try AppFocus.require("Return to the display to change settings")
+        return json(try Engine.requestDisplayReceiverSettings(id, Int64(revision), settings))
+      }
+    }
 
     // MARK: Screen sharing
-    AsyncFunction("startScreenSharing") { (_: String) -> [String: Any] in // TODO(engine)
+    AsyncFunction("startScreenSharing") { (_: String) -> [String: Any] in // TODO(sharing)
       ["started": false, "error": "Screen sharing isn't available on iPhone yet"]
     }
-    Function("getScreenSharingState") { () -> String in json(["state": "idle", "error": "", "peer": ""]) } // TODO(engine)
+    Function("getScreenSharingState") { () -> String in json(["state": "idle", "error": "", "peer": ""]) } // TODO(sharing)
     Function("getScreenSharingPreferences") { (peer: String) -> String in json(SharingOptions.read(peer)) }
     Function("setScreenSharingPreferences") { (peer: String, value: String) throws in try SharingOptions.save(peer, value) }
-    AsyncFunction("updateScreenSharingPreferences") { (_: String, _: String) -> [String: Any] in // TODO(engine)
+    AsyncFunction("updateScreenSharingPreferences") { (_: String, _: String) -> [String: Any] in // TODO(sharing)
       ["applied": false, "error": "Screen sharing isn't running", "preferences": ""]
     }
-    Function("stopScreenSharing") { } // TODO(engine)
+    Function("stopScreenSharing") { } // TODO(sharing)
 
     // MARK: Window
     Function("setImmersive") { (enabled: Bool) in

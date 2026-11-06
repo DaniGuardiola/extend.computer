@@ -22,6 +22,8 @@ use std::{
 };
 use zeroize::Zeroizing;
 
+mod usb_listener;
+
 /// Heap bytes owned by the caller until passed to `ext_buffer_free`.
 #[repr(C)]
 pub struct ExtBuffer {
@@ -622,6 +624,26 @@ pub unsafe extern "C" fn ext_push_display_frame(
 #[no_mangle]
 pub unsafe extern "C" fn ext_stop_display_sender(id: *const c_char) -> *mut c_char {
     respond(|| api::stop_display_sender(text(id, "id")?))
+}
+
+/// Listens on `127.0.0.1:port` for the desktop's usbmuxd tunnel and attaches
+/// each hello-authenticated paired host as the USB carrier. Idempotent.
+/// Returns `{"ok":{"port":..}}`.
+#[no_mangle]
+pub extern "C" fn ext_start_usb_listener(port: u16) -> *mut c_char {
+    respond(|| usb_listener::start(port))
+}
+
+/// Stops the USB listener and detaches its carrier. Safe when stopped.
+#[no_mangle]
+pub extern "C" fn ext_stop_usb_listener() -> *mut c_char {
+    respond(usb_listener::stop)
+}
+
+/// Returns `{"ok":{"listening":..,"port":..,"carrier":{"id","peer"}|null,"error":".."}}`.
+#[no_mangle]
+pub extern "C" fn ext_usb_listener_state() -> *mut c_char {
+    respond(usb_listener::state)
 }
 
 #[cfg(test)]

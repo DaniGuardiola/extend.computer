@@ -1,7 +1,8 @@
 #!/bin/sh
 # Build, sign, install and launch a standalone (JS-bundled Release) app on a USB iPhone.
 # env: IOS_DEVICE (UDID; default first paired iPhone), IOS_CONFIGURATION (Release),
-#      ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_PATH, IOS_SKIP_PREBUILD=1, IOS_NO_LAUNCH=1
+#      ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_PATH, IOS_SKIP_ENGINE=1,
+#      IOS_SKIP_PREBUILD=1, IOS_NO_LAUNCH=1
 set -eu
 cd "$(dirname "$0")/.."
 device="${IOS_DEVICE:-$(xcrun devicectl list devices 2>/dev/null | awk '/available \(paired\)/ {for(i=1;i<=NF;i++) if ($i ~ /^[0-9A-F]{8}-[0-9A-F]{16}$/) {print $i; exit}}')}"
@@ -12,6 +13,9 @@ issuer="${ASC_ISSUER_ID:-d476577a-d873-4264-895a-af18c586e3a6}"
 key="${ASC_KEY_PATH:-$HOME/.appstoreconnect/private_keys/AuthKey_${key_id}.p8}"
 bundle_id="$(node -p "require('./app.json').expo.ios.bundleIdentifier")"
 
+if [ "${IOS_SKIP_ENGINE:-0}" != 1 ]; then
+  scripts/build-engine-ios.sh
+fi
 if [ "${IOS_SKIP_PREBUILD:-0}" != 1 ]; then
   CI=1 npx expo prebuild --platform ios --no-install
   (cd ios && pod install)
