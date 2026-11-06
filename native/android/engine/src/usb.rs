@@ -252,60 +252,39 @@ pub fn snapshot() -> serde_json::Value {
         }
     }
 }
-#[no_mangle]
-pub extern "system" fn Java_computer_extend_android_NativeEngine_resolveUsbPresence(
-    env: jni::JNIEnv,
-    _: jni::objects::JClass,
-    peer: jni::objects::JString,
-    id: jni::objects::JString,
-) -> jni::sys::jstring {
-    crate::boundary(env, |env| {
-        let peer: String = env.get_string(&peer)?.into();
-        let id: String = env.get_string(&id)?.into();
-        let r = crate::RUNTIME.get().context("Engine is not initialized")?;
-        let route = route(&peer)?.context("USB signaling unavailable")?;
-        ensure!(route.id == id, "USB connection changed");
-        let socket = route.open(
-            UsbService::Presence,
-            &AtomicBool::new(false),
-            Instant::now() + Duration::from_secs(3),
-        )?;
-        let status = session::query_presence(socket, &r.identity, &peer)?
-            .context("This device no longer recognizes the pairing")?;
-        route.save_name(&r.names, &status.name)?;
-        Ok(serde_json::json!({"peer":peer,"name":status.name,"receiving":status.receiving,"route":"usb","carrier_id":route.id}).to_string())
-    })
+pub fn resolve_usb_presence(peer: &str, id: &str) -> Result<String> {
+    let r = crate::RUNTIME.get().context("Engine is not initialized")?;
+    let route = route(peer)?.context("USB signaling unavailable")?;
+    ensure!(route.id == id, "USB connection changed");
+    let socket = route.open(
+        UsbService::Presence,
+        &AtomicBool::new(false),
+        Instant::now() + Duration::from_secs(3),
+    )?;
+    let status = session::query_presence(socket, &r.identity, peer)?
+        .context("This device no longer recognizes the pairing")?;
+    route.save_name(&r.names, &status.name)?;
+    Ok(serde_json::json!({"peer":peer,"name":status.name,"receiving":status.receiving,"route":"usb","carrier_id":route.id}).to_string())
 }
-#[no_mangle]
-pub extern "system" fn Java_computer_extend_android_NativeEngine_probeUsbPeer(
-    env: jni::JNIEnv,
-    _: jni::objects::JClass,
-    peer: jni::objects::JString,
-    id: jni::objects::JString,
-) -> jni::sys::jstring {
-    crate::boundary(env, |env| {
-        let peer: String = env.get_string(&peer)?.into();
-        let id: String = env.get_string(&id)?.into();
-        let r = crate::RUNTIME.get().context("Engine is not initialized")?;
-        let route = route(&peer)?.context("USB signaling unavailable")?;
-        ensure!(route.id == id, "USB connection changed");
-        let socket = route.open(
-            UsbService::Control,
-            &AtomicBool::new(false),
-            Instant::now() + Duration::from_secs(3),
-        )?;
-        let mut client =
-            Client::connect(socket, &r.identity, &r.trust, None, Some(&peer), |_, _| {
-                Decision::Deny
-            })?;
-        let latency = client.probe()?.as_secs_f64() * 1000.;
-        client.close()?;
-        ensure!(route.current(), "USB connection changed");
-        Ok(
-            serde_json::json!({"peer":peer,"rtt_ms":latency,"route":"usb","carrier_id":route.id})
-                .to_string(),
-        )
-    })
+pub fn probe_usb_peer(peer: &str, id: &str) -> Result<String> {
+    let r = crate::RUNTIME.get().context("Engine is not initialized")?;
+    let route = route(peer)?.context("USB signaling unavailable")?;
+    ensure!(route.id == id, "USB connection changed");
+    let socket = route.open(
+        UsbService::Control,
+        &AtomicBool::new(false),
+        Instant::now() + Duration::from_secs(3),
+    )?;
+    let mut client = Client::connect(socket, &r.identity, &r.trust, None, Some(peer), |_, _| {
+        Decision::Deny
+    })?;
+    let latency = client.probe()?.as_secs_f64() * 1000.;
+    client.close()?;
+    ensure!(route.current(), "USB connection changed");
+    Ok(
+        serde_json::json!({"peer":peer,"rtt_ms":latency,"route":"usb","carrier_id":route.id})
+            .to_string(),
+    )
 }
 #[cfg(test)]
 #[path = "usb_tests.rs"]

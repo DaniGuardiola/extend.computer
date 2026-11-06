@@ -115,91 +115,68 @@ pub(super) fn cancel_retired(runtime: &Runtime, previous: BTreeMap<String, Strin
     }
     Ok(())
 }
-#[no_mangle]
-pub extern "system" fn Java_computer_extend_android_NativeEngine_replaceAccountPeers(
-    env: JNIEnv,
-    _: JClass,
-    scope: JString,
-    raw: JString,
-) -> jstring {
-    boundary(env, |env| {
-        let scope: String = env.get_string(&scope)?.into();
-        ensure!(
-            !scope.is_empty() && scope.len() <= 2048 && !scope.chars().any(char::is_control),
-            "Invalid account scope"
-        );
-        let raw: String = env.get_string(&raw)?.into();
-        let runtime = RUNTIME.get().context("Engine is not initialized")?;
-        let members = directory(&raw, &runtime.identity.fingerprint())?;
-        let names = members
-            .iter()
-            .map(|(fp, m)| (fp.clone(), m.name.clone()))
-            .collect::<BTreeMap<_, _>>();
-        let devices = members
-            .into_iter()
-            .map(|(fp, m)| (fp, m.device))
-            .collect::<BTreeMap<_, _>>();
-        {
-            let mut routes = runtime.account.routes.lock().unwrap();
-            if routes.scope != scope {
-                runtime.relay.configure(None)?;
-            }
-            for (peer, old_id) in &routes.devices {
-                if devices.get(peer) != Some(old_id) {
-                    runtime.relay.cancel_peer(peer);
-                }
-            }
-            *routes = Routes {
-                scope: scope.clone(),
-                until: Some(std::time::Instant::now() + Duration::from_secs(90)),
-                devices,
-            };
-        }
-        let previous =
-            std::mem::replace(&mut *runtime.account.names.lock().unwrap(), names.clone());
-        runtime.account.trust.replace(
-            &scope,
-            &names.keys().cloned().collect::<Vec<_>>(),
-            Duration::from_secs(90),
-        );
-        cancel_retired(runtime, previous)?;
-        Ok("{}".into())
-    })
-}
-#[no_mangle]
-pub extern "system" fn Java_computer_extend_android_NativeEngine_clearAccountPeers(
-    env: JNIEnv,
-    _: JClass,
-) -> jstring {
-    boundary(env, |_| {
-        if let Some(runtime) = RUNTIME.get() {
+pub fn replace_account_peers(scope: &str, raw: &str) -> Result<String> {
+    ensure!(
+        !scope.is_empty() && scope.len() <= 2048 && !scope.chars().any(char::is_control),
+        "Invalid account scope"
+    );
+    let runtime = RUNTIME.get().context("Engine is not initialized")?;
+    let members = directory(raw, &runtime.identity.fingerprint())?;
+    let names = members
+        .iter()
+        .map(|(fp, m)| (fp.clone(), m.name.clone()))
+        .collect::<BTreeMap<_, _>>();
+    let devices = members
+        .into_iter()
+        .map(|(fp, m)| (fp, m.device))
+        .collect::<BTreeMap<_, _>>();
+    {
+        let mut routes = runtime.account.routes.lock().unwrap();
+        if routes.scope != scope {
             runtime.relay.configure(None)?;
-            *runtime.account.routes.lock().unwrap() = Routes::default();
-            let previous = std::mem::take(&mut *runtime.account.names.lock().unwrap());
-            runtime.account.trust.clear();
-            cancel_retired(runtime, previous)?;
         }
-        Ok("{}".into())
-    })
-}
-#[no_mangle]
-pub extern "system" fn Java_computer_extend_android_NativeEngine_accountPeerNames(
-    env: JNIEnv,
-    _: JClass,
-) -> jstring {
-    boundary(env, |_| {
-        let Some(runtime) = RUNTIME.get() else {
-            return Ok("{}".into());
-        };
-        let names = runtime.account.names.lock().unwrap();
-        let mut available = BTreeMap::new();
-        for (peer, name) in names.iter() {
-            if runtime.trust.peer(peer)?.is_some() && runtime.trust.is_account_peer(peer)? {
-                available.insert(peer, name);
+        for (peer, old_id) in &routes.devices {
+            if devices.get(peer) != Some(old_id) {
+                runtime.relay.cancel_peer(peer);
             }
         }
-        Ok(serde_json::to_string(&available)?)
-    })
+        *routes = Routes {
+            scope: scope.to_owned(),
+            until: Some(std::time::Instant::now() + Duration::from_secs(90)),
+            devices,
+        };
+    }
+    let previous = std::mem::replace(&mut *runtime.account.names.lock().unwrap(), names.clone());
+    runtime.account.trust.replace(
+        scope,
+        &names.keys().cloned().collect::<Vec<_>>(),
+        Duration::from_secs(90),
+    );
+    cancel_retired(runtime, previous)?;
+    Ok("{}".into())
+}
+pub fn clear_account_peers() -> Result<String> {
+    if let Some(runtime) = RUNTIME.get() {
+        runtime.relay.configure(None)?;
+        *runtime.account.routes.lock().unwrap() = Routes::default();
+        let previous = std::mem::take(&mut *runtime.account.names.lock().unwrap());
+        runtime.account.trust.clear();
+        cancel_retired(runtime, previous)?;
+    }
+    Ok("{}".into())
+}
+pub fn account_peer_names() -> Result<String> {
+    let Some(runtime) = RUNTIME.get() else {
+        return Ok("{}".into());
+    };
+    let names = runtime.account.names.lock().unwrap();
+    let mut available = BTreeMap::new();
+    for (peer, name) in names.iter() {
+        if runtime.trust.peer(peer)?.is_some() && runtime.trust.is_account_peer(peer)? {
+            available.insert(peer, name);
+        }
+    }
+    Ok(serde_json::to_string(&available)?)
 }
 #[cfg(test)]
 mod tests {

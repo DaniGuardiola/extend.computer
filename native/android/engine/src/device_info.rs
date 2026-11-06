@@ -1,7 +1,9 @@
 //! Presentation-only hardware classification from the configured application resources.
 use extend_computer_agent::device_info::DeviceKind;
+#[cfg(target_os = "android")]
 use jni::{objects::JObject, JNIEnv};
 
+#[cfg(target_os = "android")]
 pub(super) fn detect(env: &mut JNIEnv, context: &JObject) -> DeviceKind {
     let width = (|| -> jni::errors::Result<i32> {
         let resources = env
@@ -34,6 +36,7 @@ pub(super) fn detect(env: &mut JNIEnv, context: &JObject) -> DeviceKind {
     }
 }
 
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
 fn classify(smallest_width_dp: i32) -> DeviceKind {
     match smallest_width_dp {
         ..=0 => DeviceKind::Unknown,

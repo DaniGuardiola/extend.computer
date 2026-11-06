@@ -113,88 +113,54 @@ pub(super) fn endpoint_optional(address: &str) -> Result<Option<SocketAddr>> {
         Ok(Some(super::endpoint(address)?))
     }
 }
-#[no_mangle]
-pub extern "system" fn Java_computer_extend_android_NativeEngine_configureAccountRelay(
-    env: JNIEnv,
-    _: JClass,
-    server: JString,
-    scope: JString,
-    device: JString,
-    token: JString,
-    fingerprint: JString,
-) -> jstring {
-    boundary(env, |env| {
-        let server: String = env.get_string(&server)?.into();
-        let scope: String = env.get_string(&scope)?.into();
-        let device: String = env.get_string(&device)?.into();
-        let token = Zeroizing::new(String::from(env.get_string(&token)?));
-        let fingerprint: String = env.get_string(&fingerprint)?.into();
-        let r = runtime()?;
+pub fn configure_account_relay(
+    server: &str,
+    scope: &str,
+    device: &str,
+    token: &str,
+    fingerprint: &str,
+) -> Result<String> {
+    let r = runtime()?;
+    ensure!(
+        fingerprint == r.identity.fingerprint(),
+        "Registered account identity mismatch"
+    );
+    {
+        let routes = r.account.routes.lock().unwrap();
         ensure!(
-            fingerprint == r.identity.fingerprint(),
-            "Registered account identity mismatch"
+            routes.fresh() && routes.scope == scope,
+            "Account directory changed"
         );
-        {
-            let routes = r.account.routes.lock().unwrap();
-            ensure!(
-                routes.fresh() && routes.scope == scope,
-                "Account directory changed"
-            );
-        }
-        r.relay.configure(Some(Credentials {
-            server,
-            scope,
-            device,
-            token,
-        }))?;
-        r.relay.start(Arc::new(AndroidPolicy));
-        Ok("{}".into())
-    })
+    }
+    r.relay.configure(Some(Credentials {
+        server: server.to_owned(),
+        scope: scope.to_owned(),
+        device: device.to_owned(),
+        token: Zeroizing::new(token.to_owned()),
+    }))?;
+    r.relay.start(Arc::new(AndroidPolicy));
+    Ok("{}".into())
 }
-#[no_mangle]
-pub extern "system" fn Java_computer_extend_android_NativeEngine_resolveAccountPresence(
-    env: JNIEnv,
-    _: JClass,
-    peer: JString,
-    refresh: jni::sys::jboolean,
-) -> jstring {
-    boundary(env, |env| {
-        let peer: String = env.get_string(&peer)?.into();
-        let r = runtime()?;
-        let socket = tunnel(
-            r,
-            &peer,
-            "presence",
-            refresh != 0,
-            Arc::new(Default::default()),
-        )?;
-        let status = session::query_presence(socket, &r.identity, &peer)?
-            .context("This device no longer recognizes the pairing")?;
-        current_device(r, &peer)?;
-        r.names.save(&peer, &status.name)?;
-        // Never persist loopback as a discovered LAN address.
-        Ok(serde_json::json!({"peer":peer,"name":status.name,"receiving":status.receiving,"route":"internet"}).to_string())
-    })
+pub fn resolve_account_presence(peer: &str, refresh: bool) -> Result<String> {
+    let r = runtime()?;
+    let socket = tunnel(r, peer, "presence", refresh, Arc::new(Default::default()))?;
+    let status = session::query_presence(socket, &r.identity, peer)?
+        .context("This device no longer recognizes the pairing")?;
+    current_device(r, peer)?;
+    r.names.save(peer, &status.name)?;
+    // Never persist loopback as a discovered LAN address.
+    Ok(serde_json::json!({"peer":peer,"name":status.name,"receiving":status.receiving,"route":"internet"}).to_string())
 }
-#[no_mangle]
-pub extern "system" fn Java_computer_extend_android_NativeEngine_probeAccountPeer(
-    env: JNIEnv,
-    _: JClass,
-    peer: JString,
-) -> jstring {
-    boundary(env, |env| {
-        let peer: String = env.get_string(&peer)?.into();
-        let r = runtime()?;
-        let socket = tunnel(r, &peer, "control", true, Arc::new(Default::default()))?;
-        let mut client =
-            Client::connect(socket, &r.identity, &r.trust, None, Some(&peer), |_, _| {
-                Decision::Deny
-            })?;
-        let latency = client.probe()?.as_secs_f64() * 1000.;
-        client.close()?;
-        current_device(r, &peer)?;
-        Ok(serde_json::json!({"peer":peer,"rtt_ms":latency,"route":"internet"}).to_string())
-    })
+pub fn probe_account_peer(peer: &str) -> Result<String> {
+    let r = runtime()?;
+    let socket = tunnel(r, peer, "control", true, Arc::new(Default::default()))?;
+    let mut client = Client::connect(socket, &r.identity, &r.trust, None, Some(peer), |_, _| {
+        Decision::Deny
+    })?;
+    let latency = client.probe()?.as_secs_f64() * 1000.;
+    client.close()?;
+    current_device(r, peer)?;
+    Ok(serde_json::json!({"peer":peer,"rtt_ms":latency,"route":"internet"}).to_string())
 }
 
 #[cfg(test)]

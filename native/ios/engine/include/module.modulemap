@@ -1,0 +1,4 @@
+module ExtendEngine {
+    header "ExtendEngine.h"
+    export *
+}

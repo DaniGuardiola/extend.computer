@@ -730,6 +730,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "extend-ios-engine"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "extend-android-engine",
+ "serde_json",
+ "zeroize",
+]
+
+[[package]]
 name = "fastrand"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
