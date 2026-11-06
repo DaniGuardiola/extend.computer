@@ -333,7 +333,7 @@ physical encrypted-media check with availability on and Devices visible:
 ```sh
 xcrun swiftc -O -parse-as-library -module-cache-path "$PWD/target/DisplayModuleCache" \
   native/macos/display/Metrics.swift native/macos/display/BenchmarkMarker.swift \
-  native/macos/display/VideoCodec.swift scripts/android/media-pattern.swift \
+  native/apple/shared/VideoDecoding.swift native/macos/display/VideoCodec.swift scripts/android/media-pattern.swift \
   -o native/android/.local/media-pattern
 native/android/.local/media-pattern h264 > native/android/.local/media-pattern.h264.frames
 native/android/.local/media-pattern hevc > native/android/.local/media-pattern.hevc.frames

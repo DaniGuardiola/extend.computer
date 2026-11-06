@@ -28,26 +28,6 @@ func reportPixelColor(_ image: CVPixelBuffer, stage: String) {
     }
 }
 
-struct DisplayFailure: Error, CustomStringConvertible {
-    let description: String
-    init(_ description: String) { self.description = description }
-}
-func check(_ status: OSStatus, _ operation: String) throws {
-    guard status == noErr else { throw DisplayFailure("\(operation) failed (\(status)).") }
-}
-
-// Complete encoded access units, not individually queued NALs.
-struct VideoFrame {
-    let timestamp: UInt64
-    let keyframe: Bool
-    let bytes: Data
-}
-
-enum VideoCodec: String {
-    case h264, hevc
-    var type: CMVideoCodecType { self == .hevc ? kCMVideoCodecType_HEVC : kCMVideoCodecType_H264 }
-}
-
 // Automatic preference may retry session creation with the standard hardware
 // encoder. Explicit "1" is strict so diagnostic comparisons never silently
 // switch modes; configuration/prepare failures are never swallowed.
@@ -366,142 +346,21 @@ final class VideoEncoder {
     deinit { drain(); if let session { VTCompressionSessionInvalidate(session) } }
 }
 
-func annexBNALs(_ data: Data) throws -> [Data] {
-    guard data.count <= 16 * 1024 * 1024 else { throw DisplayFailure("Video frame too large.") }
-    // Inspect the owned access unit in place. Copying it into a byte array first
-    // adds a full-frame allocation on every decode; returned NALs still own
-    // their bytes after this scoped borrow ends.
-    return try data.withUnsafeBytes { raw in
-        let bytes = raw.bindMemory(to: UInt8.self)
-        var starts: [(Int, Int)] = []; var i = 0
-        while i + 3 <= bytes.count {
-            if bytes[i] == 0 && bytes[i+1] == 0 {
-                if bytes[i+2] == 1 { starts.append((i, i+3)); i += 3; continue }
-                if i+3 < bytes.count && bytes[i+2] == 0 && bytes[i+3] == 1 { starts.append((i, i+4)); i += 4; continue }
-            }
-            i += 1
-        }
-        guard starts.first?.0 == 0 else { throw DisplayFailure("Invalid video access unit.") }
-        return try starts.enumerated().map { index, start in
-            let end = index+1 < starts.count ? starts[index+1].0 : bytes.count
-            guard end > start.1 else { throw DisplayFailure("Empty video NAL.") }
-            return Data(bytes[start.1..<end])
-        }
-    }
-}
 
-final class VideoDecoder {
-    // RTP pacing can deliver a short frame burst. Keep that burst bounded while
-    // preserving reference frames instead of resetting the decoder on each overlap.
-    private let inFlight = DispatchSemaphore(value: 4)
-    private var session: VTDecompressionSession?
-    private var format: CMVideoFormatDescription?
-    private let codec: VideoCodec
-    private var vps: Data?; private var sps: Data?; private var pps: Data?
-    private let output: (CVPixelBuffer, UInt64) -> Void
-    private let failure: () -> Void
-    private var benchmarkMarker: BenchmarkMarker?
-    private let markerLock = NSLock()
-    private var reportedColor = false
-    private func observeColor(_ image: CVPixelBuffer) {
-        markerLock.lock(); let first = !reportedColor; reportedColor = true; markerLock.unlock()
-        if first { reportPixelColor(image, stage: "decoded") }
+// The decoder itself lives in native/apple/shared/VideoDecoding.swift. The
+// helper keeps its telemetry: metrics, first-frame color report and marker.
+extension VideoDecoder {
+    convenience init(codec: VideoCodec = .h264, benchmarkMarker: BenchmarkMarker?,
+                     output: @escaping (CVPixelBuffer, UInt64) -> Void, failure: @escaping () -> Void = {}) {
+        self.init(codec: codec, metric: { DisplayMetrics.shared.event($0, timestamp: $1, bytes: $2) },
+            output: output, failure: failure)
+        setFirstOutput { reportPixelColor($0, stage: "decoded") }
+        if let benchmarkMarker { observeMarker(benchmarkMarker) }
     }
     func configureMarker(width: Int, height: Int) {
-        markerLock.lock(); defer { markerLock.unlock() }
-        benchmarkMarker = BenchmarkMarker(logicalWidth: width, logicalHeight: height)
+        observeMarker(BenchmarkMarker(logicalWidth: width, logicalHeight: height))
     }
-    private func observeMarker(_ image: CVPixelBuffer, timestamp: UInt64) {
-        markerLock.lock(); let marker = benchmarkMarker; markerLock.unlock()
-        marker?.event("decoded_marker", image: image, timestamp: timestamp)
+    private func observeMarker(_ marker: BenchmarkMarker?) {
+        setObserver(marker.map { marker in { image, timestamp in marker.event("decoded_marker", image: image, timestamp: timestamp) } })
     }
-    init(codec: VideoCodec = .h264, benchmarkMarker: BenchmarkMarker? = nil,
-         output: @escaping (CVPixelBuffer, UInt64) -> Void, failure: @escaping () -> Void = {}) {
-        self.codec = codec; self.benchmarkMarker = benchmarkMarker; self.output = output; self.failure = failure
-    }
-    func decode(_ frame: VideoFrame) throws {
-        guard inFlight.wait(timeout: .now()) == .success else {
-            DisplayMetrics.shared.event("decoder_busy", timestamp: frame.timestamp)
-            throw DisplayFailure("Decoder is busy; requesting a fresh keyframe.")
-        }
-        var submitted = false
-        defer { if !submitted { inFlight.signal() } }
-        let nals = try annexBNALs(frame.bytes)
-        var picture = Data(); var changed = false
-        for nal in nals {
-            guard codec == .h264 || nal.count >= 2 else { throw DisplayFailure("Truncated HEVC NAL.") }
-            let type = codec == .hevc ? (nal[0] >> 1) & 63 : nal[0] & 31
-            if codec == .hevc && type == 32 { changed = changed || vps != nal; vps = nal; continue }
-            if type == (codec == .hevc ? 33 : 7) { changed = changed || sps != nal; sps = nal; continue }
-            if type == (codec == .hevc ? 34 : 8) { changed = changed || pps != nal; pps = nal; continue }
-            var length = UInt32(nal.count).bigEndian
-            withUnsafeBytes(of: &length) { picture.append(contentsOf: $0) }; picture.append(nal)
-        }
-        if changed || session == nil {
-            guard frame.keyframe, let sps, let pps else { return }
-            if let session {
-                VTDecompressionSessionWaitForAsynchronousFrames(session)
-                VTDecompressionSessionInvalidate(session); self.session = nil
-            }
-            guard codec != .hevc || vps != nil else { return }
-            let parameters = codec == .hevc ? [vps!, sps, pps] : [sps, pps]
-            // NSData owns stable parameter-set storage for the C API call.
-            let storage = parameters.map { $0 as NSData }
-            var pointers = storage.map { $0.bytes.assumingMemoryBound(to: UInt8.self) }
-            var sizes = storage.map { $0.length }
-            let status = codec == .hevc
-                ? CMVideoFormatDescriptionCreateFromHEVCParameterSets(allocator: nil, parameterSetCount: 3,
-                    parameterSetPointers: &pointers, parameterSetSizes: &sizes, nalUnitHeaderLength: 4,
-                    extensions: nil, formatDescriptionOut: &format)
-                : CMVideoFormatDescriptionCreateFromH264ParameterSets(allocator: nil, parameterSetCount: 2,
-                    parameterSetPointers: &pointers, parameterSetSizes: &sizes, nalUnitHeaderLength: 4,
-                    formatDescriptionOut: &format)
-            try check(status, "Configure video decoder")
-            var callback = VTDecompressionOutputCallbackRecord(decompressionOutputCallback: { context, _, status, _, image, pts, _ in
-                guard let context else { return }
-                let decoder = Unmanaged<VideoDecoder>.fromOpaque(context).takeUnretainedValue()
-                defer { decoder.inFlight.signal() }
-                guard status == noErr, let image else { decoder.failure(); return }
-                let timestamp = UInt64(max(0, CMTimeGetSeconds(pts)) * 1e9)
-                DisplayMetrics.shared.event("decoded", timestamp: timestamp)
-                decoder.observeColor(image)
-                decoder.observeMarker(image, timestamp: timestamp)
-                decoder.output(image, timestamp)
-            }, decompressionOutputRefCon: Unmanaged.passUnretained(self).toOpaque())
-            try check(VTDecompressionSessionCreate(allocator: nil, formatDescription: format!,
-                decoderSpecification: [kVTVideoDecoderSpecification_EnableHardwareAcceleratedVideoDecoder: true] as CFDictionary,
-                imageBufferAttributes: [kCVPixelBufferMetalCompatibilityKey: true] as CFDictionary,
-                outputCallback: &callback, decompressionSessionOut: &session), "Create native decoder")
-            if let session {
-                var hardware: Unmanaged<CFTypeRef>?
-                if VTSessionCopyProperty(session, key: kVTDecompressionPropertyKey_UsingHardwareAcceleratedVideoDecoder,
-                    allocator: nil, valueOut: &hardware) == noErr, let active = hardware?.takeRetainedValue() as? NSNumber {
-                    DisplayMetrics.shared.event("decoder_hardware", bytes: active.boolValue ? 1 : 0)
-                }
-            }
-        }
-        guard !picture.isEmpty, let format, let session else { return }
-        var block: CMBlockBuffer?
-        try check(CMBlockBufferCreateWithMemoryBlock(allocator: nil, memoryBlock: nil, blockLength: picture.count,
-            blockAllocator: nil, customBlockSource: nil, offsetToData: 0, dataLength: picture.count, flags: 0,
-            blockBufferOut: &block), "Allocate decode buffer")
-        try picture.withUnsafeBytes { b in try check(CMBlockBufferReplaceDataBytes(with: b.baseAddress!, blockBuffer: block!,
-            offsetIntoDestination: 0, dataLength: picture.count), "Copy decode frame") }
-        var size = picture.count
-        var timing = CMSampleTimingInfo(duration: .invalid, presentationTimeStamp: CMTime(value: Int64(frame.timestamp), timescale: 1_000_000_000), decodeTimeStamp: .invalid)
-        var sample: CMSampleBuffer?
-        try check(CMSampleBufferCreateReady(allocator: nil, dataBuffer: block, formatDescription: format,
-            sampleCount: 1, sampleTimingEntryCount: 1, sampleTimingArray: &timing,
-            sampleSizeEntryCount: 1, sampleSizeArray: &size, sampleBufferOut: &sample), "Create decode sample")
-        DisplayMetrics.shared.event("decoder_submitted", timestamp: frame.timestamp)
-        let callStarted = DispatchTime.now().uptimeNanoseconds
-        let status = VTDecompressionSessionDecodeFrame(session, sampleBuffer: sample!, flags: [._EnableAsynchronousDecompression],
-            frameRefcon: nil, infoFlagsOut: nil)
-        DisplayMetrics.shared.event("decoder_call_us", timestamp: frame.timestamp,
-            bytes: Int((DispatchTime.now().uptimeNanoseconds - callStarted) / 1000))
-        try check(status, "Decode frame")
-        submitted = true
-    }
-    func drain() { if let session { VTDecompressionSessionWaitForAsynchronousFrames(session) } }
-    deinit { drain(); if let session { VTDecompressionSessionInvalidate(session) } }
 }

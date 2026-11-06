@@ -204,66 +204,25 @@ final class CursorCapture: @unchecked Sendable {
     deinit { stop() }
 }
 
-struct CursorPosition: Decodable {
-    let revision: UInt64, sequence: UInt64
-    let x: Double, y: Double, visible: Bool
-}
-struct CursorShape: Decodable {
-    let revision: UInt64, png: String
-    let width: Double, height: Double, hotspot_x: Double, hotspot_y: Double
-}
-
+// Packet parsing, latest-wins state and letterbox geometry are shared with the
+// iOS receiver: native/apple/shared/CursorPacket.swift.
 final class CursorOverlay {
     let layer = CALayer()
-    private var shape: CursorShape?
-    private var position: CursorPosition?
-    private var lastSequence: UInt64 = 0
+    private var state = CursorState()
     private var lastVisibleRevision: UInt64 = 0
-    private var lastPosition = Date.distantPast
     init() {
         layer.isHidden = true
         layer.actions = ["position": NSNull(), "bounds": NSNull(), "contents": NSNull(), "hidden": NSNull()]
     }
     func apply(_ bytes: Data, viewport: CGRect, source: CGSize) throws {
-        guard bytes.count <= 128 * 1024 else { throw DisplayFailure("Cursor packet too large.") }
-        let object = try JSONSerialization.jsonObject(with: bytes) as? [String: Any]
-        if object?["png"] != nil {
-            let next = try JSONDecoder().decode(CursorShape.self, from: bytes)
-            guard next.width.isFinite, next.height.isFinite, next.width > 0, next.height > 0,
-                next.width <= 512, next.height <= 512,
-                next.hotspot_x.isFinite, next.hotspot_y.isFinite,
-                (0...next.width).contains(next.hotspot_x), (0...next.height).contains(next.hotspot_y),
-                let data = Data(base64Encoded: next.png), data.count <= 90 * 1024,
-                let imageSource = CGImageSourceCreateWithData(data as CFData, nil),
-                let properties = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [CFString: Any],
-                let width = properties[kCGImagePropertyPixelWidth] as? Int,
-                let height = properties[kCGImagePropertyPixelHeight] as? Int,
-                width > 0, height > 0, width <= 512, height <= 512,
-                let image = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) else {
-                throw DisplayFailure("Invalid cursor image.")
-            }
-            if next.revision >= (shape?.revision ?? 0) { shape = next; layer.contents = image }
-        } else {
-            let next = try JSONDecoder().decode(CursorPosition.self, from: bytes)
-            guard next.x.isFinite, next.y.isFinite, (0...1).contains(next.x), (0...1).contains(next.y) else {
-                throw DisplayFailure("Invalid cursor position.")
-            }
-            if next.sequence > lastSequence { position = next; lastSequence = next.sequence; lastPosition = Date() }
-        }
+        if let image = state.apply(try CursorPacket.parse(bytes)) { layer.contents = image }
         layout(viewport: viewport, source: source)
     }
     func layout(viewport: CGRect, source: CGSize) {
-        guard let shape, let position, shape.revision == position.revision, position.visible,
-              Date().timeIntervalSince(lastPosition) < 2, source.width > 0, source.height > 0 else {
+        guard let shape = state.shape, let frame = state.frame(viewport: viewport, source: source, yUp: true) else {
             layer.isHidden = true; return
         }
-        let scale = min(viewport.width / source.width, viewport.height / source.height)
-        let fitted = CGRect(x: viewport.midX - source.width * scale / 2,
-                            y: viewport.midY - source.height * scale / 2,
-                            width: source.width * scale, height: source.height * scale)
-        layer.frame = CGRect(x: fitted.minX + position.x * fitted.width - shape.hotspot_x * scale,
-                             y: fitted.maxY - position.y * fitted.height - (shape.height - shape.hotspot_y) * scale,
-                             width: shape.width * scale, height: shape.height * scale)
+        layer.frame = frame
         layer.isHidden = false
         if shape.revision != lastVisibleRevision {
             lastVisibleRevision = shape.revision

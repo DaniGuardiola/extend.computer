@@ -10,7 +10,7 @@ struct DisplayFailure: Error { init(_ description: String) {} }
 EOF
 xcrun swiftc -module-cache-path "$PWD/target/display-fixture-tests/cache" \
     native/macos/input/InputModel.swift native/macos/input/DisplayInputModel.swift \
-    native/macos/display/Metrics.swift native/macos/display/Cursor.swift native/macos/display/ViewerInput.swift \
+    native/macos/display/Metrics.swift native/apple/shared/CursorPacket.swift native/macos/display/Cursor.swift native/macos/display/ViewerInput.swift \
     target/display-fixture-tests/stubs.swift native/macos/tests/DisplayHelperFixtureTests.swift \
     -o target/display-fixture-tests/display-fixture-tests
 target/display-fixture-tests/display-fixture-tests
