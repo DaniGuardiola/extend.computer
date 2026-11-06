@@ -124,7 +124,8 @@ export function DeviceRow({
   const canManageUsb =
     native &&
     navigator.platform.startsWith("Mac") &&
-    (!platform || platform.toLowerCase() === "android");
+    (!platform ||
+      ["android", "ios", "ipados"].includes(platform.toLowerCase()));
   const [settings, setSettings] = useState(false);
   const [confirmUnpair, setConfirmUnpair] = useState(false);
   const [device, setDevice] = useState<Device>({

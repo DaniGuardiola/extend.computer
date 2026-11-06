@@ -73,10 +73,10 @@ fn setup() -> (tempfile::TempDir, Arc<Server>, Router) {
 }
 
 #[tokio::test]
-async fn android_and_desktop_platforms_register_without_accepting_unknown_platforms() {
+async fn mobile_and_desktop_platforms_register_without_accepting_unknown_platforms() {
     let (_dir, _server, app) = setup();
     let token = signup(&app, "platforms@example.invalid").await;
-    for (index, platform) in ["macos", "windows", "linux", "android"].iter().enumerate() {
+    for (index, platform) in ["macos", "windows", "linux", "android", "ios"].iter().enumerate() {
         let (status, device) = request(&app, "POST", "/v1/devices", Some(&token),
             json!({"name":"Platform test", "platform":platform,"public_key":hex::encode([index as u8 + 1; 32])})).await;
         assert_eq!(status, StatusCode::OK, "{platform}: {device}");
@@ -128,7 +128,7 @@ async fn android_and_desktop_platforms_register_without_accepting_unknown_platfo
             StatusCode::UNAUTHORIZED
         );
     }
-    for platform in ["unknown", "Android", "", "ios"] {
+    for platform in ["unknown", "Android", "", "iOS"] {
         assert_eq!(request(&app, "POST", "/v1/devices", Some(&token),
             json!({"name":"Invalid platform", "platform":platform,"public_key":hex::encode([9; 32])})).await.0, StatusCode::BAD_REQUEST);
     }

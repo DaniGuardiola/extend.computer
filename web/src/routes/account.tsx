@@ -477,7 +477,7 @@ function Dashboard() {
                     <div className="device-icon w-[46px] h-[46px] bg-app-panel [border:1px_solid_var(--line)] rounded-[6px] grid place-items-center text-app-device shrink-0">
                       {device.platform === 'macos' ? (
                         <Laptop size={22} />
-                      ) : device.platform === 'android' ? (
+                      ) : device.platform === 'android' || device.platform === 'ios' ? (
                         <Smartphone size={22} />
                       ) : (
                         <Monitor size={22} />

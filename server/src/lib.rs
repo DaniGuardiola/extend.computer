@@ -489,7 +489,7 @@ async fn register_device(
             "Device name must contain 1 to 128 bytes without control characters",
         ));
     }
-    if !["macos", "windows", "linux", "android"].contains(&input.platform.as_str()) {
+    if !["macos", "windows", "linux", "android", "ios"].contains(&input.platform.as_str()) {
         return Err(ApiError::bad("Unsupported platform"));
     }
     server.work(move |db| {
