@@ -4,6 +4,22 @@ import { Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { display } from "../../modules/extend-display";
 import { Header } from "../components/Header";
+import { isIOS } from "../platform";
+
+// Android asks through MediaProjection; iOS uses the system broadcast picker
+// (ReplayKit), which always shares the whole screen and stops from Control
+// Center or the status bar indicator.
+const copy = isIOS ? {
+  intro: "Show your screen on this device. iOS will ask you to start a screen broadcast. Choose extend.computer, then Start Broadcast.",
+  consent: "Choose extend.computer, then Start Broadcast",
+  stopFailed: "Couldn't stop sharing. Tap the red screen recording indicator to stop.",
+} : {
+  intro: "Show your screen on this device. Android will ask which screen or app to share.",
+  consent: "Choose what to share in Android’s dialog",
+  stopFailed: "Couldn't stop sharing. Use Android’s screen sharing indicator to stop.",
+};
+// ReplayKit delivers at most 60 frames per second.
+const frameRates = isIOS ? [30, 60] : [30, 60, 120];
 
 type Preferences = { resolution: "fit" | "1280" | "1920"; fps: number; quality: "responsive" | "balanced" | "detail"; codec: "h264" | "hevc" };
 function Choices<T extends string | number>({ label, value, options, disabled, onChange }: {
@@ -71,21 +87,21 @@ export default function ShareScreen() {
     <ScrollView contentContainerClassName="mx-auto w-full max-w-3xl gap-5 px-5 py-6">
       <View className="gap-3 rounded-2xl border border-line bg-surface p-5">
         <Text className="text-lg font-semibold text-ink">{name || "Paired device"}</Text>
-        <Text className="text-sm leading-6 text-muted">Show your screen on this device. Android will ask which screen or app to share.</Text>
+        <Text className="text-sm leading-6 text-muted">{copy.intro}</Text>
         <Choices label="Resolution" value={preferences.resolution} disabled={settingsDisabled} onChange={resolution => void change({ resolution })}
           options={[{value:"1280",label:"1280 px"},{value:"1920",label:"1920 px"},{value:"fit",label:"Fit screen"}]} />
         <Choices label="Frame rate" value={preferences.fps} disabled={settingsDisabled} onChange={fps => void change({ fps })}
-          options={[30,60,120].map(value => ({value,label:`${value} FPS`}))} />
+          options={frameRates.map(value => ({value,label:`${value} FPS`}))} />
         <Choices label="Video quality" value={preferences.quality} disabled={settingsDisabled} onChange={quality => void change({ quality })}
           options={[{value:"responsive",label:"Lower bandwidth · 8 Mbps"},{value:"balanced",label:"Balanced · 20 Mbps"},{value:"detail",label:"Detail · 40 Mbps"}]} />
         <Choices label="Video codec" value={preferences.codec} disabled={active || busy} onChange={codec => void change({ codec })}
           options={[{value:"h264",label:"H.264"},{value:"hevc",label:"HEVC"}]} />
         {active ? <Text className="text-sm text-muted">Stop sharing to change the video codec.</Text> : null}
         {busy && sharing.state === "streaming" ? <Text accessibilityLiveRegion="polite" className="text-sm text-muted">Applying settings…</Text> : null}
-        <Text accessibilityLiveRegion="polite" className="text-sm text-ink">{sharing.state === "streaming" ? "Sharing your screen" : sharing.state === "connecting" ? "Connecting…" : sharing.state === "consent" ? "Choose what to share in Android’s dialog" : "Screen sharing is off"}</Text>
+        <Text accessibilityLiveRegion="polite" className="text-sm text-ink">{sharing.state === "streaming" ? "Sharing your screen" : sharing.state === "connecting" ? "Connecting…" : sharing.state === "consent" ? copy.consent : "Screen sharing is off"}</Text>
         {error || sharing.error ? <Text accessibilityRole="alert" className="text-sm text-muted">{error || sharing.error}</Text> : null}
         {active ? <Pressable accessibilityRole="button" accessibilityLabel="Stop sharing" onPress={() => {
-          try { display.stopScreenSharing(); } catch { setError("Couldn't stop sharing. Use Android’s screen sharing indicator to stop."); }
+          try { display.stopScreenSharing(); } catch { setError(copy.stopFailed); }
         }} className="min-h-12 items-center justify-center rounded-xl bg-focus px-4"><Text className="font-medium text-canvas">Stop sharing</Text></Pressable>
           : <Pressable accessibilityRole="button" accessibilityLabel="Start sharing" disabled={busy || !peer} onPress={() => void start()}
             className="min-h-12 items-center justify-center rounded-xl bg-focus px-4 disabled:opacity-50"><Text className="font-medium text-canvas">{busy ? "Connecting…" : "Start sharing"}</Text></Pressable>}

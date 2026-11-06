@@ -127,8 +127,14 @@ export const display = requireNativeModule<{
   getIncomingPairing(): string;
   respondIncomingPairing(request: string, allow: boolean): void;
   stopIncomingPairing(): void;
+  /** iOS: availability lasts only while the app is in the foreground (no foreground service). */
   setReceivingEnabled(enabled: boolean): void;
   getReceivingState(): string;
+  /**
+   * Android only. iOS has no public API to inject input into other apps, so the
+   * JS never calls these there; the iOS module should return
+   * `{"enabled":false,"permission":false,"active":false,"error":""}` / no-op.
+   */
   getInputReceivingState(): string;
   setInputReceivingEnabled(enabled: boolean): void;
   openInputReceivingSettings(): void;
@@ -156,6 +162,15 @@ export const display = requireNativeModule<{
   getMediaState(): string;
   getDisplayReceiverSettings(id: string): Promise<string>;
   requestDisplayReceiverSettings(id: string, expectedRevision: number, settings: string): Promise<string>;
+  /**
+   * Android: asks MediaProjection consent and starts capture.
+   * iOS: stores the target peer and its preferences for the ReplayKit
+   * broadcast upload extension (App Group), then presents the system broadcast
+   * picker preselected to the extension. Resolves `started: true` once the
+   * picker is shown; `getScreenSharingState()` reports `consent` until the
+   * extension connects (then `connecting`/`streaming`), and returns to `idle`
+   * if no broadcast starts within a short timeout (picker dismissed).
+   */
   startScreenSharing(
     peer: string,
   ): Promise<{ started: boolean; error: string }>;
@@ -166,8 +181,13 @@ export const display = requireNativeModule<{
     peer: string,
     value: string,
   ): Promise<{ applied: boolean; error: string; preferences: string }>;
+  /** iOS: signals the broadcast extension (via the App Group) to finish the broadcast. */
   stopScreenSharing(): void;
   clearLaunchSession(id: string | null): void;
+  /**
+   * Android: hides system bars. iOS: auto-hide the home indicator, defer
+   * system edge gestures and keep the screen awake while the display is shown.
+   */
   setImmersive(enabled: boolean): void;
   getAppearance(): "system" | "light" | "dark";
   setAppearance(value: "system" | "light" | "dark"): void;

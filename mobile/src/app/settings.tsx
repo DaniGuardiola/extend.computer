@@ -6,6 +6,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Header } from "../components/Header";
 import { LocalDeviceSettings } from "../components/LocalDeviceSettings";
 import { useTheme } from "../theme";
+import { isIOS, thisDeviceKind } from "../platform";
 import { display, type ReceivingState } from "../../modules/extend-display";
 
 export default function Settings() {
@@ -19,7 +20,11 @@ export default function Settings() {
   useFocusEffect(useCallback(() => {
     focused.current = true;
     const refresh = () => {
-      try { setReceiving(JSON.parse(display.getReceivingState())); setInput(JSON.parse(display.getInputReceivingState())); }
+      try {
+        setReceiving(JSON.parse(display.getReceivingState()));
+        // iOS has no input receiving: apps cannot inject input into other apps.
+        if (!isIOS) setInput(JSON.parse(display.getInputReceivingState()));
+      }
       catch { setError("Couldn't check availability. Close and reopen the app to retry."); }
     };
     refresh(); const timer = setInterval(refresh, 1000);
@@ -39,20 +44,25 @@ export default function Settings() {
   }
   return <SafeAreaView className="flex-1 bg-canvas">
     <Header title="Settings" back />
-    <ScrollView contentContainerClassName="mx-auto w-full max-w-3xl gap-4 px-5 py-6" keyboardShouldPersistTaps="handled">
+    <ScrollView contentContainerClassName="mx-auto w-full max-w-3xl gap-4 px-5 py-6" keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
       <Text className="text-sm font-medium text-muted">Connections</Text>
       <View className="gap-3 rounded-2xl border border-line bg-surface p-5">
         <View className="flex-row items-center gap-4">
           <View className="flex-1 gap-1">
             <Text className="text-base font-medium text-ink">Stay available</Text>
-            <Text className="text-sm leading-6 text-muted">Allow paired devices to reconnect while this app is in the background.</Text>
+            <Text className="text-sm leading-6 text-muted">{isIOS
+              ? "Allow paired devices to reconnect while this app is open. iOS pauses connections when the app leaves the screen."
+              : "Allow paired devices to reconnect while this app is in the background."}</Text>
           </View>
           <Switch accessibilityLabel="Stay available" disabled={busy} value={receiving.enabled} onValueChange={value => void toggle(value)} />
         </View>
         <Text accessibilityLiveRegion="polite" className="text-sm text-muted">{receiving.state === "available" ? "Available" : receiving.state === "starting" ? "Starting…" : receiving.enabled ? "Not running. Turn off and on to retry." : "Off"}</Text>
         {error ? <Text accessibilityRole="alert" className="text-sm text-muted">{error}</Text> : null}
       </View>
-      <View className="gap-3 rounded-2xl border border-line bg-surface p-5">
+      {isIOS ? <View className="gap-1 rounded-2xl border border-line bg-surface p-5">
+        <Text className="text-base font-medium text-ink">Receive keyboard &amp; mouse</Text>
+        <Text className="text-sm leading-6 text-muted">Not available on {thisDeviceKind}. iOS doesn&apos;t let apps control other apps.</Text>
+      </View> : <View className="gap-3 rounded-2xl border border-line bg-surface p-5">
         <View className="flex-row items-center gap-4">
           <View className="flex-1 gap-1">
             <Text className="text-base font-medium text-ink">Receive keyboard &amp; mouse</Text>
@@ -67,7 +77,7 @@ export default function Settings() {
         {input.enabled && !input.permission ? <Pressable accessibilityRole="button" accessibilityLabel="Allow input accessibility" onPress={() => {
           try { display.openInputReceivingSettings(); } catch { setError("Open Android Accessibility settings and enable extend.computer input."); }
         }} className="self-start rounded-xl bg-focus px-4 py-3"><Text className="font-medium text-canvas">Open accessibility settings</Text></Pressable> : null}
-      </View>
+      </View>}
       <Text className="text-sm font-medium text-muted">Appearance</Text>
       <View className="overflow-hidden rounded-2xl border border-line bg-surface">
         {([['system', 'Use device setting'], ['light', 'Light'], ['dark', 'Dark']] as const).map(([value, label], index) =>

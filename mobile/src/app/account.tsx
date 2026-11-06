@@ -71,7 +71,7 @@ export default function Account() {
   const signingIn = !!state?.browser_pending || !!state?.native_pending;
   return <SafeAreaView className="flex-1 bg-canvas">
     <Header title="Account" back />
-    <ScrollView contentContainerClassName="mx-auto w-full max-w-xl gap-5 px-5 py-6" keyboardShouldPersistTaps="handled">
+    <ScrollView contentContainerClassName="mx-auto w-full max-w-xl gap-5 px-5 py-6" keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
       {(error || readError || state?.error) && <Text accessibilityRole="alert" className="text-sm leading-6 text-red-600">{error || readError || state?.error}</Text>}
       {!state?.loaded && !state?.storage_error ? <Text accessibilityLiveRegion="polite" className="text-sm text-muted">Loading account…</Text> : state?.email ? <>
         <View className="gap-2 rounded-2xl border border-line bg-surface p-5">

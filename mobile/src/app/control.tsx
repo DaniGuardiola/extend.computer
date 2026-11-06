@@ -7,6 +7,7 @@ import { display, NativeControl, type ControlStatus, type NativeInputActions } f
 import { EditingShortcuts } from "../components/EditingShortcuts";
 import { Header } from "../components/Header";
 import { useTheme } from "../theme";
+import { isIOS } from "../platform";
 
 export default function Control() {
   const { peer, name } = useLocalSearchParams<{ peer: string; name: string }>();
@@ -21,7 +22,10 @@ export default function Control() {
     let session: string | undefined;
     const stop = () => { stopped = true; if (session) display.stopControl(session); };
     const lifecycle = AppState.addEventListener("change", state => {
-      if (state !== "active") { stop(); setKeyboard(false); setStatus({ state: "closed", error: "Control stopped when the app left the screen." }); }
+      // iOS reports "inactive" for transient overlays (Control Center,
+      // notification banners); only leaving the app ends control there.
+      const left = isIOS ? state === "background" : state !== "active";
+      if (left) { stop(); setKeyboard(false); setStatus({ state: "closed", error: "Control stopped when the app left the screen." }); }
     });
     display.startControl(typeof peer === "string" ? peer : "").then(value => {
       const initial = JSON.parse(value) as { id: string };
@@ -47,8 +51,8 @@ export default function Control() {
   }
   return <SafeAreaView className="flex-1 bg-canvas">
     <Header title={name || "Keyboard & mouse"} back />
-    {/* Edge-to-edge Android does not resize the window for the IME, so keep
-        the editing shortcuts above the remote keyboard explicitly. */}
+    {/* Neither edge-to-edge Android nor iOS resizes the window for the
+        keyboard, so keep the editing shortcuts above the remote keyboard explicitly. */}
     <KeyboardAvoidingView behavior="padding" className="mx-auto w-full max-w-5xl flex-1 gap-4 px-5 pb-5">
       <Text accessibilityLiveRegion="polite" className="text-sm text-muted">
         {connected ? "Controlling the main screen" : status.state === "connecting" ? "Connecting…" : "Control stopped"}

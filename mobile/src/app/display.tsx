@@ -3,7 +3,7 @@ import { AppState, BackHandler, Pressable, Text, View, useWindowDimensions } fro
 import { router, useFocusEffect } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { ArrowLeft, Expand, Hand, Keyboard, Menu, Settings, X } from "lucide-react-native";
+import { ArrowLeft, ChevronLeft, Expand, Hand, Keyboard, Menu, Settings, X } from "lucide-react-native";
 import {
   display,
   NativeDisplay,
@@ -15,6 +15,7 @@ import { reconnectOffer } from "../display/offer";
 import { displayEndMessage } from "../display/end-message";
 import { ReceiverSettingsSheet } from "../components/ReceiverSettingsSheet";
 import { EditingShortcuts } from "../components/EditingShortcuts";
+import { isIOS } from "../platform";
 
 export default function Display() {
   const { width } = useWindowDimensions();
@@ -65,6 +66,9 @@ export default function Display() {
   };
   useEffect(() => {
     display.setImmersive(true);
+    // Android only: iOS has no back button, so the visible stop button in the
+    // controls bar (always reachable through "Show display controls") and the
+    // settings sheet's close button are the exits there.
     const back = BackHandler.addEventListener("hardwareBackPress", () => {
       if (settingsVisible.current) {
         settingsVisible.current = false;
@@ -150,7 +154,7 @@ export default function Display() {
       )}
       {controls && (
         <SafeAreaView
-          edges={["top"]}
+          edges={isIOS ? ["top", "left", "right"] : ["top"]}
           pointerEvents="box-none"
           style={{ position: "absolute", top: 0, left: 0, right: 0 }}
         >
@@ -162,7 +166,7 @@ export default function Display() {
                 accessibilityRole="button"
                 className="h-12 w-12 items-center justify-center rounded-full active:bg-white/20"
               >
-                <ArrowLeft size={22} color="white" />
+                {isIOS ? <ChevronLeft size={26} color="white" /> : <ArrowLeft size={22} color="white" />}
               </Pressable>
               <View className="min-w-0 flex-1">
                 <Text

@@ -8,6 +8,7 @@ import {
 } from "../../modules/extend-display";
 import { Header } from "../components/Header";
 import { PairingVerification } from "../components/PairingVerification";
+import { thisDeviceKind } from "../platform";
 
 export default function PairingCode() {
   const [pairing, setPairing] = useState<IncomingPairingState>();
@@ -63,7 +64,7 @@ export default function PairingCode() {
       <ScrollView contentContainerClassName="mx-auto w-full max-w-xl gap-6 px-5 py-6">
         <Text className="text-base leading-6 text-muted">
           On your other device, choose Pair device → Pair manually and enter
-          this code. Select this tablet nearby to fill its address, or enter
+          this code. Select this {thisDeviceKind} nearby to fill its address, or enter
           one of the addresses shown here on your other device.
         </Text>
         {pairing?.code ? (
@@ -87,7 +88,7 @@ export default function PairingCode() {
         {pairing?.code && pairing.addresses.length > 0 ? (
           <View className="gap-2">
             <Text className="text-sm text-muted">
-              If this tablet does not appear nearby, enter an address:
+              If this {thisDeviceKind} does not appear nearby, enter an address:
             </Text>
             {pairing.addresses.map((address) => (
               <Text

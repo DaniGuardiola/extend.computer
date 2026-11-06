@@ -8,6 +8,7 @@ import { Header } from "../components/Header";
 import { deviceRequests } from "../devices/availability";
 import { useDeviceSetting } from "../devices/useDeviceSetting";
 import { useTheme } from "../theme";
+import { thisDeviceKind } from "../platform";
 
 export default function DeviceSettings() {
   const params = useLocalSearchParams<{ peer: string | string[] }>();
@@ -79,10 +80,10 @@ function PeerDeviceSettings({ peer }: { peer: string }) {
   }
   return <SafeAreaView className="flex-1 bg-canvas">
     <Header title="Device settings" back />
-    <ScrollView contentContainerClassName="mx-auto w-full max-w-xl gap-5 px-5 py-6" keyboardShouldPersistTaps="handled">
+    <ScrollView contentContainerClassName="mx-auto w-full max-w-xl gap-5 px-5 py-6" keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
       <View className="gap-3 rounded-2xl border border-line bg-surface p-5">
         <Text className="text-base font-medium text-ink">Device name</Text>
-        <Text className="text-sm leading-6 text-muted">Choose how this device appears on this tablet.</Text>
+        <Text className="text-sm leading-6 text-muted">Choose how this device appears on this {thisDeviceKind}.</Text>
         {info ? <DeviceNameEditor name={info.name} defaultName={info.defaultName ?? info.name} custom={!!info.label} draft={draft}
           onChange={setDraft} onSave={() => void saveName()} onDiscard={() => setDraft(undefined)} busy={busy} resetLabel="Use original name" />
           : <Text accessibilityLiveRegion="polite" className="text-sm text-muted">{loading ? "Loading device…" : "Device unavailable"}</Text>}

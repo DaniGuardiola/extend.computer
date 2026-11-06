@@ -1,7 +1,8 @@
 import { router } from "expo-router";
-import { ArrowLeft, LogIn, Settings } from "lucide-react-native";
+import { ArrowLeft, ChevronLeft, LogIn, Settings } from "lucide-react-native";
 import { Pressable, Text, View } from "react-native";
 import { useTheme } from "../theme";
+import { isIOS } from "../platform";
 
 export function Header({ title, back = false, account = false }: { title: string; back?: boolean; account?: boolean }) {
   const { colors } = useTheme();
@@ -10,7 +11,7 @@ export function Header({ title, back = false, account = false }: { title: string
       <View className="flex-row items-center gap-3">
         {back && <Pressable onPress={() => router.back()} accessibilityLabel="Back" accessibilityRole="button"
           className="h-12 w-12 items-center justify-center rounded-full active:bg-line">
-          <ArrowLeft size={22} color={colors.ink} />
+          {isIOS ? <ChevronLeft size={28} color={colors.ink} /> : <ArrowLeft size={22} color={colors.ink} />}
         </Pressable>}
         <Text className="text-xl font-semibold text-ink">{title}</Text>
       </View>

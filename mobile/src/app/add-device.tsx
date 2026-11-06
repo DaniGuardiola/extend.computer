@@ -12,6 +12,7 @@ import {
 import { Header } from "../components/Header";
 import { PairingVerification } from "../components/PairingVerification";
 import { useTheme } from "../theme";
+import { thisDeviceKind } from "../platform";
 
 function stopVisual(id: string) {
   try {
@@ -250,7 +251,7 @@ export default function PairDevice() {
               A device entered your pairing code
             </Text>
             <Text className="text-sm leading-6 text-muted">
-              Cancel this request unless you entered this tablet’s code on your
+              Cancel this request unless you entered this {thisDeviceKind}’s code on your
               other device.
             </Text>
             <View className="flex-row gap-3">

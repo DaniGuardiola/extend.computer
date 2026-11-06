@@ -21,6 +21,7 @@ import { Header } from "../components/Header";
 import { currentStatus } from "../devices/availability";
 import { useDevices } from "../devices/useDevices";
 import { useTheme } from "../theme";
+import { thisDeviceKind } from "../platform";
 
 const labels = {
   checking: "Checking…",
@@ -170,7 +171,7 @@ export default function Devices() {
           onPress: () => {
             Alert.alert(
               "Unpair device?",
-              `Disconnect ${device.name} from this tablet? Pair again to reconnect.`,
+              `Disconnect ${device.name} from this ${thisDeviceKind}? Pair again to reconnect.`,
               [
                 { text: "Cancel", style: "cancel" },
                 {
