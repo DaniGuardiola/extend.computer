@@ -66,10 +66,12 @@ final class FrameTransform {
   }
 
   private static func angle(_ orientation: CGImagePropertyOrientation) -> CFString? {
-    // EXIF semantics: `.right` (6) must be turned 90° clockwise to look upright.
+    // Checked on device (iPhone SE, iOS 26) in both landscape directions: with
+    // VTPixelRotation, `.right` needs CCW90 and `.left` CW90 (the opposite
+    // pairing shows landscape upside down).
     switch orientation {
-    case .right, .rightMirrored: return kVTRotation_CW90
-    case .left, .leftMirrored: return kVTRotation_CCW90
+    case .right, .rightMirrored: return kVTRotation_CCW90
+    case .left, .leftMirrored: return kVTRotation_CW90
     case .down, .downMirrored: return kVTRotation_180
     default: return nil
     }

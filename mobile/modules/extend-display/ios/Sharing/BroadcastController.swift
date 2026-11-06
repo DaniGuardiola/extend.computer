@@ -156,7 +156,9 @@ final class BroadcastController {
     lock.lock(); self.picker = picker; lock.unlock()
   }
 
-  /// Call with `lock` held.
+  /// Call with `lock` held. The "Screen Broadcast" sheet itself is system UI
+  /// outside the app (checked on iOS 26: no presented controller in any app
+  /// window), so it stays up until the user closes it.
   private func dismissPicker() {
     guard let picker else { return }
     self.picker = nil

@@ -9,6 +9,7 @@ import XCTest
 ///   type <text>              type into the focused element
 ///   field <label>=<text>     replace the text of the text field with that label
 ///   swipe up|down|left|right
+///   orient portrait|left|right   rotate the device (landscape left/right)
 ///   wait <seconds>
 ///   waitfor <label> [secs]   wait for an element to exist
 ///   shot <name>              attach a screenshot
@@ -56,6 +57,8 @@ final class DriverTests: XCTestCase {
           } else { XCTFail("not found: \(parts[0])") }
         case "swipe":
           switch arg { case "up": app.swipeUp(); case "down": app.swipeDown(); case "left": app.swipeLeft(); default: app.swipeRight() }
+        case "orient":
+          XCUIDevice.shared.orientation = arg == "left" ? .landscapeLeft : arg == "right" ? .landscapeRight : .portrait
         case "wait": Thread.sleep(forTimeInterval: Double(arg) ?? 1)
         case "waitfor":
           let n = arg.split(separator: " ").map(String.init)

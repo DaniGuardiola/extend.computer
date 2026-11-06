@@ -242,10 +242,16 @@ final class SampleHandler: RPBroadcastSampleHandler {
     failure = stopped ? "" : "\(error)"
     if let update = pendingUpdate { pendingUpdate = nil; answer(update.id, applied: false, error: failure.isEmpty ? "Screen sharing stopped" : failure) }
     teardown()
-    // The only way an upload extension can end its broadcast; iOS shows the
-    // message in an alert.
-    finishBroadcastWithError(NSError(domain: "computer.extend.broadcast", code: stopped ? 0 : 1,
-      userInfo: [NSLocalizedDescriptionKey: "\(error)"]))
+    // The only way an upload extension can end its broadcast. iOS shows the
+    // error in an alert, which is right for failures but noise when the user
+    // pressed Stop in the app: a nil error ends the broadcast without one
+    // (checked on iOS 26; the Swift overlay only accepts a non-nil Error).
+    if stopped {
+      perform(#selector(RPBroadcastSampleHandler.finishBroadcastWithError(_:)), with: nil)
+    } else {
+      finishBroadcastWithError(NSError(domain: "computer.extend.broadcast", code: 1,
+        userInfo: [NSLocalizedDescriptionKey: "\(error)"]))
+    }
   }
 
   private func teardown() {
