@@ -6,6 +6,11 @@
     "orientation": "default",
     "userInterfaceStyle": "automatic",
     "scheme": "extend-computer",
+    "ios": {
+      "bundleIdentifier": "computer.extend.ios.development",
+      "supportsTablet": true,
+      "appleTeamId": "59QTVLL4JP"
+    },
     "android": {
       "package": "computer.extend.android.development",
       "permissions": [

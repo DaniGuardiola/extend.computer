@@ -1,0 +1,30 @@
+name: IOSDriver
+options: { bundleIdPrefix: computer.extend }
+targets:
+  IOSDriverHost:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources: [Host]
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: computer.extend.ios.driver
+      DEVELOPMENT_TEAM: 59QTVLL4JP
+      CODE_SIGN_STYLE: Automatic
+      GENERATE_INFOPLIST_FILE: YES
+      INFOPLIST_KEY_UILaunchScreen_Generation: YES
+  DriverUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources: [DriverUITests]
+    dependencies: [{ target: IOSDriverHost }]
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: computer.extend.ios.driver.uitests
+      DEVELOPMENT_TEAM: 59QTVLL4JP
+      CODE_SIGN_STYLE: Automatic
+      GENERATE_INFOPLIST_FILE: YES
+      TEST_TARGET_NAME: IOSDriverHost
+schemes:
+  IOSDriver:
+    build: { targets: { IOSDriverHost: all, DriverUITests: [test] } }
+    test: { targets: [DriverUITests] }
