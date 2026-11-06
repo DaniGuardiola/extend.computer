@@ -21,6 +21,10 @@ DRIVER_ACTIONS="$actions" TEST_RUNNER_DRIVER_ACTIONS="$actions" xcodebuild -proj
   test > "$build/log.txt" 2>&1
 status=$?
 set -e
+if grep -q "enabling automation mode\|Enable UI Automation" "$build/log.txt"; then
+  echo "BLOCKED: the iPhone is showing a Touch ID prompt to enable UI automation. Someone must approve it on the phone, then rerun." >&2
+  osascript -e 'display notification "Approve the Touch ID prompt on the iPhone (Enable UI Automation)" with title "extend.computer iPhone tests" sound name "Glass"' >/dev/null 2>&1 || true
+fi
 grep -E "error:|XCTAssertTrue failed|failed -|not found:|timeout:|\*\* TEST" "$build/log.txt" | grep -v '^    export' | head -20 || true
 rm -rf "$build/att" && xcrun xcresulttool export attachments --path "$build/r.xcresult" --output-path "$build/att" >/dev/null 2>&1 || true
 if [ -f "$build/att/manifest.json" ]; then
