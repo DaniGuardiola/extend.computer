@@ -106,6 +106,8 @@ def main():
             result={'candidate':name,'status':'verified','regions':regions,'frames':scores,'median_slopes_left_to_right':medians,'balanced_score':min(medians),'focus':json.loads((folder/'summary.json').read_text())['focus']}
             (folder/'focus-score.json').write_text(json.dumps(result,indent=2));return result
         finally:
+            # Calibration clips are only scored, never reanalyzed; patch crops remain.
+            (folder/'raw/video.mp4').unlink(missing_ok=True)
             if client.request('/status').get('id')==ident:stop_focus_phase(client,ident)
     try:
         report['baseline']=capture('baseline',None)

@@ -1,7 +1,7 @@
 import json,sys,tempfile,unittest
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'campaign'))
-from run import prepare_reanalysis_copy,digest,artifact_inventory
+from run import prepare_reanalysis_copy,prune_footage,digest,artifact_inventory
 
 
 class ReanalysisTests(unittest.TestCase):
@@ -32,6 +32,22 @@ class ReanalysisTests(unittest.TestCase):
             self.assertEqual(digest(target/'01-motion/camera/raw/video.mp4'),digest(source/'01-motion/camera/raw/video.mp4'))
             (target/'01-motion/camera/provenance.json').write_text('{}')
             self.assertEqual(before,{str(p.relative_to(source)):p.read_bytes() for p in source.rglob('*') if p.is_file()})
+
+    def test_prune_deletes_videos_keeps_hashes_and_blocks_reanalysis(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);source=self.fixture(root)
+            retry=source/'attempts/01-motion-retry-1/camera/raw';retry.mkdir(parents=True);(retry/'video.mp4').write_bytes(b'old')
+            expected=digest(source/'01-motion/camera/raw/video.mp4')
+            report=json.loads((source/'report.json').read_text())
+            prune_footage(source,report)
+            self.assertEqual(list(source.rglob('video.mp4')),[])
+            self.assertEqual(report['footage']['status'],'pruned')
+            self.assertIn({'path':'01-motion/camera/raw/video.mp4','sha256':expected,'bytes':25},report['footage']['videos'])
+            self.assertEqual(len(report['footage']['videos']),2)
+            (source/'report.json').write_text(json.dumps(report))
+            (source/'manifest.json').write_text(json.dumps({'artifacts':artifact_inventory(source)}))
+            with self.assertRaises(ValueError):prepare_reanalysis_copy(source,root/'new')
+            self.assertFalse((root/'new').exists())
 
     def test_rejects_corrupt_footage_before_creating_output(self):
         with tempfile.TemporaryDirectory() as directory:

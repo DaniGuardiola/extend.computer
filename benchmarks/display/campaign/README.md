@@ -11,6 +11,12 @@ focusing either product or sampling live performance. Processing can use the
 receiver's CPU/GPU while you work; it does not change already recorded evidence.
 Both host disk space and phone storage are checked before capture.
 
+Raw camera videos are large (hundreds of MB per scene). Once every scene is
+analyzed, the campaign deletes them, including leftover phone copies, and keeps
+each video's SHA-256 and size under `footage` in `report.json`. Failed or
+interrupted campaigns keep their footage for `--process` and `--resume`. Pass
+`--keep-footage` to retain videos from a successful run for later reanalysis.
+
 This capture schedule removes the older inter-scene transfer/analysis idle gaps.
 Reports identify it as `capture-first-v1`; comparison rejects mixing it with older
 interleaved runs because thermal conditions can differ. Optical framing/cadence
@@ -495,8 +501,9 @@ integrity, and reruns all validity gates on the same footage. It does not record
 another scene or require the original live display configuration. Invalid footage
 still fails; use `--resume --retry-scene` when a new recording is necessary.
 
-To analyze an already completed campaign with updated tools, preserve the original
-report and footage by choosing a new output folder:
+To analyze an already completed campaign with updated tools (it must have been
+run with `--keep-footage`), preserve the original report and footage by choosing
+a new output folder:
 
 ```sh
 ./benchmarks/display/run campaign --process /path/to/completed-run \

@@ -17,8 +17,9 @@ Source runs `source` (three minutes); receiver runs `record --product extend`
 one additional display. `doctor` checks dependencies and phone without recording.
 
 Results live in ignored `automation/runs/` unless an explicit output is supplied.
-They include original video, sensor timestamps, hashes, coverage and decoded frame
-IDs. Failed runs are retained and exit nonzero. Capture validates sensor cadence
+They include sensor timestamps, hashes, coverage and decoded frame IDs. `check` and
+`record` delete the raw video after successful analysis (`record --keep-footage`
+retains it). Failed runs keep everything and exit nonzero. Capture validates sensor cadence
 and counter readability, not calibrated physical latency or complete visual
 quality. Full static/scroll/motion campaigns and optical scanout calibration remain
 separate work. No account login, peer selection or settings UI is automated.

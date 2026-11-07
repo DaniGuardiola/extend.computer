@@ -207,13 +207,35 @@ def validate_resume(previous,current,root):
         if key[0] not in range(1,previous['settings']['repetitions']+1) or key[1] not in campaign_scenes(previous['settings']):raise RuntimeError('Unknown saved scene checkpoint')
         prefix=f'{key[0]:02}-{key[1]}/'
         artifacts={name:value for name,value in manifest.items() if name.startswith(prefix)}
-        required=['source.json','camera/raw/video.mp4'] if phase['status']=='measured' else ['source.json','camera/capture.json','camera/phone-session.json']
+        required=(['source.json'] if footage_pruned(previous) else ['source.json','camera/raw/video.mp4']) if phase['status']=='measured' else ['source.json','camera/capture.json','camera/phone-session.json']
         if any(prefix+name not in artifacts for name in required):raise RuntimeError('Saved scene evidence missing')
         for name,value in artifacts.items():
             path=root/name
             if not path.is_file() or digest(path)!=value:raise RuntimeError('Saved scene integrity check failed: '+name)
         completed.add(key)
     return completed
+
+def footage_pruned(report):
+    return report.get('footage',{}).get('status')=='pruned'
+
+def prune_footage(root,report,adb=None,phone=None):
+    """Delete raw phone videos once every scene is analyzed; hashes stay in report.json."""
+    videos=[]
+    for video in sorted(root.glob('*/camera/raw/video.mp4'))+sorted(root.glob('attempts/*/camera/raw/video.mp4')):
+        videos.append({'path':str(video.relative_to(root)),'sha256':digest(video),'bytes':video.stat().st_size})
+        video.unlink()
+    # Leftover phone copies: successful collection removes its own, retried or
+    # failed captures do not. Best effort; the phone may be gone by now.
+    if adb and phone:
+        from capture_phone import PACKAGE
+        for session in sorted(root.glob('*/camera/phone-session.json'))+sorted(root.glob('attempts/*/camera/phone-session.json')):
+            try:
+                run_id=str(uuid.UUID(json.loads(session.read_text())['run_id']))
+                subprocess.run([str(adb),'-s',phone,'shell','run-as',PACKAGE,'rm','-rf',f'files/{run_id}'],capture_output=True,timeout=20)
+            except (OSError,ValueError,KeyError,subprocess.SubprocessError):pass
+    previous=report.get('footage',{}).get('videos',[])
+    report['footage']={'status':'pruned','videos':previous+[v for v in videos if v not in previous],
+        'scope':'Raw camera videos deleted after analysis to save disk; rerun with --keep-footage to retain them for offline reanalysis'}
 
 def process_capture(root,report,row,adb,phone,ui):
     folder=root/f"{row['repetition']:02}-{row['scene']}";camera=folder/'camera'
@@ -357,6 +379,8 @@ def prepare_reanalysis_copy(path,output):
     report=json.loads((source/'report.json').read_text())
     if report.get('status') not in {'complete_with_declared_limits','setup_check_passed'}:
         raise ValueError('Separate reanalysis requires a completed campaign')
+    if footage_pruned(report):
+        raise ValueError('Raw footage was deleted after analysis; recapture with --keep-footage to allow offline reanalysis')
     if not report.get('phases') or any(row.get('status')!='measured' for row in report['phases']):
         raise ValueError('Separate reanalysis requires every scene to be measured')
     inventory=json.loads((source/'manifest.json').read_text())['artifacts']
@@ -403,7 +427,7 @@ def prepare_reanalysis_copy(path,output):
     write(target/'manifest.json',{'artifacts':artifact_inventory(target)})
     return target
 
-def process_existing(path,no_open=False,reanalyze=False,reanalysis_output=None):
+def process_existing(path,no_open=False,reanalyze=False,reanalysis_output=None,keep_footage=False):
     if reanalysis_output:path=prepare_reanalysis_copy(path,reanalysis_output)
     root=path.expanduser().resolve();report=json.loads((root/'report.json').read_text())
     validate_resume(report,report,root)
@@ -420,6 +444,7 @@ def process_existing(path,no_open=False,reanalyze=False,reanalysis_output=None):
         total=len(campaign_scenes(report['settings']))*report['settings']['repetitions']
         if len(report['phases'])!=total:raise RuntimeError('Processed saved captures; missing scenes still need --resume')
         report['status']='setup_check_passed' if report['settings'].get('campaign_profile')=='setup_check' else 'complete_with_declared_limits'
+        if not keep_footage:prune_footage(root,report,adb,phone)
         print(ui.paint('Benchmark processing completed successfully.','32'),flush=True)
     except BaseException as error:
         report['status']='failed';report['failure']=str(error);raise
@@ -449,6 +474,7 @@ def main():
     p.add_argument('--resume',type=Path,help='Continue a failed campaign, preserving measured scenes and old attempts')
     p.add_argument('--retry-scene',action='append',default=[],help='With --resume, archive and recapture a failed SCENE or REPETITION:SCENE')
     p.add_argument('--no-open',action='store_true',help='Do not open the HTML report automatically')
+    p.add_argument('--keep-footage',action='store_true',help='Retain raw camera videos after a successful run (several GB) for offline reanalysis')
     modes=p.add_mutually_exclusive_group()
     modes.add_argument('--smoke',action='store_true',help='Five-second single-scene setup check; never a comparison result')
     modes.add_argument('--quick',action='store_true',help='Development run: selected campaign phases once, with normal durations and camera settings')
@@ -457,7 +483,7 @@ def main():
     if a.process:
         if a.resume or a.output or a.quick or a.smoke or a.check or a.include_cursor or a.include_optical_cursor or a.cursor_input_method or a.focus_regions or a.focus_distance_range or a.camera_zoom is not None or a.camera_exposure_compensation_steps is not None or a.retry_scene or a.scene or a.seconds is not None or a.repetitions is not None:p.error('--process cannot be combined with capture mode options')
         if a.reanalyze and a.reanalysis_output:p.error('Choose failed-scene reanalysis or separate completed-campaign reanalysis')
-        process_existing(a.process,a.no_open,a.reanalyze,a.reanalysis_output);return
+        process_existing(a.process,a.no_open,a.reanalyze,a.reanalysis_output,a.keep_footage);return
     if a.reanalysis_output:p.error('--reanalysis-output requires --process')
     if a.reanalyze:p.error('--reanalyze requires --process')
     if not a.product:p.error('--product is required')
@@ -638,6 +664,7 @@ def main():
         process_captures(root,report,adb,phone,ui)
         if len(report['phases'])!=len(campaign_scenes(report['settings']))*a.repetitions:raise RuntimeError('Campaign missing measured scenes')
         report['status']='setup_check_passed' if a.smoke else 'complete_with_declared_limits'
+        if not a.keep_footage:prune_footage(root,report,adb,phone)
     except BaseException as error:
         report['status']='failed';report['failure']=str(error)
         try:client.request('/stop',{})

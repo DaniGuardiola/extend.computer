@@ -112,7 +112,7 @@ def main():
         if command=='pair':q.add_argument('endpoint')
         if command in ['source','record']:q.add_argument('--seconds',type=int,default=180 if command=='source' else 30)
         if command=='source':q.add_argument('--screen',default='auto');q.add_argument('--list-screens',action='store_true')
-        if command=='record':q.add_argument('--product',required=True);q.add_argument('--output',type=Path)
+        if command=='record':q.add_argument('--product',required=True);q.add_argument('--output',type=Path);q.add_argument('--keep-footage',action='store_true',help='Retain the raw camera video after analysis')
     a=p.parse_args();config=load();extend=repository(a.extend_repo,config)
     if adapter and a.command in adapter.commands():adapter.execute(a);return
     if a.command=='pair':
@@ -154,8 +154,9 @@ def main():
     adb=adb_at(config.get('adb'));serial=select_phone(adb,a.phone,config.get('phone_identity'))
     config['adb']=str(adb);config['phone_identity']=phone_identity(adb,serial);save(config)
     argv=[ROOT/'.venv/bin/python3',ROOT/'camera_run.py','--serial',serial,'--adb',adb,'--extend-repo',extend]
-    if a.command=='check':argv+=['--check']
+    if a.command=='check':argv+=['--check','--discard-footage']
     else:
+        if not a.keep_footage:argv+=['--discard-footage']
         if not 3<=a.seconds<=60:raise RuntimeError('Capture duration must be 3..60 seconds')
         argv+=['--product',a.product,'--seconds',str(a.seconds)]
         if a.output:argv+=['--output',a.output]
