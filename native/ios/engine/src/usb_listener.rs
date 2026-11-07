@@ -21,6 +21,7 @@ use std::{
 struct Listener {
     port: u16,
     stop: Arc<AtomicBool>,
+    bound: Arc<AtomicBool>,
 }
 struct Carrier {
     id: String,
@@ -36,6 +37,9 @@ fn note(error: impl std::fmt::Display) {
 }
 
 /// Starts listening on `127.0.0.1:port` (idempotent). Returns `{"port":..}`.
+/// The app and its screen sharing extension hand the port to each other, so a
+/// port still held by the other process is retried until it frees up or
+/// `stop` is called; `state` reports `bound` once the socket is listening.
 pub fn start(port: u16) -> Result<String> {
     let mut slot = LISTENER.lock().unwrap();
     if let Some(listener) = slot.as_ref() {
@@ -45,18 +49,53 @@ pub fn start(port: u16) -> Result<String> {
         listener.stop.store(true, Ordering::Release);
     }
     ensure!(port != 0, "Invalid USB port");
-    // usbmuxd connects to the device's loopback interface; never expose the
-    // carrier on Wi-Fi.
-    let socket = TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, port)))
-        .with_context(|| format!("Couldn't listen for USB on port {port}"))?;
-    socket.set_nonblocking(true)?;
+    let socket = match bind(port) {
+        Ok(socket) => Some(socket),
+        Err(error) if error.kind() == ErrorKind::AddrInUse => None,
+        Err(error) => {
+            return Err(error).with_context(|| format!("Couldn't listen for USB on port {port}"))
+        }
+    };
     let stop = Arc::new(AtomicBool::new(false));
+    let bound = Arc::new(AtomicBool::new(socket.is_some()));
     let worker_stop = stop.clone();
+    let worker_bound = bound.clone();
     thread::Builder::new()
         .name("extend-usbmux-accept".into())
-        .spawn(move || accept_loop(socket, worker_stop))?;
-    *slot = Some(Listener { port, stop });
+        .spawn(move || {
+            let socket = match socket {
+                Some(socket) => socket,
+                None => loop {
+                    thread::sleep(BIND_RETRY);
+                    if worker_stop.load(Ordering::Acquire) {
+                        return;
+                    }
+                    match bind(port) {
+                        Ok(socket) => break socket,
+                        Err(error) if error.kind() == ErrorKind::AddrInUse => {}
+                        Err(error) => {
+                            note(format!("Couldn't listen for USB on port {port}: {error}"));
+                            release(&worker_stop);
+                            return;
+                        }
+                    }
+                },
+            };
+            worker_bound.store(true, Ordering::Release);
+            accept_loop(socket, worker_stop)
+        })?;
+    *slot = Some(Listener { port, stop, bound });
     Ok(serde_json::json!({ "port": port }).to_string())
+}
+
+const BIND_RETRY: Duration = Duration::from_millis(100);
+
+fn bind(port: u16) -> std::io::Result<TcpListener> {
+    // usbmuxd connects to the device's loopback interface; never expose the
+    // carrier on Wi-Fi.
+    let socket = TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, port)))?;
+    socket.set_nonblocking(true)?;
+    Ok(socket)
 }
 
 /// Stops listening and detaches the current carrier. Safe when stopped.
@@ -70,9 +109,15 @@ pub fn stop() -> Result<String> {
     Ok("{}".into())
 }
 
-/// `{"listening":bool,"port":..,"carrier":{"id","peer"}|null,"error":".."}`.
+/// `{"listening":bool,"bound":bool,"port":..,"carrier":{"id","peer"}|null,"error":".."}`.
 pub fn state() -> Result<String> {
-    let port = LISTENER.lock().unwrap().as_ref().map(|l| l.port);
+    let (port, bound) = LISTENER
+        .lock()
+        .unwrap()
+        .as_ref()
+        .map_or((None, false), |l| {
+            (Some(l.port), l.bound.load(Ordering::Acquire))
+        });
     let carrier = CARRIER
         .lock()
         .unwrap()
@@ -80,6 +125,7 @@ pub fn state() -> Result<String> {
         .map(|c| serde_json::json!({ "id": c.id, "peer": c.peer }));
     Ok(serde_json::json!({
         "listening": port.is_some(),
+        "bound": bound,
         "port": port.unwrap_or(0),
         "carrier": carrier,
         "error": *LAST_ERROR.lock().unwrap(),
@@ -116,8 +162,12 @@ fn accept_loop(socket: TcpListener, stop: Arc<AtomicBool>) {
             }
         }
     }
+    release(&stop);
+}
+
+fn release(stop: &Arc<AtomicBool>) {
     let mut slot = LISTENER.lock().unwrap();
-    if slot.as_ref().is_some_and(|l| Arc::ptr_eq(&l.stop, &stop)) {
+    if slot.as_ref().is_some_and(|l| Arc::ptr_eq(&l.stop, stop)) {
         *slot = None;
     }
 }
@@ -209,8 +259,12 @@ fn finish(id: &str) {
 mod tests {
     use super::*;
 
+    /// The listener is process-global.
+    static SERIAL: Mutex<()> = Mutex::new(());
+
     #[test]
     fn unknown_host_hello_is_rejected_before_attaching() {
+        let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
         // Engine not initialized: attach must fail and leave no carrier.
         let port = {
             let probe = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -232,7 +286,8 @@ mod tests {
         let deadline = std::time::Instant::now() + Duration::from_secs(2);
         let state = loop {
             let state: serde_json::Value = serde_json::from_str(&state().unwrap()).unwrap();
-            if !state["error"].as_str().unwrap().is_empty() || std::time::Instant::now() > deadline {
+            if !state["error"].as_str().unwrap().is_empty() || std::time::Instant::now() > deadline
+            {
                 break state;
             }
             thread::sleep(Duration::from_millis(10));
@@ -242,6 +297,38 @@ mod tests {
         stop().unwrap();
         let state: serde_json::Value = serde_json::from_str(&super::state().unwrap()).unwrap();
         assert_eq!(state["listening"], false);
+    }
+
+    #[test]
+    fn a_port_held_by_the_other_process_is_taken_once_released() {
+        let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        // The app's listener while the extension starts (or the reverse).
+        let holder = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = holder.local_addr().unwrap().port();
+        start(port).unwrap();
+        let bound = || {
+            let state: serde_json::Value = serde_json::from_str(&state().unwrap()).unwrap();
+            assert_eq!(state["listening"], true);
+            state["bound"].as_bool().unwrap()
+        };
+        thread::sleep(BIND_RETRY * 3);
+        assert!(!bound());
+        drop(holder);
+        let deadline = std::time::Instant::now() + Duration::from_secs(3);
+        while !bound() {
+            assert!(std::time::Instant::now() < deadline);
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(TcpStream::connect(("127.0.0.1", port)).is_ok());
+        stop().unwrap();
+        // Stopping while still waiting gives the port up without binding it.
+        let holder = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = holder.local_addr().unwrap().port();
+        start(port).unwrap();
+        stop().unwrap();
+        drop(holder);
+        thread::sleep(BIND_RETRY * 3);
+        assert!(TcpListener::bind(("127.0.0.1", port)).is_ok());
     }
 
     #[test]

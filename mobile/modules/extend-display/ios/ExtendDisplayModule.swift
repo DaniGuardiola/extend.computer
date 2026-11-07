@@ -263,13 +263,26 @@ public class ExtendDisplayModule: Module {
   /// Foreground-only engine services: USB listener and availability.
   private static func foreground() {
     Engine.queue.async {
-      do {
-        try Engine.identity()
-        try Engine.startUsbListener()
-      } catch {
-        NSLog("extend.computer: USB listener unavailable: \(error.localizedDescription)")
-      }
+      foregrounded = true
+      reconcileUsb()
       Receiving.resume()
+    }
+  }
+  /// Engine queue only. Whether the app is between becoming active and
+  /// entering the background (the broadcast picker only makes it inactive).
+  private static var foregrounded = false
+  /// Engine queue only. The app holds the USB port in the foreground unless a
+  /// broadcast extension sharing over USB claimed it (`UsbHandoff`).
+  private static func reconcileUsb() {
+    guard foregrounded, !UsbHandoff.extensionOwns else {
+      Engine.stopUsbListener()
+      return
+    }
+    do {
+      try Engine.identity()
+      try Engine.startUsbListener()
+    } catch {
+      NSLog("extend.computer: USB listener unavailable: \(error.localizedDescription)")
     }
   }
 
@@ -289,6 +302,9 @@ public class ExtendDisplayModule: Module {
         Receiving.displayCapabilities = { capabilities }
         Self.foreground()
       }
+      // Claims and releases arrive while the app may be in either state; a
+      // claim expiring silently (killed extension) is caught on next foreground.
+      BroadcastGroup.observe(.usb) { Engine.queue.async { Self.reconcileUsb() } }
     }
     OnAppBecomesActive {
       AppFocus.set(true)
@@ -301,6 +317,7 @@ public class ExtendDisplayModule: Module {
       self.nearby?.suspend()
       self.incoming.stop(); self.visual.stop(); self.manual.stop()
       Engine.queue.async {
+        Self.foregrounded = false
         Receiving.pause()
         Engine.stopUsbListener()
       }

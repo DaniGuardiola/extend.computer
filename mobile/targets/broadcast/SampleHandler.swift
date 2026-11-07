@@ -48,8 +48,15 @@ final class SampleHandler: RPBroadcastSampleHandler {
         BroadcastGroup.defaults?.set(request.session, forKey: BroadcastGroup.consumedKey)
         self.request = request
         preferences = request.preferences
-        engine = try BroadcastEngine.make()
+        let engine = try BroadcastEngine.make()
+        self.engine = engine
         started = Date()
+        if request.address == UsbHandoff.address {
+          // Take the USB port from the app; the desktop reconnects to it.
+          usb = true
+          UsbHandoff.claim(session: request.session)
+          try engine.listenUsb()
+        }
         BroadcastGroup.observe(.stop) { [weak self] in self?.queue.async { self?.fail(SharingError("Sharing stopped from extend.computer"), stopped: true) } }
         BroadcastGroup.observe(.update) { [weak self] in self?.queue.async { self?.applyUpdate() } }
         let timer = DispatchSource.makeTimerSource(queue: queue)
@@ -89,11 +96,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
       capture = upright
       if !startedEngine {
         // The first frame tells us the real capture size; start the session with it.
-        try engine.start(peer: request.peer, address: request.address,
-                         config: SharingConfig(preferences, screenWidth: upright.width, screenHeight: upright.height))
-        startedEngine = true
-        started = Date()
-        publish(force: true)
+        try startEngine(engine, request)
         return
       }
       guard let encoder else { return }
@@ -119,6 +122,24 @@ final class SampleHandler: RPBroadcastSampleHandler {
     }
   }
   private var startedEngine = false
+  /// Sharing over the extension's own USB carrier (`UsbHandoff`).
+  private var usb = false
+  /// Starts the session once the capture size is known and, over USB, once the
+  /// desktop has reattached to this engine. Also retried from `tick`, since a
+  /// static screen delivers no further samples.
+  private func startEngine(_ engine: EngineSender, _ request: BroadcastRequest) throws {
+    guard !startedEngine, let capture else { return }
+    var address = request.address
+    if usb {
+      guard let carrier = engine.usbCarrier(peer: request.peer) else { return }
+      address = "usb:\(carrier)"
+    }
+    try engine.start(peer: request.peer, address: address,
+                     config: SharingConfig(preferences, screenWidth: capture.width, screenHeight: capture.height))
+    startedEngine = true
+    started = Date()
+    publish(force: true)
+  }
   private func reconfigure(_ config: SharingConfig) throws {
     encoder?.invalidate(); encoder = nil; latest = nil
     try engine?.configure(config)
@@ -131,6 +152,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
   private func tick() {
     guard !finished, let engine else { return }
     do {
+      if !startedEngine, let request { try startEngine(engine, request) }
       let state = engine.state()
       if startedEngine && (state.state == "failed" || state.state == "closed" || state.state == "idle") {
         throw SharingError(state.error.isEmpty ? "Screen connection ended" : state.error)
@@ -148,7 +170,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
           }
           publish(force: true)
         } else if Date().timeIntervalSince(started) > 15 {
-          throw SharingError("Screen connection timed out")
+          throw SharingError(usb && !startedEngine ? "The computer didn't reconnect over USB" : "Screen connection timed out")
         }
       } else if let encoder, state.keyframe, Date().timeIntervalSince(lastKeyframeRequest) > 0.3 {
         encoder.requestKeyframe()
@@ -261,7 +283,16 @@ final class SampleHandler: RPBroadcastSampleHandler {
     encoder?.invalidate(); encoder = nil
     latest = nil
     transform.invalidate()
-    engine?.stop(); engine = nil
+    engine?.stop()
+    if usb, let request {
+      // Let the display session's close cross the carrier first, so the
+      // computer sees a normal end instead of a dropped link.
+      if startedEngine { Thread.sleep(forTimeInterval: 0.3) }
+      // Hand the port back; the app retakes it if it's in the foreground.
+      engine?.stopUsb()
+      UsbHandoff.release(session: request.session)
+    }
+    engine = nil
     publish(force: true)
   }
 }

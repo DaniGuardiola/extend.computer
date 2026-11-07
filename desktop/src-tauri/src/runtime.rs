@@ -192,6 +192,9 @@ pub struct Desktop {
     usb_connecting: AtomicBool,
     #[cfg(test)]
     test_usb_network: AtomicBool,
+    /// Fake usbmuxd socket for iPhone USB tests.
+    #[cfg(all(test, target_os = "macos"))]
+    test_usbmux: Mutex<Option<PathBuf>>,
     usb_epoch: std::sync::atomic::AtomicU64,
     closing: AtomicBool,
     permission_checks: Mutex<u64>,
@@ -254,6 +257,8 @@ impl Desktop {
             usb_connecting: AtomicBool::new(false),
             #[cfg(test)]
             test_usb_network: AtomicBool::new(false),
+            #[cfg(all(test, target_os = "macos"))]
+            test_usbmux: Mutex::new(None),
             usb_epoch: std::sync::atomic::AtomicU64::new(0),
             closing: AtomicBool::new(false),
             permission_checks: Mutex::new(0),

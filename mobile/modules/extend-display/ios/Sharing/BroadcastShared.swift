@@ -23,6 +23,8 @@ enum BroadcastGroup {
   static let stateKey = "broadcast.state"
   static let updateKey = "broadcast.update"
   static let updateResultKey = "broadcast.update-result"
+  /// `{session, claimed}` while the extension holds the USB port (see `UsbHandoff`).
+  static let usbOwnerKey = "broadcast.usb-owner"
 
   /// A request older than this is never started by the extension, so starting a
   /// broadcast from Control Center later can't silently reuse an old target.
@@ -36,6 +38,8 @@ enum BroadcastGroup {
     case state = "computer.extend.broadcast.state"
     case stop = "computer.extend.broadcast.stop"
     case update = "computer.extend.broadcast.update"
+    /// The extension claimed or released the USB port.
+    case usb = "computer.extend.broadcast.usb"
   }
 
   static func post(_ note: Note) {
@@ -75,6 +79,41 @@ enum BroadcastGroup {
     } else {
       defaults.removeObject(forKey: key)
     }
+  }
+}
+
+/// The USB port (`Engine.usbPort`) can only be bound by one process. The app
+/// holds it in the foreground; a broadcast sharing over USB claims it so the
+/// desktop's usbmux reconnect reaches the extension's engine, and hands it back
+/// when the broadcast ends. Each side's listener retries the bind until the
+/// other one has let go.
+enum UsbHandoff {
+  /// `BroadcastRequest.address` asking the extension to share over USB.
+  static let address = "usb"
+  /// A claim stays valid this long without a fresh broadcast state (startup).
+  static let startupGrace: TimeInterval = 10
+
+  static func claim(session: String) {
+    BroadcastGroup.write(BroadcastGroup.usbOwnerKey, ["session": session, "claimed": Date().timeIntervalSince1970])
+    BroadcastGroup.post(.usb)
+  }
+  static func release(session: String) {
+    guard BroadcastGroup.read(BroadcastGroup.usbOwnerKey)?["session"] as? String == session else { return }
+    BroadcastGroup.write(BroadcastGroup.usbOwnerKey, nil)
+    BroadcastGroup.post(.usb)
+  }
+  /// Whether a live extension holds the port. A killed extension's claim
+  /// expires with its broadcast state.
+  static var extensionOwns: Bool {
+    guard let owner = BroadcastGroup.read(BroadcastGroup.usbOwnerKey), let session = owner["session"] as? String else {
+      return false
+    }
+    let now = Date().timeIntervalSince1970
+    if let claimed = (owner["claimed"] as? NSNumber)?.doubleValue, now - claimed < startupGrace { return true }
+    guard let state = BroadcastGroup.read(BroadcastGroup.stateKey), state["session"] as? String == session,
+          ["connecting", "streaming"].contains(state["state"] as? String ?? ""),
+          let updated = (state["updated"] as? NSNumber)?.doubleValue else { return false }
+    return now - updated < BroadcastGroup.staleAfter
   }
 }
 
@@ -164,7 +203,8 @@ struct SharingConfig: Equatable {
 struct BroadcastRequest {
   var session: String
   var peer: String
-  /// Engine route string (LAN `host:port`, USB route, …) as resolved by the app.
+  /// LAN `host:port` of the receiver, or `UsbHandoff.address` to share over the
+  /// extension's own USB carrier.
   var address: String
   var preferences: SharingPreferences
   var created: Date

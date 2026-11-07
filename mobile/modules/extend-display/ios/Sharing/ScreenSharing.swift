@@ -35,11 +35,17 @@ enum ScreenSharing {
     }
   }
 
-  /// The extension runs its own engine instance, which can't reach the app's
-  /// USB carrier or account relay, so sharing always uses the saved LAN address.
+  /// The extension runs its own engine instance. Over USB it takes the USB
+  /// port over from the app (`UsbHandoff`) and the desktop reconnects to it;
+  /// otherwise it uses the saved LAN address. The account relay isn't reachable
+  /// from the extension.
   private static func address(_ peer: String) throws -> String {
     let checked = try Devices.check(peer)
-    if checked["route"] as? String == "internet" { throw SharingError("Screen sharing needs a local connection") }
+    switch checked["route"] as? String {
+    case "usb": return UsbHandoff.address
+    case "internet": throw SharingError("Screen sharing needs a local connection")
+    default: break
+    }
     guard let saved = LocalStore.peer(peer)?["address"] as? String, let colon = saved.range(of: ":", options: .backwards),
           colon.lowerBound > saved.startIndex else {
       throw SharingError("Device address unavailable")

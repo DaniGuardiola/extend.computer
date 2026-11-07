@@ -33,8 +33,15 @@ struct EngineSenderState {
 /// parameter sets (VPS/SPS/PPS for HEVC, SPS/PPS for H.264), strictly increasing
 /// positive nanosecond timestamps, at most 8 MiB.
 protocol EngineSender: AnyObject {
-  /// Opens the encrypted display session to `peer` at `address`.
+  /// Opens the encrypted display session to `peer` at `address` (LAN
+  /// `host:port`, or `usb:<carrier id>` from `usbCarrier`).
   func start(peer: String, address: String, config: SharingConfig) throws
+  /// Listens on the USB port (retrying while the app still holds it) so the
+  /// desktop's usbmux reconnect attaches a carrier to this engine.
+  func listenUsb() throws
+  /// Carrier id once the desktop attached over USB for `peer`.
+  func usbCarrier(peer: String) -> String?
+  func stopUsb()
   /// Renegotiates size/rate (same codec). State goes `configuring` → `streaming`.
   func configure(_ config: SharingConfig) throws
   func push(frame: Data, timestamp: UInt64, keyframe: Bool) throws

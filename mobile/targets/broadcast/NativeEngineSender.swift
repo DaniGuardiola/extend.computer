@@ -76,6 +76,16 @@ final class NativeEngineSender: EngineSender {
     guard !session.isEmpty else { return }
     _ = try? Engine.call(session) { ext_stop_display_sender($0) }
   }
+
+  func listenUsb() throws { try Engine.startUsbListener() }
+
+  func usbCarrier(peer: String) -> String? {
+    guard let carrier = (try? Engine.usbListenerState())?["carrier"] as? JSON,
+          carrier["peer"] as? String == peer, let id = carrier["id"] as? String, !id.isEmpty else { return nil }
+    return id
+  }
+
+  func stopUsb() { Engine.stopUsbListener() }
 }
 
 /// SampleHandler reports errors with "\(error)"; show the engine's own message.

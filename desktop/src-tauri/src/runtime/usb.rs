@@ -76,6 +76,12 @@ impl Route {
         }
     }
 }
+#[cfg(target_os = "macos")]
+const USBMUX_RECONNECT_MIN: Duration = Duration::from_millis(250);
+#[cfg(target_os = "macos")]
+const USBMUX_RECONNECT_MAX: Duration = Duration::from_secs(5);
+#[cfg(target_os = "macos")]
+const USBMUX_RECONNECT_WINDOW: Duration = Duration::from_secs(30 * 60);
 struct Connecting<'a>(&'a AtomicBool);
 impl Drop for Connecting<'_> {
     fn drop(&mut self) {
@@ -118,9 +124,8 @@ fn inventory_result(bytes: &[u8]) -> Result<serde_json::Value> {
 }
 /// Cable-attached iPhones and iPads, keyed by UDID. usbmuxd is optional.
 #[cfg(target_os = "macos")]
-fn usbmux_inventory() -> Vec<UsbDevice> {
-    use extend_computer_agent::display::usbmux::{Usbmux, APPLE_USB_VENDOR};
-    let mux = Usbmux::default();
+fn usbmux_inventory(mux: &extend_computer_agent::display::usbmux::Usbmux) -> Vec<UsbDevice> {
+    use extend_computer_agent::display::usbmux::APPLE_USB_VENDOR;
     if !mux.available() {
         return Vec::new();
     }
@@ -141,6 +146,14 @@ fn usbmux_inventory() -> Vec<UsbDevice> {
     }
 }
 impl Desktop {
+    #[cfg(target_os = "macos")]
+    fn usbmux(&self) -> extend_computer_agent::display::usbmux::Usbmux {
+        #[cfg(test)]
+        if let Some(path) = self.test_usbmux.lock().unwrap().as_ref() {
+            return extend_computer_agent::display::usbmux::Usbmux::at(path);
+        }
+        extend_computer_agent::display::usbmux::Usbmux::default()
+    }
     pub(super) fn receiving_permissions(&self, permissions: &Permissions) -> bool {
         permissions.can_receive()
             || (permissions.available
@@ -332,7 +345,7 @@ impl Desktop {
             );
             // iPhones never answer the accessory probe; usbmuxd lists them.
             // Without usbmuxd (or with no iPhone) the Android inventory alone decides.
-            let apple = usbmux_inventory();
+            let apple = usbmux_inventory(&self.usbmux());
             let android = self.accessory_inventory();
             let mut devices = match (android, apple.is_empty()) {
                 (Ok(devices), _) => devices,
@@ -484,7 +497,8 @@ impl Desktop {
             let host = if vendor
                 .eq_ignore_ascii_case(extend_computer_agent::display::usbmux::APPLE_USB_VENDOR)
             {
-                extend_computer_agent::display::usb_host::NativeUsbHost::connect_usbmux(
+                extend_computer_agent::display::usb_host::NativeUsbHost::connect_usbmux_at(
+                    &self.usbmux(),
                     serial,
                     &identity.fingerprint(),
                 )?
@@ -496,56 +510,177 @@ impl Desktop {
                     &identity.fingerprint(),
                 )?
             };
-            // The cable switch can take seconds. Never install a late connection
-            // after shutdown or after its authenticated peer was removed.
-            let hub = host.hub();
-            hub.enable_streams()?;
-            let mut connection = self.usb.lock().unwrap();
-            ensure!(
-                !self.closing.load(Ordering::Acquire)
-                    && self.usb_epoch.load(Ordering::Acquire) == epoch
-                    && self.store()?.peer(peer)?.is_some()
-                    && self.inner.lock().unwrap().job.is_none(),
-                "USB connection was cancelled"
-            );
-            self.health.lock().unwrap().remove(peer);
-            *connection = Some(Connection {
-                peer: peer.into(),
-                host,
-            });
-            drop(connection);
-            self.start_usb_streams(peer.to_owned(), epoch, hub.clone());
-            let route = Route {
-                peer: peer.into(),
-                epoch,
-                hub,
-            };
-            let verified = self.resolve_usb_presence(peer, &identity, &route);
-            match verified {
-                Ok(true) if route.current(self) => {
-                    // A readiness pause does not revoke the user's saved preference.
-                    // Recover only after authenticating this carrier; explicit Off stays Off.
-                    let mut preference = self.receiving_preference.lock().unwrap();
-                    if *preference {
-                        if let Err(error) =
-                            self.receive_with_preference(false, 48177, &mut preference)
-                        {
-                            eprintln!("USB receiving remains paused: {error:#}");
-                        }
+            let apple = vendor
+                .eq_ignore_ascii_case(extend_computer_agent::display::usbmux::APPLE_USB_VENDOR);
+            match self.install_usb_host(peer, epoch, host, &identity, true) {
+                Ok(()) => {
+                    if apple {
+                        self.watch_usbmux(peer.to_owned(), serial.to_owned(), epoch);
                     }
                     Ok(())
                 }
-                result => {
+                Err(error) => {
                     if self.usb_epoch.load(Ordering::Acquire) == epoch {
                         self.disconnect_usb_peer(peer);
                     }
-                    match result {
-                        Err(error) => Err(error),
-                        _ => anyhow::bail!("USB device identity could not be verified"),
-                    }
+                    Err(error)
                 }
             }
         }
+    }
+    /// Installs an opened carrier as the selected USB connection, then
+    /// authenticates it with a pinned presence query. `fresh` is a user-started
+    /// connection, which must not race a running session; a reconnect replaces
+    /// the dropped carrier of the same selection.
+    #[cfg(target_os = "macos")]
+    fn install_usb_host(
+        self: &Arc<Self>,
+        peer: &str,
+        epoch: u64,
+        host: extend_computer_agent::display::usb_host::NativeUsbHost,
+        identity: &Identity,
+        fresh: bool,
+    ) -> Result<()> {
+        // The cable switch can take seconds. Never install a late connection
+        // after shutdown or after its authenticated peer was removed.
+        let hub = host.hub();
+        hub.enable_streams()?;
+        let mut connection = self.usb.lock().unwrap();
+        ensure!(
+            !self.closing.load(Ordering::Acquire)
+                && self.usb_epoch.load(Ordering::Acquire) == epoch
+                && self.store()?.peer(peer)?.is_some()
+                && if fresh {
+                    connection.is_none() && self.inner.lock().unwrap().job.is_none()
+                } else {
+                    connection.as_ref().is_some_and(|c| c.peer == peer)
+                },
+            "USB connection was cancelled"
+        );
+        self.health.lock().unwrap().remove(peer);
+        // Drop a replaced carrier outside the mutex: its worker is joined.
+        let replaced = connection.replace(Connection {
+            peer: peer.into(),
+            host,
+        });
+        drop(connection);
+        drop(replaced);
+        self.start_usb_streams(peer.to_owned(), epoch, hub.clone());
+        let route = Route {
+            peer: peer.into(),
+            epoch,
+            hub,
+        };
+        match self.resolve_usb_presence(peer, identity, &route) {
+            Ok(true) if route.current(self) => {
+                // A readiness pause does not revoke the user's saved preference.
+                // Recover only after authenticating this carrier; explicit Off stays Off.
+                let mut preference = self.receiving_preference.lock().unwrap();
+                if *preference {
+                    if let Err(error) = self.receive_with_preference(false, 48177, &mut preference)
+                    {
+                        eprintln!("USB receiving remains paused: {error:#}");
+                    }
+                }
+                Ok(())
+            }
+            Err(error) => Err(error),
+            _ => anyhow::bail!("USB device identity could not be verified"),
+        }
+    }
+    /// iPhone carriers end whenever the app leaves the foreground, restarts or
+    /// hands the USB port to its screen sharing extension. While the user's USB
+    /// selection stands, reconnect through usbmuxd with backoff. Stops on
+    /// Disconnect (epoch change), unplug, unpairing, shutdown, or after
+    /// `USBMUX_RECONNECT_WINDOW` without a carrier. Android accessories keep
+    /// their one-shot lifecycle.
+    #[cfg(target_os = "macos")]
+    fn watch_usbmux(self: &Arc<Self>, peer: String, udid: String, epoch: u64) {
+        use extend_computer_agent::display::usb_host::NativeUsbHost;
+        let weak = Arc::downgrade(self);
+        let _ = std::thread::Builder::new()
+            .name("extend-usbmux-reconnect".into())
+            .spawn(move || {
+                let selected = |app: &Desktop| {
+                    !app.closing.load(Ordering::Acquire)
+                        && app.usb_epoch.load(Ordering::Acquire) == epoch
+                        && app
+                            .usb
+                            .lock()
+                            .unwrap()
+                            .as_ref()
+                            .is_some_and(|c| c.peer == peer)
+                };
+                let mut dropped: Option<Instant> = None;
+                let mut backoff = USBMUX_RECONNECT_MIN;
+                loop {
+                    std::thread::sleep(if dropped.is_some() {
+                        backoff
+                    } else {
+                        Duration::from_millis(250)
+                    });
+                    let Some(app) = weak.upgrade() else { return };
+                    if !selected(&app) {
+                        return;
+                    }
+                    let connected = app
+                        .usb
+                        .lock()
+                        .unwrap()
+                        .as_ref()
+                        .is_some_and(|c| c.host.snapshot()["state"] == "connected");
+                    if connected {
+                        dropped = None;
+                        backoff = USBMUX_RECONNECT_MIN;
+                        continue;
+                    }
+                    let since = *dropped.get_or_insert_with(|| {
+                        eprintln!("iPhone USB carrier ended; reconnecting");
+                        Instant::now()
+                    });
+                    if since.elapsed() > USBMUX_RECONNECT_WINDOW {
+                        eprintln!("iPhone USB reconnect gave up; press Disconnect USB to retry");
+                        return;
+                    }
+                    let mux = app.usbmux();
+                    match mux.usb_devices() {
+                        Ok(devices) if devices.iter().any(|d| d.udid == udid) => {}
+                        Ok(_) => {
+                            eprintln!("iPhone USB cable was unplugged; reconnect stopped");
+                            return;
+                        }
+                        Err(error) => {
+                            eprintln!("usbmuxd unavailable: {error:#}");
+                            backoff = (backoff * 2).min(USBMUX_RECONNECT_MAX);
+                            continue;
+                        }
+                    }
+                    let identity = match app.identity() {
+                        Ok(identity) => identity,
+                        Err(_) => return,
+                    };
+                    // Retries refusals (no listener yet) for a few seconds itself.
+                    let result =
+                        NativeUsbHost::connect_usbmux_at(&mux, &udid, &identity.fingerprint())
+                            .and_then(|host| {
+                                app.install_usb_host(&peer, epoch, host, &identity, false)
+                            });
+                    match result {
+                        Ok(()) => {
+                            eprintln!("iPhone USB carrier reconnected");
+                            dropped = None;
+                            backoff = USBMUX_RECONNECT_MIN;
+                        }
+                        Err(error) => {
+                            if !selected(&app) {
+                                return;
+                            }
+                            eprintln!("iPhone USB reconnect pending: {error:#}");
+                            backoff = (backoff * 2).min(USBMUX_RECONNECT_MAX);
+                        }
+                    }
+                }
+            });
     }
     pub fn disconnect_usb(&self) {
         self.usb_epoch.fetch_add(1, Ordering::AcqRel);
@@ -753,6 +888,235 @@ while True:
         hub.close();
         let _ = carrier.join().unwrap();
     }
+    /// Fake usbmuxd plus the iPhone app's side of the tunnel: each accepted
+    /// Connect reads the host hello and serves pinned presence on a device hub.
+    #[cfg(target_os = "macos")]
+    struct FakeIphone {
+        attached: AtomicBool,
+        refusals: std::sync::atomic::AtomicUsize,
+        connects: std::sync::atomic::AtomicUsize,
+        presences: Arc<std::sync::atomic::AtomicUsize>,
+        sessions: Mutex<
+            Vec<(
+                Arc<AtomicBool>,
+                Arc<extend_computer_agent::display::usb_link::UsbHub>,
+            )>,
+        >,
+        stop: AtomicBool,
+    }
+    #[cfg(target_os = "macos")]
+    impl FakeIphone {
+        /// The app left the foreground or restarted: its listener closed the tunnel.
+        fn end_sessions(&self) {
+            for (stop, hub) in self.sessions.lock().unwrap().drain(..) {
+                stop.store(true, Ordering::Release);
+                hub.close();
+            }
+        }
+        fn serve(
+            self: Arc<Self>,
+            listener: std::os::unix::net::UnixListener,
+            remote: Arc<Identity>,
+            store: TrustStore,
+            pin: String,
+        ) {
+            use extend_computer_agent::display::{
+                usb_link::{run_io, UsbHub},
+                usb_stream::UsbService,
+                usbmux::{
+                    read_host_hello, read_message, write_message, RESULT_CONNECTION_REFUSED,
+                    RESULT_OK,
+                },
+            };
+            use plist::{Dictionary, Value};
+            let result = |number: i64| {
+                let mut body = Dictionary::new();
+                body.insert("MessageType".into(), "Result".into());
+                body.insert("Number".into(), number.into());
+                body
+            };
+            listener.set_nonblocking(true).unwrap();
+            while !self.stop.load(Ordering::Acquire) {
+                let mut stream = match listener.accept() {
+                    Ok((stream, _)) => stream,
+                    Err(_) => {
+                        std::thread::sleep(Duration::from_millis(5));
+                        continue;
+                    }
+                };
+                stream.set_nonblocking(false).unwrap();
+                let Ok((tag, body)) = read_message(&mut stream) else {
+                    continue;
+                };
+                match body["MessageType"].as_string().unwrap() {
+                    "ListDevices" => {
+                        let mut devices = Vec::new();
+                        if self.attached.load(Ordering::Acquire) {
+                            let mut properties = Dictionary::new();
+                            properties.insert("SerialNumber".into(), "iphone-udid".into());
+                            properties.insert("ProductID".into(), 0x12a8u64.into());
+                            properties.insert("ConnectionType".into(), "USB".into());
+                            let mut record = Dictionary::new();
+                            record.insert("DeviceID".into(), 3u64.into());
+                            record.insert("Properties".into(), properties.into());
+                            devices.push(record.into());
+                        }
+                        let mut reply = Dictionary::new();
+                        reply.insert("DeviceList".into(), Value::Array(devices));
+                        write_message(&mut stream, tag, &reply).unwrap();
+                    }
+                    "Connect" => {
+                        let refuse = self
+                            .refusals
+                            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| n.checked_sub(1))
+                            .is_ok();
+                        if refuse || !self.attached.load(Ordering::Acquire) {
+                            write_message(&mut stream, tag, &result(RESULT_CONNECTION_REFUSED))
+                                .unwrap();
+                            continue;
+                        }
+                        write_message(&mut stream, tag, &result(RESULT_OK)).unwrap();
+                        assert_eq!(read_host_hello(&mut stream).unwrap(), pin);
+                        self.connects.fetch_add(1, Ordering::AcqRel);
+                        let (hub, driver) =
+                            UsbHub::new("192.0.2.2".parse().unwrap(), "192.0.2.1".parse().unwrap())
+                                .unwrap();
+                        hub.enable_streams().unwrap();
+                        let stop = Arc::new(AtomicBool::new(false));
+                        self.sessions
+                            .lock()
+                            .unwrap()
+                            .push((stop.clone(), hub.clone()));
+                        stream.set_nonblocking(true).unwrap();
+                        let writer = stream.try_clone().unwrap();
+                        let io_stop = stop.clone();
+                        std::thread::spawn(move || run_io(driver, stream, writer, &io_stop));
+                        let (remote, store, pin, presences) = (
+                            remote.clone(),
+                            store.clone(),
+                            pin.clone(),
+                            self.presences.clone(),
+                        );
+                        std::thread::spawn(move || {
+                            while !stop.load(Ordering::Acquire) {
+                                match hub.accept_stream() {
+                                    Ok(Some((UsbService::Presence, socket))) => {
+                                        if extend_computer_agent::session::serve_presence_pinned(
+                                            socket,
+                                            &remote,
+                                            &store,
+                                            &pin,
+                                            || extend_computer_agent::session::Presence {
+                                                receiving: false,
+                                                port: 48177,
+                                                name: "Test iPhone".into(),
+                                            },
+                                        )
+                                        .is_ok()
+                                        {
+                                            presences.fetch_add(1, Ordering::AcqRel);
+                                        }
+                                    }
+                                    Ok(_) => std::thread::sleep(Duration::from_millis(2)),
+                                    Err(_) => break,
+                                }
+                            }
+                        });
+                    }
+                    other => panic!("unexpected usbmuxd request {other}"),
+                }
+            }
+        }
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn iphone_usb_reconnects_until_disconnect_or_unplug() {
+        let files = tempfile::tempdir().unwrap();
+        let mux = files.path().join("usbmuxd");
+        let listener = std::os::unix::net::UnixListener::bind(&mux).unwrap();
+        let app = Arc::new(
+            Desktop::new(
+                files.path().join("desktop"),
+                files.path().join("missing-helper"),
+            )
+            .unwrap(),
+        );
+        *app.test_usbmux.lock().unwrap() = Some(mux);
+        app.set_test_identity(Identity::generate());
+        let pin = app.identity().unwrap().fingerprint();
+        let remote = Arc::new(Identity::generate());
+        let peer = remote.fingerprint();
+        app.store().unwrap().remember(&peer).unwrap();
+        let store = TrustStore::open(files.path().join("remote-trust")).unwrap();
+        store.remember(&pin).unwrap();
+        let phone = Arc::new(FakeIphone {
+            attached: AtomicBool::new(true),
+            refusals: Default::default(),
+            connects: Default::default(),
+            presences: Default::default(),
+            sessions: Mutex::new(Vec::new()),
+            stop: AtomicBool::new(false),
+        });
+        let server = {
+            let phone = phone.clone();
+            std::thread::spawn(move || phone.serve(listener, remote, store, pin))
+        };
+        let wait = |what: &str, done: &dyn Fn() -> bool| {
+            let deadline = Instant::now() + Duration::from_secs(15);
+            while !done() {
+                assert!(Instant::now() < deadline, "timed out waiting for {what}");
+                std::thread::sleep(Duration::from_millis(20));
+            }
+        };
+        let connects = || phone.connects.load(Ordering::Acquire);
+        let presences = || phone.presences.load(Ordering::Acquire);
+
+        app.connect_usb(&peer, "05ac", "iphone-udid").unwrap();
+        assert_eq!((connects(), presences()), (1, 1));
+        assert_eq!(app.usb_status()["state"], "connected");
+
+        // The app restarts: no listener for a moment, then it accepts again.
+        phone.refusals.store(4, Ordering::Release);
+        phone.end_sessions();
+        wait("the carrier to drop", &|| {
+            app.usb_status()["state"] == "stopped"
+        });
+        wait("a reconnect", &|| presences() == 2);
+        assert_eq!(connects(), 2);
+        assert_eq!(app.usb_status()["state"], "connected");
+        assert_eq!(app.usb_status()["peer"], peer.as_str());
+        // The fake phone counts its reply before the desktop records it.
+        wait("the USB route", &|| {
+            app.snapshot().unwrap().peers[0].route == Some("usb")
+        });
+
+        // Disconnect USB ends the selection: no more reconnects.
+        app.disconnect_usb();
+        phone.end_sessions();
+        std::thread::sleep(Duration::from_secs(1));
+        assert_eq!(connects(), 2);
+
+        // Unplugging stops reconnecting too; the stopped carrier stays selected.
+        app.connect_usb(&peer, "05ac", "iphone-udid").unwrap();
+        assert_eq!(connects(), 3);
+        phone.attached.store(false, Ordering::Release);
+        phone.end_sessions();
+        wait("the carrier to drop", &|| {
+            app.usb_status()["state"] == "stopped"
+        });
+        std::thread::sleep(Duration::from_secs(1));
+        // Plugged back in: the selection must be reconnected explicitly.
+        phone.attached.store(true, Ordering::Release);
+        std::thread::sleep(Duration::from_secs(1));
+        assert_eq!(connects(), 3);
+        assert_eq!(app.usb_status()["state"], "stopped");
+
+        app.disconnect_usb();
+        phone.stop.store(true, Ordering::Release);
+        server.join().unwrap();
+    }
+
     #[test]
     fn inventory_requires_bounded_typed_exact_device_descriptors() {
         let item = serde_json::json!({"vendor":"2717","serial":"tablet-1","name":"Tablet","accessory":false});
