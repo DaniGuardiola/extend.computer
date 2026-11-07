@@ -11,11 +11,14 @@ focusing either product or sampling live performance. Processing can use the
 receiver's CPU/GPU while you work; it does not change already recorded evidence.
 Both host disk space and phone storage are checked before capture.
 
-Raw camera videos are large (hundreds of MB per scene). Once every scene is
-analyzed, the campaign deletes them, including leftover phone copies, and keeps
-each video's SHA-256 and size under `footage` in `report.json`. Failed or
-interrupted campaigns keep their footage for `--process` and `--resume`. Pass
-`--keep-footage` to retain videos from a successful run for later reanalysis.
+Raw evidence is large: hundreds of MB of video plus about 40 MB of per-frame
+logs per scene. Once every scene is analyzed, the campaign deletes the video
+(including leftover phone copies), `cells.jsonl`, `optical-frames.jsonl`,
+`sensor.jsonl`, extra registration frames and the per-frame stage
+`numeric_events`. The report, its metrics, one registration frame per scene and
+each video's SHA-256 (under `footage` in `report.json`) remain. Failed or
+interrupted campaigns keep everything for `--process` and `--resume`. Pass
+`--keep-raw` to retain it all from a successful run for later reanalysis.
 
 This capture schedule removes the older inter-scene transfer/analysis idle gaps.
 Reports identify it as `capture-first-v1`; comparison rejects mixing it with older
@@ -502,7 +505,7 @@ another scene or require the original live display configuration. Invalid footag
 still fails; use `--resume --retry-scene` when a new recording is necessary.
 
 To analyze an already completed campaign with updated tools (it must have been
-run with `--keep-footage`), preserve the original report and footage by choosing
+run with `--keep-raw`), preserve the original report and footage by choosing
 a new output folder:
 
 ```sh

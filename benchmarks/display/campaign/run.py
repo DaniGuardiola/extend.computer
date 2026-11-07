@@ -218,12 +218,32 @@ def validate_resume(previous,current,root):
 def footage_pruned(report):
     return report.get('footage',{}).get('status')=='pruned'
 
+# Per-frame intermediates: read only while analyzing, never by reports or compare.
+RAW_EVIDENCE=['camera/raw/video.mp4','camera/cells.jsonl','camera/optical-frames.jsonl','camera/cursor-optical-frames.jsonl',
+              'camera/sensor.jsonl','camera/raw/registration-*.png','camera/raw/registration-*.png.timing.json']
+
+def strip_numeric_events(value):
+    """Drop raw per-frame stage logs; every summary beside them stays."""
+    if isinstance(value,dict):
+        if isinstance(value.get('numeric_events'),list):value['numeric_events_pruned']=len(value.pop('numeric_events'))
+        for item in value.values():strip_numeric_events(item)
+    elif isinstance(value,list):
+        for item in value:strip_numeric_events(item)
+    return value
+
 def prune_footage(root,report,adb=None,phone=None):
-    """Delete raw phone videos once every scene is analyzed; hashes stay in report.json."""
-    videos=[]
-    for video in sorted(root.glob('*/camera/raw/video.mp4'))+sorted(root.glob('attempts/*/camera/raw/video.mp4')):
-        videos.append({'path':str(video.relative_to(root)),'sha256':digest(video),'bytes':video.stat().st_size})
-        video.unlink()
+    """Once every scene is analyzed, keep only what the report needs; video hashes stay in report.json."""
+    videos=[];freed=0
+    for pattern in RAW_EVIDENCE:
+        for path in sorted(root.glob('*/'+pattern))+sorted(root.glob('attempts/*/'+pattern)):
+            if path.name=='video.mp4':videos.append({'path':str(path.relative_to(root)),'sha256':digest(path),'bytes':path.stat().st_size})
+            freed+=path.stat().st_size;path.unlink()
+    for path in root.rglob('*.json'):
+        if path.name=='manifest.json' or path==root/'report.json':continue
+        text=path.read_text()
+        if '"numeric_events"' not in text:continue
+        freed+=len(text);path.write_text(json.dumps(strip_numeric_events(json.loads(text)),indent=2));freed-=path.stat().st_size
+    strip_numeric_events(report['phases'])
     # Leftover phone copies: successful collection removes its own, retried or
     # failed captures do not. Best effort; the phone may be gone by now.
     if adb and phone:
@@ -233,9 +253,10 @@ def prune_footage(root,report,adb=None,phone=None):
                 run_id=str(uuid.UUID(json.loads(session.read_text())['run_id']))
                 subprocess.run([str(adb),'-s',phone,'shell','run-as',PACKAGE,'rm','-rf',f'files/{run_id}'],capture_output=True,timeout=20)
             except (OSError,ValueError,KeyError,subprocess.SubprocessError):pass
-    previous=report.get('footage',{}).get('videos',[])
-    report['footage']={'status':'pruned','videos':previous+[v for v in videos if v not in previous],
-        'scope':'Raw camera videos deleted after analysis to save disk; rerun with --keep-footage to retain them for offline reanalysis'}
+    previous=report.get('footage',{})
+    report['footage']={'status':'pruned','videos':previous.get('videos',[])+[v for v in videos if v not in previous.get('videos',[])],
+        'freed_bytes':previous.get('freed_bytes',0)+freed,
+        'scope':'Raw video, per-frame decode logs and stage numeric_events deleted after analysis; rerun with --keep-raw to retain them for offline reanalysis'}
 
 def process_capture(root,report,row,adb,phone,ui):
     folder=root/f"{row['repetition']:02}-{row['scene']}";camera=folder/'camera'
@@ -380,7 +401,7 @@ def prepare_reanalysis_copy(path,output):
     if report.get('status') not in {'complete_with_declared_limits','setup_check_passed'}:
         raise ValueError('Separate reanalysis requires a completed campaign')
     if footage_pruned(report):
-        raise ValueError('Raw footage was deleted after analysis; recapture with --keep-footage to allow offline reanalysis')
+        raise ValueError('Raw footage was deleted after analysis; recapture with --keep-raw to allow offline reanalysis')
     if not report.get('phases') or any(row.get('status')!='measured' for row in report['phases']):
         raise ValueError('Separate reanalysis requires every scene to be measured')
     inventory=json.loads((source/'manifest.json').read_text())['artifacts']
@@ -427,7 +448,7 @@ def prepare_reanalysis_copy(path,output):
     write(target/'manifest.json',{'artifacts':artifact_inventory(target)})
     return target
 
-def process_existing(path,no_open=False,reanalyze=False,reanalysis_output=None,keep_footage=False):
+def process_existing(path,no_open=False,reanalyze=False,reanalysis_output=None,keep_raw=False):
     if reanalysis_output:path=prepare_reanalysis_copy(path,reanalysis_output)
     root=path.expanduser().resolve();report=json.loads((root/'report.json').read_text())
     validate_resume(report,report,root)
@@ -444,7 +465,7 @@ def process_existing(path,no_open=False,reanalyze=False,reanalysis_output=None,k
         total=len(campaign_scenes(report['settings']))*report['settings']['repetitions']
         if len(report['phases'])!=total:raise RuntimeError('Processed saved captures; missing scenes still need --resume')
         report['status']='setup_check_passed' if report['settings'].get('campaign_profile')=='setup_check' else 'complete_with_declared_limits'
-        if not keep_footage:prune_footage(root,report,adb,phone)
+        if not keep_raw:prune_footage(root,report,adb,phone)
         print(ui.paint('Benchmark processing completed successfully.','32'),flush=True)
     except BaseException as error:
         report['status']='failed';report['failure']=str(error);raise
@@ -474,7 +495,7 @@ def main():
     p.add_argument('--resume',type=Path,help='Continue a failed campaign, preserving measured scenes and old attempts')
     p.add_argument('--retry-scene',action='append',default=[],help='With --resume, archive and recapture a failed SCENE or REPETITION:SCENE')
     p.add_argument('--no-open',action='store_true',help='Do not open the HTML report automatically')
-    p.add_argument('--keep-footage',action='store_true',help='Retain raw camera videos after a successful run (several GB) for offline reanalysis')
+    p.add_argument('--keep-raw',action='store_true',help='Retain raw video and per-frame logs after a successful run (several GB) for offline reanalysis')
     modes=p.add_mutually_exclusive_group()
     modes.add_argument('--smoke',action='store_true',help='Five-second single-scene setup check; never a comparison result')
     modes.add_argument('--quick',action='store_true',help='Development run: selected campaign phases once, with normal durations and camera settings')
@@ -483,7 +504,7 @@ def main():
     if a.process:
         if a.resume or a.output or a.quick or a.smoke or a.check or a.include_cursor or a.include_optical_cursor or a.cursor_input_method or a.focus_regions or a.focus_distance_range or a.camera_zoom is not None or a.camera_exposure_compensation_steps is not None or a.retry_scene or a.scene or a.seconds is not None or a.repetitions is not None:p.error('--process cannot be combined with capture mode options')
         if a.reanalyze and a.reanalysis_output:p.error('Choose failed-scene reanalysis or separate completed-campaign reanalysis')
-        process_existing(a.process,a.no_open,a.reanalyze,a.reanalysis_output,a.keep_footage);return
+        process_existing(a.process,a.no_open,a.reanalyze,a.reanalysis_output,a.keep_raw);return
     if a.reanalysis_output:p.error('--reanalysis-output requires --process')
     if a.reanalyze:p.error('--reanalyze requires --process')
     if not a.product:p.error('--product is required')
@@ -664,7 +685,7 @@ def main():
         process_captures(root,report,adb,phone,ui)
         if len(report['phases'])!=len(campaign_scenes(report['settings']))*a.repetitions:raise RuntimeError('Campaign missing measured scenes')
         report['status']='setup_check_passed' if a.smoke else 'complete_with_declared_limits'
-        if not a.keep_footage:prune_footage(root,report,adb,phone)
+        if not a.keep_raw:prune_footage(root,report,adb,phone)
     except BaseException as error:
         report['status']='failed';report['failure']=str(error)
         try:client.request('/stop',{})

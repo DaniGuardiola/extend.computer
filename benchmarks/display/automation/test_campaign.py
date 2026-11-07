@@ -375,7 +375,7 @@ class CampaignOrchestrationTests(unittest.TestCase):
                         'selection':'zero-tolerance-v1','requested_s':0,'actual_s':0,'error_s':0,'max_error_s':1/30}))
                 return types.SimpleNamespace(returncode=0)
             options=['--scene','motion','--scene','scroll','--seconds','6','--camera-exposure-compensation-steps','-6'] if diagnostic else ['--quick'] if quick else []
-            with patch.object(campaign,'open_report') as opened,patch.object(campaign,'Client',return_value=client),patch.object(campaign,'build_swift',return_value=tools),patch.object(campaign,'application',return_value=app),patch.object(campaign,'load',return_value={}),patch.object(campaign,'save'),patch.object(campaign,'adb_at',return_value=Path('/fake/adb')),patch.object(campaign,'select_phone',return_value='test'),patch.object(campaign,'phone_identity',return_value='hash'),patch.object(campaign,'host',return_value={'model':'test'}),patch.object(campaign,'network',return_value=context['network']),patch.object(campaign,'Sampler',FakeSampler),patch.object(campaign.subprocess,'run',side_effect=command),patch.object(campaign,'source_patch',return_value=0),patch.object(campaign,'optical',return_value={'receiver_visible_hz':60,'terminal_receiver_stall_ms':0,'screen_to_screen_transition_ms':{'median':20}}),patch.object(campaign,'quality',return_value={'global_optical_ssim':1}),patch.object(campaign,'snapshot',return_value={'status':'unavailable'}),patch.object(sys,'argv',['campaign','--product','extend','--output',str(output)]+options+([] if quick or diagnostic else ['--keep-footage'])):
+            with patch.object(campaign,'open_report') as opened,patch.object(campaign,'Client',return_value=client),patch.object(campaign,'build_swift',return_value=tools),patch.object(campaign,'application',return_value=app),patch.object(campaign,'load',return_value={}),patch.object(campaign,'save'),patch.object(campaign,'adb_at',return_value=Path('/fake/adb')),patch.object(campaign,'select_phone',return_value='test'),patch.object(campaign,'phone_identity',return_value='hash'),patch.object(campaign,'host',return_value={'model':'test'}),patch.object(campaign,'network',return_value=context['network']),patch.object(campaign,'Sampler',FakeSampler),patch.object(campaign.subprocess,'run',side_effect=command),patch.object(campaign,'source_patch',return_value=0),patch.object(campaign,'optical',return_value={'receiver_visible_hz':60,'terminal_receiver_stall_ms':0,'screen_to_screen_transition_ms':{'median':20}}),patch.object(campaign,'quality',return_value={'global_optical_ssim':1}),patch.object(campaign,'snapshot',return_value={'status':'unavailable'}),patch.object(sys,'argv',['campaign','--product','extend','--output',str(output)]+options+([] if quick or diagnostic else ['--keep-raw'])):
                 with patch("builtins.print") as messages:campaign.main()
                 messages.assert_any_call("Development diagnostic completed successfully." if diagnostic else "Benchmark completed successfully.",flush=True)
                 if diagnostic:
@@ -442,7 +442,7 @@ class CampaignOrchestrationTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError,'integrity check failed'):campaign.validate_resume(interrupted,interrupted,output)
                 video.write_bytes(original)
                 calls.clear();events.clear();expected_captures=6
-                with patch.object(sys,'argv',['campaign','--product','extend','--resume',str(output),'--keep-footage']),patch('builtins.print'):
+                with patch.object(sys,'argv',['campaign','--product','extend','--resume',str(output),'--keep-raw']),patch('builtins.print'):
                     campaign.main()
                 self.assertEqual(calls,['baseline','warmup','static','static','scroll','panel','motion','recovery'])
                 resumed=json.loads((output/'report.json').read_text())
@@ -459,7 +459,7 @@ class CampaignOrchestrationTests(unittest.TestCase):
                     stack.enter_context(patch.object(campaign,'application',side_effect=AssertionError('Product inspected during processing')))
                     stack.enter_context(patch.object(campaign,'select_phone',side_effect=AssertionError('Phone accessed for local footage')))
                     stack.enter_context(patch('builtins.print'))
-                    campaign.process_existing(output,no_open=True,keep_footage=True)
+                    campaign.process_existing(output,no_open=True,keep_raw=True)
                 self.assertEqual(calls,[])
                 # A phone-buffered checkpoint also processes without re-running a scene.
                 retry=json.loads((output/'report.json').read_text());retry['status']='failed';retry['phases'][-1]['status']='captured'

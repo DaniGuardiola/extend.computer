@@ -37,6 +37,10 @@ class ReanalysisTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);source=self.fixture(root)
             retry=source/'attempts/01-motion-retry-1/camera/raw';retry.mkdir(parents=True);(retry/'video.mp4').write_bytes(b'old')
+            camera=source/'01-motion/camera'
+            for name in ['cells.jsonl','optical-frames.jsonl','sensor.jsonl','raw/registration-0.2.png']:(camera/name).write_text('x')
+            (camera/'raw/registration.png').write_text('kept')
+            (camera.parent/'source.json').write_text(json.dumps({'stages':{'numeric_events':[{'stage':'encoded'}]*3,'encoded_payload_mbps':5}}))
             expected=digest(source/'01-motion/camera/raw/video.mp4')
             report=json.loads((source/'report.json').read_text())
             prune_footage(source,report)
@@ -44,6 +48,8 @@ class ReanalysisTests(unittest.TestCase):
             self.assertEqual(report['footage']['status'],'pruned')
             self.assertIn({'path':'01-motion/camera/raw/video.mp4','sha256':expected,'bytes':25},report['footage']['videos'])
             self.assertEqual(len(report['footage']['videos']),2)
+            self.assertEqual(sorted(str(p.relative_to(camera)) for p in camera.rglob('*') if p.is_file()),['provenance.json','raw/registration.png','summary.json'])
+            self.assertEqual(json.loads((camera.parent/'source.json').read_text()),{'stages':{'numeric_events_pruned':3,'encoded_payload_mbps':5}})
             (source/'report.json').write_text(json.dumps(report))
             (source/'manifest.json').write_text(json.dumps({'artifacts':artifact_inventory(source)}))
             with self.assertRaises(ValueError):prepare_reanalysis_copy(source,root/'new')
