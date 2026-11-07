@@ -416,6 +416,7 @@ class CampaignOrchestrationTests(unittest.TestCase):
                     self.assertIn('Quick development run',(output/'report.html').read_text())
                     self.assertEqual(list(output.rglob('video.mp4')),[])
                     self.assertEqual(data['footage']['status'],'pruned');self.assertEqual(len(data['footage']['videos']),5)
+                    self.assertTrue((output/'01-motion/timeline.json').is_file());self.assertEqual(data['phases'][0]['timeline']['status'],'available')
                     self.assertNotIn('01-static/camera/raw/video.mp4',json.loads((output/'manifest.json').read_text())['artifacts'])
                     opened.assert_called_once()
                     return

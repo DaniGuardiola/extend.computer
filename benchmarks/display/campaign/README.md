@@ -20,6 +20,13 @@ each video's SHA-256 (under `footage` in `report.json`) remain. Failed or
 interrupted campaigns keep everything for `--process` and `--resume`. Pass
 `--keep-raw` to retain it all from a successful run for later reanalysis.
 
+Before pruning, analysis writes a compact `timeline.json` per scene (about 10 KB)
+in 250 ms bins: visible updates on both screens, longest receiver gap,
+screen-to-screen lag, encode/decode/render time, encoded bitrate, plus CPU and
+memory per sampler interval. `report.html` charts these per scene. Each series
+is zeroed at the scene start on its own clock (camera, receiver, source), so
+alignment across charts is approximate.
+
 This capture schedule removes the older inter-scene transfer/analysis idle gaps.
 Reports identify it as `capture-first-v1`; comparison rejects mixing it with older
 interleaved runs because thermal conditions can differ. Optical framing/cadence

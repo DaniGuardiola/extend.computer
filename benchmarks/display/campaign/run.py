@@ -10,6 +10,7 @@ from metrics import resources,optical,quality,stats,source_patch,network_delta,c
 from bootstrap import ROOT,build_swift
 from bench import load,save,adb_at,select_phone,phone_identity,product_adapter
 from progress import Progress
+from timeline import CHART_CSS,build as build_timeline,report_html as timeline_html
 
 def recordings_finished(ui):
     ui.line('')
@@ -109,7 +110,7 @@ def render(root,report):
         profile=f'{width} × {height}'+(' (Retina)' if cfg.get('retina',helper.get('scale')==2) else '') if width and height else 'unavailable'
         fps=cfg.get('fps',helper.get('requested_fps'));bitrate=cfg.get('bitrate',helper.get('requested_bitrate_bps'))
         rows.append('<tr>'+''.join('<td>'+html.escape(str(v))+'</td>' for v in [phase['repetition'],phase['scene'],profile,fps if fps else 'unavailable',number(bitrate/1_000_000 if bitrate else None),phase.get('route',{}).get('label','Unclassified'),number(metrics.get('receiver_visible_hz')),number(lat),number(source),number(receiver),number(phase.get('quality',{}).get('global_optical_ssim')),phase['status']])+'</tr>')
-    body='<html><meta charset="utf-8"><title>Display benchmark</title><style>body{font:16px system-ui;margin:40px;max-width:1100px}table{border-collapse:collapse}td,th{border:1px solid #ccc;padding:10px}pre{white-space:pre-wrap}</style>'
+    body='<html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Display benchmark</title><style>body{font:16px system-ui;margin:40px;max-width:1100px}table{border-collapse:collapse}td,th{border:1px solid #ccc;padding:10px}pre{white-space:pre-wrap}'+CHART_CSS+'</style>'
     status={'setup_check_passed':'Setup check passed','complete_with_declared_limits':'Benchmark completed successfully','failed':'Benchmark failed'}.get(report['status'],report['status'])
     body+='<h1>Display benchmark · '+html.escape(report['product'])+'</h1><p><strong>'+html.escape(status)+'</strong></p>'
     if report['settings'].get('campaign_profile')=='quick':body+='<p><strong>Quick development run · one repetition</strong></p>'
@@ -117,6 +118,7 @@ def render(root,report):
     if report.get('failure'):body+='<p>'+html.escape(report['failure'])+'</p>'
     body+='<table><tr><th>Repeat</th><th>Scene</th><th>Display profile</th><th>FPS target</th><th>Bitrate ceiling Mbps</th><th>Route</th><th>Detected visible updates/s</th><th>Screen-to-screen median ms</th><th>Source CPU % one core</th><th>Receiver CPU % one core</th><th>Optical strip SSIM</th><th>Status</th></tr>'+''.join(rows)+'</table>'
     body+='<p>Detected visible updates are a lower bound when camera counters are unreadable. Frame gaps can include observation gaps; native drawable callbacks are separate evidence, not proof of physical visibility.</p>'
+    body+=timeline_html(root,report)
     acquisition=[]
     for phase in report['phases']:
         profile=(phase.get('camera') or {}).get('capture_profile') or {}
@@ -299,6 +301,12 @@ def process_capture(root,report,row,adb,phone,ui):
         'camera_sources':provenance['tool_source_sha256'],
         'native_sources':{name:value['source_sha256'] for name,value in provenance['native_tools'].items()},
         'metric_sources':{name:digest(Path(__file__).parent/name) for name in ['metrics.py','optical_cursor.py','optical_motion.py','optical_signal.py']}}
+    # Convenience view only: a timeline problem never invalidates a measured scene.
+    try:
+        build_timeline(folder,row,reference,report['settings']['seconds'])
+        row['timeline']={'status':'available','path':str((folder/'timeline.json').relative_to(root))}
+    except (OSError,ValueError,KeyError,TypeError,ZeroDivisionError) as error:
+        row['timeline']={'status':'unavailable','reason':str(error)}
     row.update(optical=o,quality=quality(camera/'raw/registration.png',patches),source_patch_index=reference,
                camera=json.loads((camera/'summary.json').read_text()),status='measured')
     ui.line('   '+ui.paint('✓','32')+'  scene analyzed')
