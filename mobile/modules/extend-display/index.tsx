@@ -3,7 +3,7 @@ import {
   requireNativeViewManager,
 } from "expo-modules-core";
 import type { ComponentType, Ref } from "react";
-import type { ViewProps } from "react-native";
+import { Platform, type ViewProps } from "react-native";
 
 export type LaunchSession = {
   id?: string;
@@ -98,7 +98,48 @@ export type ReceiverSettingsStatus = {
   result: { id: number; revision: number; outcome: "applied" | "rejected" | "stale" | "failed" | "closed" | "timed_out"; error: string | null } | null;
 };
 
-export const display = requireNativeModule<{
+/**
+ * iOS Expo modules reject with the debug chain ("FunctionCallException: Calling
+ * the 'x' function has failed (at …)\n→ Caused by: ExtendAccountError: <message>
+ * (at …)"). Screens show `error.message`, so keep only the innermost reason,
+ * like Android's exception messages.
+ */
+export function nativeErrorMessage(message: string): string {
+  const parts = message.split("\n→ Caused by: ");
+  if (parts.length < 2) return message;
+  return parts[parts.length - 1].replace(/^\w+: /, "").replace(/ \(at [^()]*:\d+\)$/, "");
+}
+function cleanError(error: unknown): unknown {
+  if (!(error instanceof Error)) return error;
+  const message = nativeErrorMessage(error.message);
+  if (message === error.message) return error;
+  const clean = new Error(message);
+  const code = (error as { code?: unknown }).code;
+  if (code !== undefined) Object.assign(clean, { code });
+  return clean;
+}
+function withCleanErrors<T extends object>(module: T): T {
+  if (Platform.OS !== "ios") return module;
+  const wrapped = new Map<PropertyKey, unknown>();
+  return new Proxy(module, {
+    get(target, key) {
+      const value = Reflect.get(target, key);
+      if (typeof value !== "function") return value;
+      if (!wrapped.has(key)) {
+        wrapped.set(key, (...args: unknown[]) => {
+          let result: unknown;
+          try { result = value.apply(target, args); } catch (error) { throw cleanError(error); }
+          return result instanceof Promise || typeof (result as { then?: unknown } | null)?.then === "function"
+            ? Promise.resolve(result).catch((error: unknown) => { throw cleanError(error); })
+            : result;
+        });
+      }
+      return wrapped.get(key);
+    },
+  });
+}
+
+export const display = withCleanErrors(requireNativeModule<{
   getAccountState(): Promise<string>;
   resumeAccount(): Promise<void>;
   refreshAccount(): Promise<string>;
@@ -191,7 +232,7 @@ export const display = requireNativeModule<{
   setImmersive(enabled: boolean): void;
   getAppearance(): "system" | "light" | "dark";
   setAppearance(value: "system" | "light" | "dark"): void;
-}>("ExtendDisplay");
+}>("ExtendDisplay"));
 
 export type DisplayInputStatus = {
   state:

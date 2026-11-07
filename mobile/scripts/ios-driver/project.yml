@@ -24,6 +24,7 @@ targets:
       CODE_SIGN_STYLE: Automatic
       GENERATE_INFOPLIST_FILE: YES
       TEST_TARGET_NAME: IOSDriverHost
+      SWIFT_OBJC_BRIDGING_HEADER: DriverUITests/Driver-Bridging-Header.h
 schemes:
   IOSDriver:
     build: { targets: { IOSDriverHost: all, DriverUITests: [test] } }

@@ -81,6 +81,7 @@ impl CursorSink for Sink {
         self.active
     }
     fn move_to(&mut self, x: f64, y: f64) -> Result<()> {
+        self.log.record("control_move", json!({"x":x,"y":y}));
         if let Some(native) = &mut self.native {
             native.move_to(x, y)?;
         }

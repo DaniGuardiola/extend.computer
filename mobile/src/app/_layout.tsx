@@ -31,7 +31,8 @@ function Screens() {
     <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.canvas } }}>
       <Stack.Screen name="index" />
       <Stack.Screen name="settings" />
-      <Stack.Screen name="control" />
+      {/* iOS 26 pops on a full-width swipe by default; that would steal trackpad swipes. Edge swipe still goes back. */}
+      <Stack.Screen name="control" options={{ fullScreenGestureEnabled: false }} />
       <Stack.Screen name="display" options={{ animation: "fade", gestureEnabled: false }} />
     </Stack>
   </>;
