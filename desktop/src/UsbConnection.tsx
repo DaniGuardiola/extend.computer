@@ -35,6 +35,9 @@ export function UsbConnection({
   const [disconnecting, setDisconnecting] = useState(false);
   const [error, setError] = useState("");
   const [reconnectNeeded, setReconnectNeeded] = useState(false);
+  // usbmux connections (iPhone, iPad) end without changing the descriptor, so
+  // only Android's accessory mode needs the cable unplugged before retrying.
+  const vendor = useRef("");
   const scanGeneration = useRef(0);
   const cancelled = useRef(false);
   const alive = useRef(true);
@@ -114,7 +117,8 @@ export function UsbConnection({
         setDevices([]);
         setSelected("");
         setScanning(false);
-        setReconnectNeeded(true);
+        if (vendor.current === APPLE_VENDOR) void scan();
+        else setReconnectNeeded(true);
       }
       const current = await api.usbStatus();
       if (alive.current) setStatus(current);
@@ -154,7 +158,9 @@ export function UsbConnection({
             <p className="mt-4 text-sm" role="status">
               {status.state === "connected"
                 ? "USB is ready. Start a display or keyboard and mouse from either device."
-                : "USB disconnected. Unplug and reconnect the cable before trying again."}
+                : vendor.current === APPLE_VENDOR
+                  ? "USB disconnected. Disconnect USB, then connect again."
+                  : "USB disconnected. Unplug and reconnect the cable before trying again."}
             </p>
           ) : starting ? (
             <p className="mt-4 flex items-center gap-2 text-sm" role="status">
@@ -242,6 +248,7 @@ export function UsbConnection({
                 }
                 onClick={async () => {
                   if (!chosen) return;
+                  vendor.current = chosen.vendor;
                   scanGeneration.current++;
                   setDevices([]);
                   setSelected("");
@@ -257,7 +264,8 @@ export function UsbConnection({
                     await refresh();
                   } catch (e) {
                     if (alive.current && !cancelled.current) {
-                      setReconnectNeeded(true);
+                      if (vendor.current === APPLE_VENDOR) void scan();
+                      else setReconnectNeeded(true);
                       setError(String(e));
                     }
                   } finally {

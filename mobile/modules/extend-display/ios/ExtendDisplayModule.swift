@@ -133,8 +133,39 @@ private enum SharingOptions {
         UIView.animate(withDuration: 0.2) { root.setNeedsStatusBarAppearanceUpdate() }
         root.setNeedsUpdateOfHomeIndicatorAutoHidden()
         root.setNeedsUpdateOfScreenEdgesDeferringSystemGestures()
+        watchSafeArea(window)
+        compensateStatusBar(window)
       }
     }
+  }
+
+  // iOS 26 leaves the window's safe area at its old status bar height after
+  // the status bar shows or hides; it only catches up on the next scene
+  // activation. Without the status bar, leaving the display screen put the
+  // home screen header under it (measured on an iPhone SE: status bar 20 pt,
+  // window top inset 0). Cover the missing height with the root view
+  // controller's additional inset until the window reports it, re-checked
+  // whenever the window's own inset changes.
+  private static func compensateStatusBar(_ window: UIWindow) {
+    guard let root = window.rootViewController, let bar = window.windowScene?.statusBarManager else { return }
+    let shown = enabled || bar.isStatusBarHidden ? 0 : bar.statusBarFrame.height
+    let missing = max(0, shown - window.safeAreaInsets.top)
+    if root.additionalSafeAreaInsets.top != missing { root.additionalSafeAreaInsets.top = missing }
+  }
+  private final class SafeAreaWatcher: UIView {
+    override func safeAreaInsetsDidChange() {
+      super.safeAreaInsetsDidChange()
+      if let window { MainActor.assumeIsolated { Immersive.compensateStatusBar(window) } }
+    }
+  }
+  private static func watchSafeArea(_ window: UIWindow) {
+    if window.subviews.contains(where: { $0 is SafeAreaWatcher }) { return }
+    // Attached to the window itself, so it sees the window's inset without the compensation.
+    let watcher = SafeAreaWatcher(frame: window.bounds)
+    watcher.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    watcher.isUserInteractionEnabled = false
+    watcher.isHidden = true
+    window.insertSubview(watcher, at: 0)
   }
 
   private static let prefix = "ExtendImmersive_"
