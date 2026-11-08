@@ -87,6 +87,8 @@ struct Inner {
     permission_request: Option<String>,
     notification: Option<Notification>,
     notification_sequence: u64,
+    /// Incoming sessions that connected and the status icon hasn't announced.
+    arrivals: Vec<activity::Arrival>,
 }
 impl Inner {
     /// The session the window shows. An incoming connection appears once it
@@ -295,6 +297,7 @@ impl Desktop {
                 permission_request: None,
                 notification: None,
                 notification_sequence: 0,
+                arrivals: Vec::new(),
             }),
         }))
     }
@@ -780,23 +783,29 @@ impl Desktop {
         Ok(())
     }
     fn stage(&self, id: u64, phase: Phase, peer: Option<&str>) {
-        if let Some(j) = self
-            .inner
-            .lock()
-            .unwrap()
+        let mut inner = self.inner.lock().unwrap();
+        let Some(j) = inner
             .job
             .as_mut()
             .filter(|j| j.view.id == id && !j.cancelled.load(Ordering::SeqCst))
-        {
-            if !j.view.advance(phase) {
-                return;
-            }
-            if phase == Phase::Connected {
-                j.view.reconnecting = false;
-            }
-            if let Some(peer) = peer {
-                j.view.peer = Some(peer.into());
-            }
+        else {
+            return;
+        };
+        let arriving = j.view.kind == SessionKind::Incoming
+            && phase == Phase::Connected
+            && j.view.phase != Phase::Connected;
+        if !j.view.advance(phase) {
+            return;
+        }
+        if phase == Phase::Connected {
+            j.view.reconnecting = false;
+        }
+        if let Some(peer) = peer {
+            j.view.peer = Some(peer.into());
+        }
+        if arriving {
+            let arrival = activity::Arrival::of(&j.view);
+            inner.arrived(arrival);
         }
     }
     fn prepare_reconnect(&self, id: u64) -> bool {

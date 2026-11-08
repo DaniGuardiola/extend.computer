@@ -74,10 +74,12 @@ fn follow(
     mut shown: Activity,
 ) {
     while !desktop.is_closing() {
-        let next = desktop.activity();
-        if let Some(notice) = next.notice_since(&shown) {
-            notify(&app, &notice);
+        // Each session that connected since the last look, even one that
+        // has already ended.
+        for session in desktop.take_arrivals() {
+            notify(&app, &session.describe());
         }
+        let next = desktop.activity();
         // Pairing requests wait for an answer in the window.
         if next.approval.is_some() && next.approval != shown.approval {
             crate::shell::show_window(&app);

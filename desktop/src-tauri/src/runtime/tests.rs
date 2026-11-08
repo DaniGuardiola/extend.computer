@@ -156,18 +156,24 @@ esac
     });
     assert!(receiver.approvals.current().is_none());
     // The status icon names the other device; only the controlled side
-    // announces the session.
+    // announces the session, and pairing and name updates never do.
     let incoming = receiver.activity();
     let session = incoming.session.as_ref().unwrap();
     assert!(session.incoming && session.display.is_none() && session.stage == Stage::Connected);
+    assert!(incoming.incoming());
     assert_eq!(session.peer, "My custom name");
-    assert!(incoming
-        .notice_since(&Activity::default())
-        .is_some_and(|notice| notice.starts_with("My custom name is controlling this ")));
+    let arrivals = receiver.take_arrivals();
+    assert_eq!(
+        arrivals.iter().map(|a| a.id).collect::<Vec<_>>(),
+        [session.id]
+    );
+    assert!(arrivals[0]
+        .describe()
+        .starts_with("My custom name is controlling this "));
     let outgoing = sender.activity();
     assert_eq!(outgoing.session.as_ref().unwrap().peer, "Test Mac");
-    assert!(!outgoing.session.as_ref().unwrap().incoming);
-    assert!(outgoing.notice_since(&Activity::default()).is_none());
+    assert!(!outgoing.session.as_ref().unwrap().incoming && !outgoing.incoming());
+    assert!(sender.take_arrivals().is_empty());
     let session_id = sender.snapshot().unwrap().session.unwrap().id;
     let mut changed = device.clone();
     changed.edge = "right".into();

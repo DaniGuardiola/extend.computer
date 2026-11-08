@@ -48,10 +48,7 @@ impl Desktop {
         };
         let session = session.map(|view| ActiveSession {
             id: view.id,
-            peer: view.peer.as_deref().map_or_else(
-                || "Another device".into(),
-                |peer| peer_name(&self.devices.lock().unwrap(), peer),
-            ),
+            peer: self.peer_name(view.peer.as_deref()),
             incoming: view.kind == SessionKind::Incoming,
             display: view.display,
             stage: match view.phase {
@@ -68,6 +65,59 @@ impl Desktop {
             session,
             approval: self.approvals.current().map(|request| request.id),
         }
+    }
+    /// Sessions another device started that connected since the last call,
+    /// oldest first, each once, for the status icon to announce. A session
+    /// that already ended is still here, so one shorter than the icon's poll
+    /// is announced too. Sessions this device started never appear.
+    pub fn take_arrivals(&self) -> Vec<ActiveSession> {
+        let arrivals = std::mem::take(&mut self.inner.lock().unwrap().arrivals);
+        arrivals
+            .into_iter()
+            .map(|arrival| ActiveSession {
+                id: arrival.id,
+                peer: self.peer_name(arrival.peer.as_deref()),
+                incoming: true,
+                display: arrival.display,
+                stage: Stage::Connected,
+            })
+            .collect()
+    }
+    fn peer_name(&self, id: Option<&str>) -> String {
+        let Some(id) = id else {
+            return "Another device".into();
+        };
+        self.devices
+            .lock()
+            .unwrap()
+            .get(id)
+            .map(|device| device.name.clone())
+            .unwrap_or_else(|| format!("Device {}", &id[..8.min(id.len())]))
+    }
+}
+/// An incoming session as it connected, until the status icon announces it.
+pub(super) struct Arrival {
+    id: u64,
+    peer: Option<String>,
+    display: Option<Mode>,
+}
+impl Arrival {
+    pub(super) fn of(view: &Session) -> Self {
+        Self {
+            id: view.id,
+            peer: view.peer.clone(),
+            display: view.display,
+        }
+    }
+}
+/// Arrivals kept while nothing reads them, as in the CLI and tests.
+const ARRIVALS: usize = 8;
+impl Inner {
+    pub(super) fn arrived(&mut self, arrival: Arrival) {
+        if self.arrivals.len() == ARRIVALS {
+            self.arrivals.remove(0);
+        }
+        self.arrivals.push(arrival);
     }
 }
 /// How this device is named in copy: "this Mac" on macOS, as in the window.
@@ -90,16 +140,6 @@ impl Activity {
         self.session
             .as_ref()
             .is_some_and(|session| session.incoming && session.stage == Stage::Connected)
-    }
-    /// The notice to post when `self` follows `previous`: another device has
-    /// just started controlling this one, or showing a display on it. Sessions
-    /// this device started never notify.
-    pub fn notice_since(&self, previous: &Activity) -> Option<String> {
-        let session = self.session.as_ref().filter(|_| self.incoming())?;
-        if previous.incoming() && previous.session.as_ref().map(|s| s.id) == Some(session.id) {
-            return None;
-        }
-        Some(session.describe())
     }
 }
 impl ActiveSession {
@@ -134,12 +174,6 @@ impl ActiveSession {
         }
     }
 }
-fn peer_name(devices: &BTreeMap<String, Device>, id: &str) -> String {
-    devices
-        .get(id)
-        .map(|device| device.name.clone())
-        .unwrap_or_else(|| format!("Device {}", &id[..8.min(id.len())]))
-}
 
 #[cfg(test)]
 mod tests {
@@ -153,37 +187,74 @@ mod tests {
             stage,
         }
     }
-    fn with(session: Option<ActiveSession>) -> Activity {
-        Activity {
-            receiving: true,
-            session,
-            ..Default::default()
+    #[test]
+    fn the_icon_marks_only_connected_incoming_sessions() {
+        for display in [None, Some(Mode::Extend), Some(Mode::Mirror)] {
+            let marked = |incoming, stage| {
+                Activity {
+                    session: Some(session(incoming, display, stage)),
+                    ..Default::default()
+                }
+                .incoming()
+            };
+            assert!(marked(true, Stage::Connected));
+            assert!(!marked(true, Stage::Approval));
+            assert!(!marked(true, Stage::Disconnecting));
+            assert!(!marked(false, Stage::Connected));
         }
+        assert!(!Activity::default().incoming());
     }
     #[test]
-    fn notices_only_incoming_sessions_once_they_connect() {
-        let idle = with(None);
+    fn announces_each_incoming_session_once_even_after_it_ends() {
+        let temp = tempfile::tempdir().unwrap();
+        let app = Desktop::new(temp.path().join("app"), temp.path().join("helper")).unwrap();
+        // Sessions this device starts never announce themselves.
+        let (id, _) = app
+            .reserve(SessionKind::Outgoing, Some("studio-fingerprint".into()))
+            .unwrap();
+        app.stage(id, Phase::Connected, None);
+        app.finish(id, Ok(()));
+        assert!(app.take_arrivals().is_empty());
         for display in [None, Some(Mode::Extend), Some(Mode::Mirror)] {
-            let connecting = with(Some(session(true, display, Stage::Connecting)));
-            let connected = with(Some(session(true, display, Stage::Connected)));
-            assert_eq!(connecting.notice_since(&idle), None);
-            let notice = connected.notice_since(&connecting).unwrap();
-            assert!(notice.starts_with("Studio is "), "{notice}");
-            assert_eq!(connected.notice_since(&idle), Some(notice));
-            // The same session is announced once, and ending it is silent.
-            assert_eq!(connected.notice_since(&connected), None);
-            let ending = with(Some(session(true, display, Stage::Disconnecting)));
-            assert_eq!(ending.notice_since(&connected), None);
-            assert_eq!(idle.notice_since(&connected), None);
-            // A new session from the same device is a new notice.
-            let mut next = connected.clone();
-            next.session.as_mut().unwrap().id = 2;
-            assert!(next.notice_since(&connected).is_some());
-            // Sessions this device started never notify.
-            let outgoing = with(Some(session(false, display, Stage::Connected)));
-            assert_eq!(outgoing.notice_since(&idle), None);
-            assert!(!outgoing.incoming() && connected.incoming() && !ending.incoming());
+            let (id, _) = app.reserve(SessionKind::Incoming, None).unwrap();
+            app.inner.lock().unwrap().job.as_mut().unwrap().view.display = display;
+            app.stage(id, Phase::Approval, Some("studio-fingerprint"));
+            assert!(
+                app.take_arrivals().is_empty(),
+                "announced before connecting"
+            );
+            app.stage(id, Phase::Connected, None);
+            // Keyboard and mouse sessions can report Connected again.
+            app.stage(id, Phase::Connected, None);
+            // The session ends before the icon's next look, and is still
+            // announced, once.
+            app.finish(id, Ok(()));
+            let arrivals = app.take_arrivals();
+            assert_eq!(arrivals.len(), 1, "{arrivals:?}");
+            assert_eq!(arrivals[0].id, id);
+            assert_eq!(arrivals[0].display, display);
+            assert!(
+                arrivals[0].describe().starts_with("Device studio-f is "),
+                "{}",
+                arrivals[0].describe()
+            );
+            assert!(app.take_arrivals().is_empty());
         }
+        // A cancelled connection never connected, so it isn't announced.
+        let (id, _) = app.reserve(SessionKind::Incoming, None).unwrap();
+        app.disconnect();
+        app.stage(id, Phase::Connected, Some("studio-fingerprint"));
+        app.finish(id, Ok(()));
+        assert!(app.take_arrivals().is_empty());
+        // With no icon reading them, only the latest few are kept.
+        for _ in 0..ARRIVALS + 3 {
+            let (id, _) = app.reserve(SessionKind::Incoming, None).unwrap();
+            app.stage(id, Phase::Connected, Some("studio-fingerprint"));
+            app.finish(id, Ok(()));
+        }
+        let kept = app.take_arrivals();
+        assert_eq!(kept.len(), ARRIVALS);
+        assert!(kept.windows(2).all(|pair| pair[0].id < pair[1].id));
     }
     #[test]
     fn describes_sessions_and_their_stop_action_like_the_device_card() {

@@ -44,7 +44,7 @@ A device presents another device's desktop and supplies authorized control input
 
 Device discovery, cryptographic identity, pairing or account membership, OS permissions, routing, and session lifecycle apply across all sharing modes.
 
-A computer always shows who is using it. When another device starts controlling it with its keyboard and mouse, or showing a display on it, the desktop app posts a system notification naming that device, and its status icon marks the session and offers Disconnect. Sessions the computer starts itself don't notify, including a display it shares whose viewer sends input back. During any session the computer stays awake.
+The desktop app shows who is using the computer. When another device starts controlling it with its keyboard and mouse, or showing a display on it, the app posts a system notification naming that device, once per connection and even if the connection has already ended, and its status icon marks the session and offers Disconnect. The operating system's notification settings can silence the notice but not the icon. Sessions the computer starts itself don't notify, including a display it shares whose viewer sends input back. During any session the computer stays awake.
 
 ---
 
