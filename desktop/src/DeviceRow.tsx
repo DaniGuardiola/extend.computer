@@ -455,6 +455,7 @@ export function DeviceRow({
           peer={peer.id}
           session={session.id}
           current={session.display_config}
+          fast={peerOffers(peer, "display-viewer-120fps")}
           pending={pending}
           refresh={refresh}
           onError={setError}

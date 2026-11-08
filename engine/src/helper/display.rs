@@ -179,6 +179,13 @@ pub struct Abilities {
     pub cursor_send: bool,
     /// A viewer draws kind 3 pointer packets over the video.
     pub cursor_overlay: bool,
+    /// The highest refresh rate of the screens a viewer can show on, in Hz;
+    /// 0 when the helper doesn't say.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub viewer_fps: u32,
+}
+fn is_zero(value: &u32) -> bool {
+    *value == 0
 }
 impl Abilities {
     pub const VERSION: u32 = 1;
@@ -567,6 +574,12 @@ mod tests {
         assert!(abilities.encodes(VideoCodec::H264) && !abilities.encodes(VideoCodec::Hevc));
         assert!(abilities.decodes(VideoCodec::H264) && !abilities.decodes(VideoCodec::Hevc));
         assert!(!abilities.cursor_send && !abilities.cursor_overlay);
+        assert_eq!(abilities.viewer_fps, 0);
+        assert!(!String::from_utf8(abilities.to_bytes().unwrap())
+            .unwrap()
+            .contains("viewer_fps"));
+        let fast = Abilities::parse(r#"{"version":1,"viewer":true,"viewer_fps":120}"#).unwrap();
+        assert_eq!(fast.viewer_fps, 120);
         for invalid in ["", "capture=true virtual=true", "{}", r#"{"version":0}"#] {
             assert!(Abilities::parse(invalid).is_err(), "{invalid}");
         }

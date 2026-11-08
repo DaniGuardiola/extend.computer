@@ -6,7 +6,7 @@
 use anyhow::{bail, Context, Result};
 use std::time::Duration;
 use windows::{
-    core::Interface,
+    core::{Interface, PCWSTR},
     Win32::{
         Foundation::{HMODULE, POINT, RECT},
         Graphics::{
@@ -14,7 +14,10 @@ use windows::{
             Direct3D10::ID3D10Multithread,
             Direct3D11::*,
             Dxgi::{Common::*, *},
-            Gdi::{DeleteObject, MonitorFromPoint, MONITOR_DEFAULTTOPRIMARY},
+            Gdi::{
+                DeleteObject, EnumDisplaySettingsW, MonitorFromPoint, DEVMODEW,
+                ENUM_CURRENT_SETTINGS, MONITOR_DEFAULTTOPRIMARY,
+            },
         },
         System::Performance::{QueryPerformanceCounter, QueryPerformanceFrequency},
         UI::{
@@ -66,6 +69,22 @@ fn primary_output() -> Result<(IDXGIAdapter1, IDXGIOutput1, RECT)> {
         adapter_index += 1;
     }
     bail!("No display available.")
+}
+
+/// The primary monitor's refresh rate in Hz, 0 when Windows can't say.
+pub fn primary_refresh_rate() -> u32 {
+    let mut mode = DEVMODEW {
+        dmSize: std::mem::size_of::<DEVMODEW>() as u16,
+        ..Default::default()
+    };
+    // No device name: the primary monitor, which the viewer covers.
+    let read = unsafe { EnumDisplaySettingsW(PCWSTR::null(), ENUM_CURRENT_SETTINGS, &mut mode) };
+    // 0 and 1 stand for the hardware's default rate.
+    if read.as_bool() && mode.dmDisplayFrequency > 1 {
+        mode.dmDisplayFrequency
+    } else {
+        0
+    }
 }
 
 /// The primary monitor's size in physical pixels and its DPI (96 is 100%),

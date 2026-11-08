@@ -152,11 +152,13 @@ func selfTest(codec: VideoCodec = .h264) throws {
             }
             if args == ["capabilities"] {
                 // engine::helper::display::Abilities. Extending needs the virtual display API.
+                // viewer_fps: the fastest screen the viewer can go full screen on.
                 let data = try JSONSerialization.data(withJSONObject: [
                     "version": 1, "source": ECDisplaySupported() ? ["mirror", "extend"] : ["mirror"],
                     "target": true, "viewer": true, "viewer_input": true,
                     "encode": ["hevc", "h264"], "decode": ["hevc", "h264"],
-                    "cursor_send": true, "cursor_overlay": true
+                    "cursor_send": true, "cursor_overlay": true,
+                    "viewer_fps": NSScreen.screens.map(\.maximumFramesPerSecond).max() ?? 0
                 ] as [String: Any], options: [.sortedKeys])
                 print(String(decoding: data, as: UTF8.self)); return
             }

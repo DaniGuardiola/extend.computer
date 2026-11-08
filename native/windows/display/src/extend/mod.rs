@@ -881,9 +881,10 @@ mod source {
         }
 
         /// Applies a configuration and returns the new encoded size. A size
-        /// the monitor offers is a mode switch; another one replaces the
-        /// monitor, and if that fails the stream ends. The scale follows
-        /// Retina and the refresh rate stays.
+        /// the monitor offers is a mode switch; another one, or a frame rate
+        /// above the monitor's refresh rate, replaces the monitor, and if
+        /// that fails the stream ends. The scale follows Retina; a lower
+        /// frame rate only paces encoding.
         pub fn configure(&mut self, configuration: &Configuration) -> Result<(u32, u32)> {
             let scale = if configuration.retina { 2 } else { 1 };
             let size = (
@@ -894,7 +895,8 @@ mod source {
                 size.0 <= CONFIG_LIMITS.encoded && size.1 <= CONFIG_LIMITS.encoded,
                 "Video capture size exceeds supported limit."
             );
-            let offered = self.modes.contains(&size);
+            let refresh = plan::refresh_rate(self.fps, configuration.fps);
+            let offered = self.modes.contains(&size) && refresh == self.fps;
             let _turn = (!offered || (size, scale) != (self.size, self.scale))
                 .then(|| Turn::take(CONFIGURE_TURN, None));
             if offered {
@@ -908,7 +910,7 @@ mod source {
                 self.unopened = None;
                 self.image = None;
                 let modes = plan::modes(size, scale, &self.presets);
-                let request = request(&modes, self.fps, self.monitor.serial);
+                let request = request(&modes, refresh, self.monitor.serial);
                 match self.monitor.replace(request, size, scale, self.placed) {
                     Ok(rect) => {
                         report(rect);
@@ -920,6 +922,7 @@ mod source {
                     }
                 }
                 self.modes = modes;
+                self.fps = refresh;
             }
             self.scale = scale;
             if size != self.size {

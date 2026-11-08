@@ -12,7 +12,7 @@
 
 - [ ] Watch for a physical display freeze after Mac-to-Mac USB stop/reconnect. An earlier build left the receiving Mac's panel frozen until reboot; the cause was never established. Start, stop and reconnect in both directions passed on 2026-10-24 without recurrence.
 
-- [ ] Report real remote display capabilities (hardware modes, refresh rates, Retina) during negotiation. The desktop Display settings currently derive stream-size and frame-rate choices from the negotiated profile, and remembered lower frame rates can limit later choices.
+- [ ] Report the receiver's real display modes (sizes) during negotiation. The desktop Display settings derive stream sizes from the largest profile negotiated with the device, so a larger one is never offered. Frame rates already follow the receiver's `display-viewer-120fps` offer; phones and tablets send no offers yet, so the desktop offers them 120 FPS on trust.
 
 - [ ] Decide the opt-in bounded presentation queue (`native/macos/display/PresentationQueue.swift`). In one trial it improved readable cadence but added lag and CPU. Keep immediate rendering as the default unless a targeted change wins in a repeated comparison.
 

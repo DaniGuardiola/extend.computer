@@ -10,15 +10,18 @@ export function DisplaySettings({
   onChange,
   current,
   initial,
+  fast,
   disabled,
 }: {
   value: DisplayPreferences;
   onChange: (value: DisplayPreferences) => void;
   current: DisplayConfig;
   initial: DisplayConfig;
+  /** The receiver's screen shows 120 frames per second. */
+  fast?: boolean;
   disabled?: boolean;
 }) {
-  const supported = connectionDisplayOptions(initial, current);
+  const supported = connectionDisplayOptions(initial, current, fast);
   const scale = value.retina ? 2 : 1;
   const options = [
     { value: "auto", label: "Fit display" },

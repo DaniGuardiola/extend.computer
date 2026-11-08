@@ -116,6 +116,8 @@ mod windows_main {
                     decode: vec!["h264".into()],
                     cursor_send: false,
                     cursor_overlay: false,
+                    // The viewer covers the primary monitor.
+                    viewer_fps: crate::capture::primary_refresh_rate(),
                 };
                 println!("{}", String::from_utf8(abilities.to_bytes()?)?);
                 Ok(())

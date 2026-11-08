@@ -13,6 +13,7 @@ export function DisplayConnectionSettings({
   peer,
   session,
   current,
+  fast,
   pending,
   refresh,
   onError,
@@ -20,6 +21,8 @@ export function DisplayConnectionSettings({
   peer: string;
   session: number;
   current: DisplayConfig;
+  /** The receiver's screen shows 120 frames per second. */
+  fast: boolean;
   pending: boolean;
   refresh: () => Promise<void>;
   onError: (message: string) => void;
@@ -76,6 +79,7 @@ export function DisplayConnectionSettings({
           onChange={setValue}
           current={current}
           initial={initial}
+          fast={fast}
           disabled={busy || pending}
         />
         <div className="flex items-center justify-between gap-3">

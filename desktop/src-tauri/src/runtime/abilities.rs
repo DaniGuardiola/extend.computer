@@ -28,6 +28,8 @@ pub(crate) struct Abilities {
     pub cursor_send: bool,
     /// A viewer can draw a pointer sent beside the video.
     pub cursor_overlay: bool,
+    /// A viewer has a screen that refreshes at least 120 times a second.
+    pub viewer_120fps: bool,
     pub input_receive: bool,
     pub input_send: bool,
 }
@@ -51,6 +53,7 @@ impl Abilities {
             decode_hevc: helper.decodes(VideoCodec::Hevc),
             cursor_send: helper.cursor_send,
             cursor_overlay: helper.viewer && helper.cursor_overlay,
+            viewer_120fps: helper.viewer && helper.viewer_fps >= 120,
             ..self
         }
     }
@@ -70,6 +73,10 @@ impl Abilities {
             (
                 self.viewer && self.cursor_overlay,
                 offer::DISPLAY_CURSOR_OVERLAY,
+            ),
+            (
+                self.viewer && self.viewer_120fps,
+                offer::DISPLAY_VIEWER_120FPS,
             ),
             (self.input_receive, offer::INPUT_RECEIVE),
             (self.input_send, offer::INPUT_SEND),
@@ -215,6 +222,7 @@ mod tests {
             decode_hevc: true,
             cursor_send: true,
             cursor_overlay: true,
+            viewer_120fps: false,
             input_receive: true,
             input_send: true,
         }
@@ -419,6 +427,38 @@ mod tests {
         .unwrap();
         assert_eq!(mac().refined(&full), mac());
         assert!(!windows().refined(&full).display_control);
+    }
+
+    #[test]
+    fn viewers_with_a_120_hz_screen_offer_120_fps() {
+        for (from, name) in [
+            ("macos", "macOS display abilities with a 120 Hz screen"),
+            ("windows", "Windows display abilities with a 144 Hz screen"),
+        ] {
+            let refined = Abilities::defaults().refined(&report(from, name));
+            assert!(refined.viewer_120fps, "{name}");
+            assert!(refined
+                .offers()
+                .iter()
+                .any(|offer| offer == DISPLAY_VIEWER_120FPS));
+        }
+        let at = |viewer_fps, viewer| {
+            mac().refined(&HelperAbilities {
+                viewer,
+                viewer_fps,
+                ..report("macos", "")
+            })
+        };
+        // 60 Hz and 90 Hz screens, a helper that doesn't say, and a device
+        // that can't view at all don't offer it.
+        for refined in [at(60, true), at(90, true), at(0, true), at(144, false)] {
+            assert!(!refined.viewer_120fps);
+            assert!(!refined
+                .offers()
+                .iter()
+                .any(|offer| offer == DISPLAY_VIEWER_120FPS));
+        }
+        assert!(at(144, true).viewer_120fps);
     }
 
     #[test]

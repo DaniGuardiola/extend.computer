@@ -31,7 +31,7 @@ test("changing quality preserves negotiated auto size, codec and cursor settings
   });
 });
 
-test("connection choices do not advertise a larger size or higher frame rate", () => {
+test("connection choices do not advertise a larger size or a rate the receiver can't show", () => {
   const options = connectionDisplayOptions(negotiated);
   assert.deepEqual(options.frameRates, [30, 60]);
   assert.equal(options.retina, true);
@@ -57,14 +57,37 @@ test("lowering settings does not lose the original profile during this connectio
   assert.equal(options.retina, true);
 });
 
-test("standard-density 30 FPS connections do not offer Retina or 60/120 FPS", () => {
+test("standard-density 30 FPS connections do not offer Retina", () => {
   const options = connectionDisplayOptions({
     ...negotiated,
     fps: 30,
     retina: false,
   });
-  assert.deepEqual(options.frameRates, [30]);
   assert.equal(options.retina, false);
+});
+
+test("a remembered lower frame rate does not hide higher ones", () => {
+  // A session that started at a remembered 30 FPS, and the largest profile
+  // saved for the device at that rate.
+  const slow = { ...negotiated, fps: 30 };
+  assert.deepEqual(connectionDisplayOptions(slow).frameRates, [30, 60]);
+  assert.deepEqual(
+    connectionDisplayOptions(slow, slow, true).frameRates,
+    [30, 60, 120],
+  );
+});
+
+test("120 FPS is offered when the receiver's screen shows it", () => {
+  assert.deepEqual(
+    connectionDisplayOptions(negotiated, negotiated, true).frameRates,
+    [30, 60, 120],
+  );
+  // A rate the receiver chose itself, such as a phone's 120 FPS, stays.
+  const phone = { ...negotiated, fps: 120 };
+  assert.deepEqual(
+    connectionDisplayOptions(phone, phone, false).frameRates,
+    [30, 60, 120],
+  );
 });
 
 test("non-preset negotiated frame rates survive an unchanged apply", () => {
@@ -73,7 +96,7 @@ test("non-preset negotiated frame rates survive an unchanged apply", () => {
     displayConfig("extend", preferencesFromConfig(profile), profile),
     profile,
   );
-  assert.deepEqual(connectionDisplayOptions(profile).frameRates, [30, 50]);
+  assert.deepEqual(connectionDisplayOptions(profile).frameRates, [30, 50, 60]);
 });
 
 test("choosing a smaller size does not add new choices below it", () => {

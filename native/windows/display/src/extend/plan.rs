@@ -100,6 +100,13 @@ pub fn modes(size: (u32, u32), scale: u32, presets: &[(u32, u32)]) -> Vec<(u32, 
     modes
 }
 
+/// The refresh rate, in Hz, of a monitor at `current` that streams at
+/// `fps`: a faster frame rate needs a faster monitor, which replaces it; a
+/// slower one only paces encoding, so the monitor stays where it is.
+pub fn refresh_rate(current: u32, fps: u32) -> u32 {
+    current.max(fps)
+}
+
 /// Encoded sizes stay even for 4:2:0 video.
 pub fn even(value: u32) -> u32 {
     value & !1
@@ -198,6 +205,15 @@ mod tests {
         for missing in [None, Some(""), Some("0"), Some("-1"), Some("4294967296")] {
             assert_eq!(serial(missing), DEFAULT_SERIAL, "{missing:?}");
         }
+    }
+
+    #[test]
+    fn only_a_faster_frame_rate_changes_the_refresh_rate() {
+        assert_eq!(refresh_rate(60, 120), 120);
+        assert_eq!(refresh_rate(60, 60), 60);
+        assert_eq!(refresh_rate(60, 30), 60);
+        assert_eq!(refresh_rate(120, 60), 120);
+        assert_eq!(refresh_rate(30, 60), 60);
     }
 
     #[test]

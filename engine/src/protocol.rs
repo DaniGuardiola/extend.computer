@@ -35,6 +35,9 @@ pub mod offer {
     pub const DISPLAY_DECODE_HEVC: &str = "display-decode-hevc";
     /// A viewer that draws the pointer sent beside the video.
     pub const DISPLAY_CURSOR_OVERLAY: &str = "display-cursor-overlay";
+    /// A viewer with a screen that refreshes 120 times a second, so a source
+    /// offers that frame rate.
+    pub const DISPLAY_VIEWER_120FPS: &str = "display-viewer-120fps";
     pub const INPUT_RECEIVE: &str = "input-receive";
     pub const INPUT_SEND: &str = "input-send";
     pub const MAX_TOKENS: usize = 32;

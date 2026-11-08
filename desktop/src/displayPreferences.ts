@@ -37,11 +37,15 @@ export function preferencesFromConfig(
 }
 
 // The bridge reports applied profiles, not the receiver's complete hardware
-// mode list. Offer smaller stream sizes and frame-rate limits from profiles
-// already negotiated in this connection; do not invent higher capabilities.
+// mode list. Offer smaller stream sizes from profiles already negotiated with
+// this device; do not invent larger ones. Every source and receiver takes 30
+// and 60 FPS, so a remembered lower rate never hides them; 120 FPS needs a
+// receiver whose screen shows it (`fast`, from its `display-viewer-120fps`
+// offer). Rates negotiated another way, such as a phone's own choice, stay.
 export function connectionDisplayOptions(
   initial: DisplayConfig,
   current: DisplayConfig = initial,
+  fast = false,
 ) {
   // A fixed ladder from the largest profile seen, so choosing a size never
   // adds new choices below it.
@@ -59,14 +63,13 @@ export function connectionDisplayOptions(
   }
   for (const profile of [initial, current])
     sizes.add(`${profile.width}x${profile.height}`);
-  const maxFPS = Math.max(initial.fps, current.fps);
   return {
     sizes: [...sizes].sort(
       (a, b) => Number(b.split("x")[0]) - Number(a.split("x")[0]),
     ),
-    frameRates: [...new Set([30, 60, 120, initial.fps, current.fps])]
-      .filter((fps) => fps <= maxFPS)
-      .sort((a, b) => a - b),
+    frameRates: [
+      ...new Set([30, 60, ...(fast ? [120] : []), initial.fps, current.fps]),
+    ].sort((a, b) => a - b),
     retina: initial.retina || current.retina,
   };
 }

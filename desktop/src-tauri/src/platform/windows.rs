@@ -16,6 +16,8 @@ pub const ABILITIES: crate::runtime::Abilities = crate::runtime::Abilities {
     decode_hevc: false,
     cursor_send: false,
     cursor_overlay: false,
+    // Only the helper knows the screens' refresh rates.
+    viewer_120fps: false,
     input_receive: true,
     input_send: true,
 };
