@@ -67,6 +67,17 @@ pub fn helpers(helper: &Path) -> Result<&Path> {
 pub fn helper(beside: &Path, name: &str) -> Result<PathBuf> {
     Ok(bundled(helpers(beside)?, name))
 }
+/// The macOS version, such as "macOS 15.5", for diagnostics and problem reports.
+pub fn os_version() -> String {
+    let version = objc2_foundation::NSProcessInfo::processInfo().operatingSystemVersion();
+    match version.patchVersion {
+        0 => format!("macOS {}.{}", version.majorVersion, version.minorVersion),
+        patch => format!(
+            "macOS {}.{}.{patch}",
+            version.majorVersion, version.minorVersion
+        ),
+    }
+}
 pub fn computer_name() -> Option<String> {
     std::process::Command::new("/usr/sbin/scutil")
         .args(["--get", "ComputerName"])

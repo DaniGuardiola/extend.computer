@@ -9,6 +9,7 @@ mod platform;
 mod relay;
 mod runtime;
 mod shell;
+mod support;
 mod tray;
 mod updates;
 mod wifi_permission;
@@ -285,6 +286,23 @@ async fn account_open_page(state: AccountState<'_>, page: String) -> Result<(), 
     let state = state.inner().clone();
     background(move || state.open_page(page)).await
 }
+/// The plain-text summary behind Copy diagnostic info.
+#[tauri::command]
+async fn diagnostic_info(state: State<'_>, accounts: AccountState<'_>) -> Result<String, String> {
+    let state = state.inner().clone();
+    let accounts = accounts.inner().clone();
+    background(move || {
+        let account = accounts.view();
+        state.diagnostics(
+            &support::system(),
+            &runtime::AccountSummary {
+                server: &account.server,
+                signed_in: account.email.is_some(),
+            },
+        )
+    })
+    .await
+}
 
 #[cfg(any(debug_assertions, feature = "display-benchmark", test))]
 fn display_benchmark_arguments(
@@ -458,6 +476,8 @@ fn main() {
             account_open_page,
             shell::open_at_login,
             shell::set_open_at_login,
+            diagnostic_info,
+            support::report_problem,
             snapshot,
             local_device_info,
             set_local_device_name,

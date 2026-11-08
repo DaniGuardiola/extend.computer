@@ -490,6 +490,46 @@ const offerChannels = () => {
   );
 };
 offerChannels();
+// Mirrors the backend's report: no names, keys, addresses or emails.
+function diagnosticInfo() {
+  const platforms: Record<string, string> = {
+    macos: "macOS",
+    windows: "Windows",
+    linux: "Linux",
+    android: "Android",
+  };
+  const { permissions, capabilities, session } = snapshot;
+  const kinds = [
+    capabilities.extend_display && "extend display",
+    capabilities.mirror_display && "mirror display",
+    capabilities.share_input && "share keyboard and mouse",
+  ].filter(Boolean);
+  return [
+    "extend.computer: 0.2.1",
+    `OS: ${windows ? "Windows 10.0.26100.4349" : "macOS 15.5"}`,
+    `Architecture: ${windows ? "x86_64" : "arm64"}`,
+    `Account server: ${new URL(accountState.server).host}, ${accountState.email ? "signed in" : "signed out"}`,
+    `Allow connections: ${snapshot.receiving ? "on" : "off"}`,
+    `Input helper: ${permissions.available ? "found" : "missing"}`,
+    ...(capabilities.input_permissions
+      ? [
+          `Accessibility: ${permissions.post ? "allowed" : "not allowed"}`,
+          `Keyboard and mouse capture: ${permissions.listen ? "ready" : "not ready"}`,
+        ]
+      : []),
+    ...(capabilities.wifi_optimization
+      ? [`Wi-Fi optimization: ${permissions.wifi ? "allowed" : "not allowed"}`]
+      : []),
+    `Can start: ${kinds.join(", ")}`,
+    `Session: ${session ? `${session.display ? `${session.display}ed display` : "keyboard and mouse"}, ${session.kind}, ${session.phase}` : "none"}`,
+    `Devices: ${snapshot.peers.length}`,
+    ...snapshot.peers.map(
+      (peer, i) =>
+        `  ${i + 1}. ${platforms[peer.device_info?.platform ?? ""] ?? "Unknown"} ${peer.device_info?.kind ?? "device"}, ${peer.trust_source === "account" ? "account" : "paired"}: ${peer.availability.replace("_", " ")}`,
+    ),
+    "",
+  ].join("\n");
+}
 function fail(message: string): never {
   throw new Error(message);
 }
@@ -763,6 +803,17 @@ export async function invoke<T>(
       break;
     case "account_open_page":
       break; // No external navigation in review.
+    case "report_problem":
+      if (id === "help-report-error")
+        fail(
+          "Couldn’t open your browser. Report the problem at github.com/DaniGuardiola/extend.computer/issues.",
+        );
+      break; // No external navigation in review.
+    case "diagnostic_info":
+      if (id === "help-info-error")
+        fail("Could not read the app’s state. Try again.");
+      result = diagnosticInfo();
+      break;
     case "usb_devices":
       if (id === "usb-scanning") return pending<T>();
       if (id === "usb-error")

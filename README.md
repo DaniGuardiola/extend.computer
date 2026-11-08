@@ -26,6 +26,7 @@ The app updates itself after installation.
 - [Website](web/README.md): hosted account service and deployment.
 - [Account server](server/README.md): standalone server setup and API.
 - [Desktop changelog](desktop/CHANGELOG.md): release history.
+- [Report a problem](https://github.com/DaniGuardiola/extend.computer/issues): GitHub Issues. In the app, Settings › Help › Report a problem starts an issue with the app and OS versions filled in.
 
 ## Development
 

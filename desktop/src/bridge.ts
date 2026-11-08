@@ -221,6 +221,13 @@ export const accounts = {
     invoke<void>("account_open_page", { page }),
 };
 
+export const support = {
+  /** Opens a new GitHub issue with the app version and OS filled in. */
+  reportProblem: () => invoke<void>("report_problem"),
+  /** A plain-text summary without names, keys, addresses or emails. */
+  diagnosticInfo: () => invoke<string>("diagnostic_info"),
+};
+
 export type UsbDevice = {
   vendor: string;
   serial: string;

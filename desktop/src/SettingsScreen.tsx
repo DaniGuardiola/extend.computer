@@ -1,4 +1,5 @@
 import { Updates } from "./Updates";
+import { Help } from "./Help";
 import { AccountPanel, type AccountFlow } from "./Account";
 import { useState } from "react";
 import { DeviceInformation } from "./DeviceInformation";
@@ -63,6 +64,7 @@ export function SettingsScreen({
         </section>
       )}
       <Updates />
+      <Help />
       <details
         className="mt-6 border-t border-line pt-5 text-xs text-muted"
         onToggle={(event) => setAdvanced(event.currentTarget.open)}

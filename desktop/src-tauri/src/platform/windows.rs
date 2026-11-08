@@ -45,6 +45,27 @@ pub fn computer_name() -> Option<String> {
         .and_then(|o| String::from_utf8(o.stdout).ok())
         .or_else(|| std::env::var("COMPUTERNAME").ok())
 }
+/// The Windows version, such as "Windows 10.0.26100.4349", from `ver`, for
+/// diagnostics and problem reports. Windows 11 reports 10.0 with a build
+/// number of 22000 or higher.
+pub fn os_version() -> String {
+    extend_computer_agent::cursor::helper_command("cmd")
+        .args(["/C", "ver"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        // The console code page can be anything; only the digits matter.
+        .and_then(|o| windows_version(&String::from_utf8_lossy(&o.stdout)))
+        .unwrap_or_else(|| "Windows".into())
+}
+/// "Microsoft Windows [Version 10.0.26100.4349]" -> "Windows 10.0.26100.4349".
+/// The word "Version" is translated in other display languages.
+fn windows_version(ver: &str) -> Option<String> {
+    let bracket = ver.split_once('[')?.1.split_once(']')?.0;
+    let number = bracket.split_whitespace().last()?;
+    (number.contains('.') && number.bytes().all(|b| b.is_ascii_digit() || b == b'.'))
+        .then(|| format!("Windows {number}"))
+}
 /// Keep the PC from sleeping while idle during a session, which would drop
 /// the connection. Windows ties the request to the calling thread, so the
 /// guard can't leave it, and ends it on drop.
@@ -84,4 +105,22 @@ pub mod passkey {
 }
 pub mod traffic_lights {
     pub fn apply(_: &tauri::AppHandle) {}
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn reads_the_version_from_ver() {
+        assert_eq!(
+            super::windows_version("\r\nMicrosoft Windows [Version 10.0.26100.4349]\r\n")
+                .as_deref(),
+            Some("Windows 10.0.26100.4349")
+        );
+        assert_eq!(
+            super::windows_version("Microsoft Windows [Versión 10.0.19045.3803]").as_deref(),
+            Some("Windows 10.0.19045.3803")
+        );
+        assert_eq!(super::windows_version("Microsoft Windows"), None);
+        assert_eq!(super::windows_version("[Version <bad>]"), None);
+    }
 }

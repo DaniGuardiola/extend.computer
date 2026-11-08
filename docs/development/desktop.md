@@ -28,6 +28,8 @@ Raw `tauri dev` is not the stable signed development-bundle workflow. Release bu
 
 Local pairing opens a discoverable window on both devices and verifies ordered symbols. Manual code entry is available as a fallback. Account sign-in uses the account service and browser handoff; verified account membership authorizes connections alongside manual pairing. The device row starts and stops keyboard/mouse sessions and chooses the handoff edge.
 
+Settings › Help has **Report a problem**, which opens a new GitHub issue with the app version and OS filled in, and **Copy diagnostic info**, which copies the short summary shown under **Show diagnostic info**. Nothing is uploaded; the user decides what to paste.
+
 Permission guidance runs inside the app through native bridges. Effective helper checks determine readiness. The floating guidance offers the outer application bundle for System Settings; it does not grant permissions itself.
 
 ## Checks
