@@ -45,5 +45,5 @@ objc2 = "0.6"
 objc2-authentication-services = { version = "0.3", default-features = false, features = ["std", "ASAuthorization", "ASAuthorizationController", "ASAuthorizationCredential", "ASAuthorizationProvider", "ASAuthorizationRequest", "ASAuthorizationPlatformPublicKeyCredentialProvider", "ASAuthorizationPlatformPublicKeyCredentialAssertionRequest", "ASAuthorizationPlatformPublicKeyCredentialAssertion", "ASAuthorizationPlatformPublicKeyCredentialDescriptor", "ASAuthorizationPublicKeyCredentialAssertion", "ASAuthorizationPublicKeyCredentialDescriptor", "ASAuthorizationSecurityKeyPublicKeyCredentialProvider", "ASAuthorizationSecurityKeyPublicKeyCredentialAssertionRequest", "ASAuthorizationSecurityKeyPublicKeyCredentialAssertion", "ASAuthorizationSecurityKeyPublicKeyCredentialDescriptor", "ASAuthorizationPublicKeyCredentialAssertionRequest", "ASAuthorizationPublicKeyCredentialConstants", "ASFoundation", "ASPublicKeyCredential"] }
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSData", "NSError", "NSProcessInfo", "NSString"] }
 
-[target."cfg(windows)".dependencies]
+[target.'cfg(any(windows, target_os = "macos"))'.dependencies]
 tauri-plugin-single-instance = "2"

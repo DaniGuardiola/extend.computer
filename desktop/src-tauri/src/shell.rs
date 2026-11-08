@@ -12,6 +12,18 @@ pub const AUTOSTART: &str = "--autostart";
 pub fn started_at_login() -> bool {
     launched_at_login(std::env::args().skip(1))
 }
+/// Another launch handed its arguments (program first) to this running app
+/// and quit. The login item changes nothing; any other launch shows the
+/// window.
+#[cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
+pub fn launched_again(app: &AppHandle, args: Vec<String>) {
+    if opens_window(args) {
+        show_window(app);
+    }
+}
+fn opens_window(args: Vec<String>) -> bool {
+    !launched_at_login(args.into_iter().skip(1))
+}
 fn launched_at_login(mut args: impl Iterator<Item = String>) -> bool {
     args.any(|arg| arg == AUTOSTART)
 }
@@ -74,5 +86,13 @@ mod tests {
         assert!(!launched_at_login(
             args(&["--display-benchmark", "peer"]).into_iter()
         ));
+    }
+    #[test]
+    fn launching_again_opens_the_window_unless_the_login_item_did() {
+        let args = |list: &[&str]| list.iter().map(|arg| arg.to_string()).collect::<Vec<_>>();
+        let program = "/Applications/extend.computer.app/Contents/MacOS/extend-computer";
+        assert!(opens_window(args(&[program])));
+        assert!(!opens_window(args(&[program, AUTOSTART])));
+        assert!(opens_window(args(&[])));
     }
 }

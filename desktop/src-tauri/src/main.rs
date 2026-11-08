@@ -331,12 +331,12 @@ fn display_benchmark_arguments(
 fn main() {
     let builder = tauri::Builder::default();
     // A second launch, such as from the Start menu while the window is
-    // closed, opens the running app's window instead. macOS does this itself.
-    #[cfg(windows)]
+    // closed, opens the running app's window instead. On macOS the login
+    // item starts the executable directly, outside Launch Services, which
+    // would otherwise run a second copy next to one macOS reopened at login.
+    #[cfg(any(windows, target_os = "macos"))]
     let builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _| {
-        if !args.iter().any(|arg| arg == shell::AUTOSTART) {
-            shell::show_window(app);
-        }
+        shell::launched_again(app, args)
     }));
     builder
         .plugin(tauri_plugin_notification::init())
