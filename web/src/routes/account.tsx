@@ -253,10 +253,8 @@ function Dashboard() {
             deleted.current = false
             throw error
           }
-          await navigate({
-            to: '/login',
-            search: { reason: 'account-deleted' },
-          })
+          // A full page load drops the deleted account's cached data.
+          window.location.replace('/login?reason=account-deleted')
         },
         '',
         true,

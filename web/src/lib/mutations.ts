@@ -113,12 +113,13 @@ export function useChangePassword() {
   })
 }
 
-// Deletion ends every session, so all cached account data is dropped.
+// Deletion ends every session. The caller then loads the sign-in page in full,
+// which drops all cached account data. Clearing the cache in place would
+// refetch the mounted dashboard queries, and their 401s would redirect to the
+// session-ended notice instead of the deletion confirmation.
 export function useDeleteAccount() {
-  const client = useQueryClient()
   return useOperation(async (email: string) => {
     await api('DELETE /account', { email })
-    client.clear()
   })
 }
 

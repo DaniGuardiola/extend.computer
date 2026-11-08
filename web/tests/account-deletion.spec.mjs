@@ -18,7 +18,8 @@ async function openAccount(page, deletion) {
       deleted = result.status === 204
       return route.fulfill(result)
     }
-    if (deleted && path.endsWith('/account'))
+    // Like the server: once deleted, every signed-in request is refused.
+    if (deleted && !path.endsWith('/server'))
       return route.fulfill({ status: 401, json: { error: 'Please sign in' } })
     return route.fallback()
   })
