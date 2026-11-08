@@ -158,15 +158,30 @@ fn fit_screen(screen: &Screen, config: &mut Config) -> Result<()> {
         "Invalid display geometry"
     );
     let retina = config.retina && screen.scale >= 1.5;
+    // Stream points per screen point. A Mac reports 1x or 2x, where this is
+    // 1. Windows reports its display scale (125%, 150%…): Retina streams its
+    // physical pixels at 2x, pixel for pixel; a screen below Retina density
+    // streams its physical pixels at 1x; Retina turned off keeps its points.
+    let points = if retina {
+        screen.scale / 2.0
+    } else if screen.scale < 1.5 {
+        screen.scale
+    } else {
+        1.0
+    };
+    let (width, height) = (
+        (width as f64 * points).round().max(1.0),
+        (height as f64 * points).round().max(1.0),
+    );
     let scale = if retina { 2.0 } else { 1.0 };
-    let fit = (4096.0 / (width as f64 * scale))
-        .min(4096.0 / (height as f64 * scale))
+    let fit = (4096.0 / (width * scale))
+        .min(4096.0 / (height * scale))
         .min(1.0);
     // Align encoded pixels, not logical points: Retina may have odd logical
     // dimensions while its backing raster remains even for 4:2:0 codecs.
     let alignment = if retina { 1 } else { 2 };
-    config.width = (width as f64 * fit) as u32 / alignment * alignment;
-    config.height = (height as f64 * fit) as u32 / alignment * alignment;
+    config.width = (width * fit) as u32 / alignment * alignment;
+    config.height = (height * fit) as u32 / alignment * alignment;
     config.retina = retina;
     config.validate()
 }
@@ -1289,6 +1304,51 @@ mod diagnostic_tests {
         let mut standard = config(Mode::Extend, false);
         fit_screen(&screen, &mut standard).unwrap();
         assert_eq!(standard.height, 1084);
+    }
+
+    #[test]
+    fn windows_display_scales_stream_physical_pixels_and_offer_retina_from_150_percent() {
+        // Windows reports its scaled size in points and its display scale.
+        let windows = |width, height, scale| Screen {
+            width,
+            height,
+            scale,
+            usable_width: None,
+            usable_height: None,
+            viewport_cg: None,
+            window_number: None,
+        };
+        let fit = |screen: &Screen, mode, retina| {
+            let mut config = config(mode, retina);
+            fit_screen(screen, &mut config).unwrap();
+            (config.width, config.height, config.retina)
+        };
+        // 100%, as every Windows build reported before: physical pixels at 1x.
+        let plain = windows(1920, 1080, 1.0);
+        assert_eq!(fit(&plain, Mode::Extend, true), (1920, 1080, false));
+        // 125%: still physical pixels at 1x, not the smaller scaled size.
+        let laptop = windows(1536, 864, 1.25);
+        assert_eq!(fit(&laptop, Mode::Extend, true), (1920, 1080, false));
+        assert_eq!(fit(&laptop, Mode::Mirror, true), (1920, 1080, false));
+        // 150%: Retina at half the physical size, so the stream matches the
+        // panel pixel for pixel; without Retina, Windows' own scaled size.
+        let dense = windows(1707, 1067, 1.5);
+        assert_eq!(fit(&dense, Mode::Extend, true), (1280, 800, true));
+        assert_eq!(fit(&dense, Mode::Mirror, true), (1280, 800, true));
+        assert_eq!(fit(&dense, Mode::Extend, false), (1706, 1066, false));
+        // 200% and 175% (a 4K panel): half the physical pixels in Retina.
+        assert_eq!(
+            fit(&windows(1440, 900, 2.0), Mode::Extend, true),
+            (1440, 900, true)
+        );
+        assert_eq!(
+            fit(&windows(2194, 1234, 1.75), Mode::Extend, true),
+            (1920, 1080, true)
+        );
+        // A Mac's 2x screen is unchanged: its points at Retina.
+        let mac = windows(1512, 982, 2.0);
+        assert_eq!(fit(&mac, Mode::Extend, true), (1512, 982, true));
+        assert_eq!(fit(&mac, Mode::Extend, false), (1512, 982, false));
     }
 
     #[test]

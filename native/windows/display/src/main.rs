@@ -39,9 +39,7 @@ mod windows_main {
     use anyhow::{bail, ensure, Result};
     use extend_computer_agent::{
         helper::{
-            display::{
-                Abilities, Configuration, HelperMessage, Launch, Screen, SourceCommand, Startup,
-            },
+            display::{Abilities, Configuration, HelperMessage, Launch, SourceCommand, Startup},
             packet::{frame, write_packet, Kind},
         },
         session::display::{VideoCodec, CONFIG_LIMITS},
@@ -89,18 +87,11 @@ mod windows_main {
         let args: Vec<String> = std::env::args().skip(1).collect();
         match args.first().map(String::as_str) {
             Some("screen") => {
-                let (width, height) = crate::capture::primary_size()?;
-                // Report physical pixels at scale 1 so mirroring encodes at
-                // native resolution instead of the scaled desktop size.
-                let screen = Screen {
-                    width,
-                    height,
-                    scale: 1.0,
-                    usable_width: None,
-                    usable_height: None,
-                    viewport_cg: None,
-                    window_number: None,
-                };
+                // Points and the display scale, as macOS reports them. The
+                // runtime streams physical pixels below Retina density, so a
+                // mirror still encodes at native resolution.
+                let (width, height, dpi) = crate::capture::primary_screen()?;
+                let screen = crate::viewer::protocol::screen(width, height, dpi);
                 println!("{}", String::from_utf8(screen.to_bytes()?)?);
                 Ok(())
             }

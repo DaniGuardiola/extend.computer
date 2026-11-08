@@ -53,6 +53,7 @@ use windows::{
             },
         },
         UI::{
+            HiDpi::GetDpiForWindow,
             Input::{
                 Ime::{
                     ImmAssociateContextEx, ImmGetContext, ImmReleaseContext, ImmSetCandidateWindow,
@@ -801,8 +802,15 @@ impl Viewer {
             match command {
                 ViewerCommand::Viewport { id } => {
                     let (width, height) = self.presenter.size;
-                    self.writer
-                        .control(&protocol::viewport(id, width, height, self.fullscreen()));
+                    // The scale of the monitor the window is on.
+                    let dpi = unsafe { GetDpiForWindow(self.hwnd) };
+                    self.writer.control(&protocol::viewport(
+                        id,
+                        width,
+                        height,
+                        dpi,
+                        self.fullscreen(),
+                    ));
                 }
                 ViewerCommand::Configuration(configuration) => {
                     let ok = protocol::configuration_valid(&configuration);

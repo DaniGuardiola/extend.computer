@@ -8,17 +8,20 @@ use std::time::Duration;
 use windows::{
     core::Interface,
     Win32::{
-        Foundation::{HMODULE, RECT},
+        Foundation::{HMODULE, POINT, RECT},
         Graphics::{
             Direct3D::D3D_DRIVER_TYPE_UNKNOWN,
             Direct3D10::ID3D10Multithread,
             Direct3D11::*,
             Dxgi::{Common::*, *},
-            Gdi::DeleteObject,
+            Gdi::{DeleteObject, MonitorFromPoint, MONITOR_DEFAULTTOPRIMARY},
         },
         System::Performance::{QueryPerformanceCounter, QueryPerformanceFrequency},
         UI::{
-            HiDpi::{SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2},
+            HiDpi::{
+                GetDpiForMonitor, SetProcessDpiAwarenessContext,
+                DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, MDT_EFFECTIVE_DPI,
+            },
             WindowsAndMessaging::{
                 DrawIconEx, GetCursorInfo, GetIconInfo, CURSORINFO, CURSOR_SHOWING, DI_NORMAL,
                 ICONINFO,
@@ -65,9 +68,16 @@ fn primary_output() -> Result<(IDXGIAdapter1, IDXGIOutput1, RECT)> {
     bail!("No display available.")
 }
 
-pub fn primary_size() -> Result<(u32, u32)> {
+/// The primary monitor's size in physical pixels and its DPI (96 is 100%),
+/// 0 when Windows can't say.
+pub fn primary_screen() -> Result<(u32, u32, u32)> {
     let (_, _, r) = primary_output()?;
-    Ok(((r.right - r.left) as u32, (r.bottom - r.top) as u32))
+    let monitor = unsafe { MonitorFromPoint(POINT { x: 0, y: 0 }, MONITOR_DEFAULTTOPRIMARY) };
+    let (mut dpi, mut dpi_y) = (0, 0);
+    if unsafe { GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut dpi, &mut dpi_y) }.is_err() {
+        dpi = 0;
+    }
+    Ok(((r.right - r.left) as u32, (r.bottom - r.top) as u32, dpi))
 }
 
 struct Converted {

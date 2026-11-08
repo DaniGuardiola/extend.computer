@@ -31,6 +31,7 @@
     {"name": "viewer input 8", "from": "macos", "channel": "viewer_input", "json": "{\"active\":false,\"type\":\"focus\",\"revision\":2}"},
     {"name": "macOS main display", "from": "macos", "channel": "screen", "json": "{\"height\":1117,\"scale\":2,\"width\":1728,\"usable_height\":1085,\"usable_width\":1728}"},
     {"name": "Windows main display", "from": "windows", "channel": "screen", "json": "{\"height\":1080,\"scale\":1.0,\"width\":1920}"},
+    {"name": "Windows main display at 150%", "from": "windows", "channel": "screen", "json": "{\"height\":1067,\"scale\":1.5,\"width\":1707}"},
     {"name": "macOS display abilities", "from": "macos", "channel": "capabilities", "json": "{\"cursor_overlay\":true,\"cursor_send\":true,\"decode\":[\"hevc\",\"h264\"],\"encode\":[\"hevc\",\"h264\"],\"source\":[\"mirror\",\"extend\"],\"target\":true,\"version\":1,\"viewer\":true,\"viewer_input\":true}"},
     {"name": "Windows display abilities", "from": "windows", "channel": "capabilities", "json": "{\"cursor_overlay\":false,\"cursor_send\":false,\"decode\":[\"h264\"],\"encode\":[\"h264\"],\"source\":[\"mirror\"],\"target\":false,\"version\":1,\"viewer\":true,\"viewer_input\":true}"},
     {"name": "Windows display abilities with the display driver", "from": "windows", "channel": "capabilities", "json": "{\"cursor_overlay\":false,\"cursor_send\":false,\"decode\":[\"h264\"],\"encode\":[\"h264\"],\"source\":[\"mirror\",\"extend\"],\"target\":false,\"version\":1,\"viewer\":true,\"viewer_input\":true}"},

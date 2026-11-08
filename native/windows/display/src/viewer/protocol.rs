@@ -39,21 +39,41 @@ pub fn configuration_valid(configuration: &Configuration) -> bool {
         && CONFIG_LIMITS.fps.contains(&configuration.fps)
 }
 
-/// The viewport reply. Windows reports physical pixels at scale 1, as its
-/// `screen` command does, so a mirror fills the window pixel for pixel.
-pub fn viewport(id: u64, width: u32, height: u32, fullscreen: bool) -> HelperMessage {
+/// The pixels per point at `dpi`, as Windows' display scale: 96 DPI is
+/// 100%. A missing answer counts as 100%.
+pub fn dpi_scale(dpi: u32) -> f64 {
+    if dpi == 0 {
+        1.0
+    } else {
+        f64::from(dpi) / 96.0
+    }
+}
+
+/// A monitor of `width` x `height` physical pixels at `dpi`, as the macOS
+/// helper reports a screen: its size in points (Windows' scaled size) and the
+/// pixels per point. The runtime streams a high-density monitor in Retina and
+/// another one at its physical pixels.
+pub fn screen(width: u32, height: u32, dpi: u32) -> Screen {
+    let scale = dpi_scale(dpi);
+    let points = |pixels: u32| ((f64::from(pixels) / scale).round() as u32).max(1);
+    Screen {
+        width: points(width),
+        height: points(height),
+        scale,
+        usable_width: None,
+        usable_height: None,
+        viewport_cg: None,
+        window_number: None,
+    }
+}
+
+/// The viewport reply: the window's physical size at its monitor's `dpi`,
+/// in the `screen` command's terms.
+pub fn viewport(id: u64, width: u32, height: u32, dpi: u32, fullscreen: bool) -> HelperMessage {
     HelperMessage::Viewport {
         id,
         fullscreen,
-        screen: Screen {
-            width,
-            height,
-            scale: 1.0,
-            usable_width: None,
-            usable_height: None,
-            viewport_cg: None,
-            window_number: None,
-        },
+        screen: screen(width, height, dpi),
     }
 }
 
@@ -129,6 +149,23 @@ mod tests {
     }
 
     #[test]
+    fn screens_report_points_and_the_display_scale() {
+        let size = |screen: Screen| (screen.width, screen.height, screen.scale);
+        // 100% keeps physical pixels at scale 1, the bytes older builds sent.
+        assert_eq!(size(screen(1920, 1080, 96)), (1920, 1080, 1.0));
+        assert_eq!(
+            String::from_utf8(screen(1920, 1080, 96).to_bytes().unwrap()).unwrap(),
+            r#"{"height":1080,"scale":1.0,"width":1920}"#
+        );
+        assert_eq!(size(screen(1920, 1080, 120)), (1536, 864, 1.25));
+        assert_eq!(size(screen(2560, 1600, 144)), (1707, 1067, 1.5));
+        assert_eq!(size(screen(2880, 1800, 192)), (1440, 900, 2.0));
+        assert_eq!(size(screen(3840, 2160, 168)), (2194, 1234, 1.75));
+        // No answer from Windows counts as 100%.
+        assert_eq!(size(screen(1366, 768, 0)), (1366, 768, 1.0));
+    }
+
+    #[test]
     fn configurations_outside_launch_limits_are_refused() {
         let valid = Configuration {
             id: 1,
@@ -159,7 +196,7 @@ mod tests {
 
     #[test]
     fn replies_have_the_bytes_the_runtime_reads() {
-        let reply = viewport(3, 1920, 1080, true);
+        let reply = viewport(3, 1920, 1080, 96, true);
         assert_eq!(
             String::from_utf8(reply.to_bytes().unwrap()).unwrap(),
             r#"{"fullscreen":true,"height":1080,"id":3,"scale":1.0,"type":"viewport","width":1920}"#
@@ -167,6 +204,10 @@ mod tests {
         assert_eq!(
             serde_json::from_slice::<HelperMessage>(&reply.to_bytes().unwrap()).unwrap(),
             reply
+        );
+        assert_eq!(
+            String::from_utf8(viewport(4, 2880, 1800, 192, true).to_bytes().unwrap()).unwrap(),
+            r#"{"fullscreen":true,"height":900,"id":4,"scale":2.0,"type":"viewport","width":1440}"#
         );
         let mut presented = Presented::default();
         let reports: Vec<u64> = (0..180)
