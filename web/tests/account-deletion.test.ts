@@ -148,6 +148,8 @@ test('account deletion needs a fresh security check and the account email, then 
   const exists = () =>
     !!harness.db.prepare('SELECT 1 FROM accounts WHERE id=?').get(doomed.id)
 
+  // Signed out requests are refused before anything else.
+  assert.equal((await remove({ cookie: undefined })).status, 401)
   // Signed in is not enough: deletion needs a security check first.
   assert.equal((await remove()).status, 403)
   assert.equal(
