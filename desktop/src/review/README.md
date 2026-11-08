@@ -14,4 +14,6 @@ Keyboard shortcuts work in the review shell and inside either preview: **← / �
 
 **Check all** walks every fixture and checks that its expected screen opens, reporting failures. It checks rendering and flow entry, not real device, network, OS-permission, or server behavior. Run it in either theme. The narrow window preset tests the desktop layout at a small width; it is not the Android app.
 
+Every fixture starts at 100% zoom. Command or Control with plus, minus or 0 still zooms a preview; there, CSS zoom stands in for the webview zoom, so the review sizes do not reflow the way the app does. To review zoomed layouts, use a window size divided by the zoom (for example 150% of the 580 × 480 minimum window is about 387 × 320).
+
 Native aliases apply only when serving Vite in `ui-review` mode. Normal development uses port 1420, and the production entry and build do not import review files. Remove the `ui:review` script, review HTML files, this directory, and review aliases to discard the temporary tooling.

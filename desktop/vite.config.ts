@@ -18,6 +18,10 @@ export default defineConfig(({ mode, command }) => ({
               "./src/review/window.ts",
               import.meta.url,
             ).pathname,
+            "@tauri-apps/api/webview": new URL(
+              "./src/review/webview.ts",
+              import.meta.url,
+            ).pathname,
           }
         : undefined,
   },

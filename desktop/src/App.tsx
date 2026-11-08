@@ -30,6 +30,7 @@ import {
 } from "./PermissionContinuation";
 import { usePermissions } from "./usePermissions";
 import { useAppearance } from "./Appearance";
+import { useZoomKeys } from "./useZoom";
 import { DeviceRow } from "./DeviceRow";
 import { PairDialog } from "./PairDialog";
 import { PermissionsDialog, type PermissionAction } from "./PermissionsDialog";
@@ -41,6 +42,7 @@ export function App() {
   const account = useAccount();
   const [accountOpen, setAccountOpen] = useState(false);
   const appearance = useAppearance();
+  useZoomKeys();
   const [data, setData] = useState<Snapshot | null>(null);
   const [error, setError] = useState("");
   const [pair, setPair] = useState(false);
@@ -280,7 +282,7 @@ export function App() {
     <div className="flex h-screen flex-col px-8">
       <header
         data-tauri-drag-region="deep"
-        className={`app-header flex h-14 shrink-0 select-none items-center justify-between border-b border-line ${native && navigator.platform.startsWith("Mac") ? "pl-19" : ""}`}
+        className={`app-header flex shrink-0 select-none items-center justify-between border-b border-line ${native && navigator.platform.startsWith("Mac") ? "app-header-mac" : "h-14"}`}
       >
         <div className="app-brand flex items-center gap-2.5 text-lg font-medium tracking-[-.5px]">
           <img

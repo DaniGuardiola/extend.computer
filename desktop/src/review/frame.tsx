@@ -33,9 +33,11 @@ document.documentElement.dataset.theme =
       ? "dark"
       : "light"
     : theme;
-// Independent fixtures: per-peer display settings should not leak between cases.
+// Independent fixtures: per-peer display settings and zoom should not leak
+// between cases.
 for (const key of Object.keys(localStorage))
   if (key.startsWith("display:")) localStorage.removeItem(key);
+localStorage.removeItem("extend.computer.zoom");
 function PreviewApp() {
   const [header, setHeader] = useState<HTMLElement | null>(null);
   useEffect(() => setHeader(document.querySelector("header")), []);

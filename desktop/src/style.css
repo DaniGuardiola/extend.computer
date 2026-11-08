@@ -173,6 +173,13 @@
   filter: brightness(0) invert(1);
 }
 
+/* macOS draws the traffic lights over the header at fixed window points, so a
+   Mac header keeps its height and inset in window points at any zoom. */
+.app-header-mac {
+  height: calc(var(--spacing) * 14 / var(--app-zoom, 1));
+  padding-left: calc(var(--spacing) * 19 / var(--app-zoom, 1));
+}
+
 @media (max-width: 640px) {
   .app-header {
     position: relative;

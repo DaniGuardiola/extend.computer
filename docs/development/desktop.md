@@ -30,6 +30,8 @@ Local pairing opens a discoverable window on both devices and verifies ordered s
 
 Settings › Help has **Report a problem**, which opens a new GitHub issue with the app version and OS filled in, and **Copy diagnostic info**, which copies the short summary shown under **Show diagnostic info**. Nothing is uploaded; the user decides what to paste.
 
+Command (Control on Windows) with plus, minus or 0 zooms the whole webview in steps from 80% to 150%, or back to 100%, and the app remembers the level ([`zoom.ts`](../../desktop/src/zoom.ts)). 150% is the limit at which the window's minimum width still lays out like the narrow review preset; at 200% the settings no longer fit. On a Mac the header keeps its height and left inset in window points, because macOS draws the traffic lights at fixed points over it.
+
 Permission guidance runs inside the app through native bridges. Effective helper checks determine readiness. The floating guidance offers the outer application bundle for System Settings; it does not grant permissions itself.
 
 ## Checks
