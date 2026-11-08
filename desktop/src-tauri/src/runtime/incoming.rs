@@ -130,6 +130,7 @@ impl Desktop {
         drop(inner);
         let app = self.clone();
         std::thread::spawn(move || {
+            let _available = crate::platform::available_activity();
             while !stop.load(Ordering::SeqCst) {
                 {
                     let mut inner = app.inner.lock().unwrap();

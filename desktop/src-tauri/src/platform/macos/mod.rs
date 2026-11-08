@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use tauri::Manager;
 pub mod passkey;
+mod power;
 pub mod traffic_lights;
 
 // Every display and input role. The display helper may report less, such as
@@ -70,11 +71,9 @@ pub fn computer_name() -> Option<String> {
         .filter(|o| o.status.success())
         .and_then(|o| String::from_utf8(o.stdout).ok())
 }
-// Keep realtime scheduling active while the app is in the background, where
-// App Nap would otherwise throttle input and display relaying. The activity
-// ends with the session; it does not change system power settings.
-pub fn session_activity() -> impl Sized {
-    use objc2_foundation::{NSActivityOptions, NSProcessInfo, NSString};
+/// An `NSProcessInfo` activity, ended on drop.
+fn activity(options: objc2_foundation::NSActivityOptions, reason: &str) -> impl Sized {
+    use objc2_foundation::{NSProcessInfo, NSString};
     struct Activity<F: FnOnce()>(Option<F>);
     impl<F: FnOnce()> Drop for Activity<F> {
         fn drop(&mut self) {
@@ -84,9 +83,33 @@ pub fn session_activity() -> impl Sized {
         }
     }
     let process = NSProcessInfo::processInfo();
-    let activity = process.beginActivityWithOptions_reason(
-        NSActivityOptions::UserInitiated | NSActivityOptions::LatencyCritical,
-        &NSString::from_str("Device connection"),
-    );
+    let activity = process.beginActivityWithOptions_reason(options, &NSString::from_str(reason));
     Activity(Some(move || unsafe { process.endActivity(&activity) }))
+}
+// Keep realtime scheduling active while the app is in the background, where
+// App Nap would otherwise throttle input and display relaying, and keep the
+// Mac from sleeping while idle, which would drop the connection. Both end
+// with the session; neither changes system power settings.
+pub fn session_activity() -> impl Sized {
+    use objc2_foundation::NSActivityOptions;
+    (
+        activity(
+            NSActivityOptions::UserInitiatedAllowingIdleSystemSleep
+                | NSActivityOptions::LatencyCritical,
+            "Device connection",
+        ),
+        power::Assertion::new(
+            power::PREVENT_IDLE_SYSTEM_SLEEP,
+            "extend.computer keeps this Mac awake during a connection",
+        ),
+    )
+}
+// While the window is closed, App Nap would delay accepting connections and
+// answering presence checks. The activity lasts while connections are
+// allowed; idle sleep stays allowed.
+pub fn available_activity() -> impl Sized {
+    activity(
+        objc2_foundation::NSActivityOptions::UserInitiatedAllowingIdleSystemSleep,
+        "Allowing connections",
+    )
 }

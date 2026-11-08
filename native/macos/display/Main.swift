@@ -28,6 +28,10 @@ func report(_ error: Error) -> Never {
     DisplayMetrics.shared.flush()
     FileHandle.standardError.write(Data("\(error)\n".utf8)); exit(1)
 }
+// A Mac used only as a screen receives no input of its own, so idle sleep
+// would dim and then turn off its display mid-session. The viewer holds this
+// for its whole life and releases it on every exit.
+private var viewerAwake: PowerAssertion?
 private let outputWriter = CapturePacketWriter(write: { try FileHandle.standardOutput.write(contentsOf: $0) }, legacyFailure: { _ in exit(0) })
 private let measureOutput = ProcessInfo.processInfo.environment["EXTEND_DISPLAY_METRICS"] != nil
 func packet(_ kind: UInt8, _ payload: Data, cursorIdentity: UInt64? = nil, cursorShape: Bool = false) {
@@ -191,6 +195,9 @@ func selfTest(codec: VideoCodec = .h264) throws {
             defer { ProcessInfo.processInfo.endActivity(activity) }
             let app = NSApplication.shared; app.setActivationPolicy(command == "viewer" ? .regular : .accessory)
             if command == "viewer" {
+                viewerAwake = PowerAssertion(PowerAssertion.preventIdleDisplaySleep,
+                    name: "extend.computer keeps this screen on while it shows another device")
+                atexit { viewerAwake?.release() }
                 let viewer = try DisplayViewer(width: width, height: height, separateCursor: separateCursor)
                 viewer.configure(width: width, height: height, fps: requestedFPS)
                 viewer.input = { packet(4, $0) }

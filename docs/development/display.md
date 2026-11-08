@@ -18,6 +18,7 @@ Pinned USB presence replies take priority over a faster Wi-Fi reply, with a boun
 npm run native:display --prefix desktop
 python3 scripts/macos/test-display-parent.py
 sh scripts/macos/test-display-codec.sh
+sh scripts/macos/test-power-assertion.sh
 cargo test -p extend-computer-agent --lib display
 cargo run -p extend-computer-agent --example display-smoke -- extend retina
 ```
@@ -25,6 +26,8 @@ cargo run -p extend-computer-agent --example display-smoke -- extend retina
 The smoke test creates a real virtual display, sends captured video through encrypted loopback WebRTC, and waits for the viewer's Metal command to complete. It then releases the virtual display and both helpers. Screen Recording permission is required for capture. The helper's `self-test` command checks hardware encode/decode and framing with a synthetic image, without capturing the screen.
 
 The parent-exit check verifies that the native helper exits after either SIGTERM or SIGKILL terminates its owning process, even when stdin remains open. This prevents an abandoned helper from retaining a virtual display after an app crash. The check uses a synthetic helper mode; it does not by itself verify virtual-display teardown during a real session.
+
+The power assertion check takes the viewer's display-sleep assertion for a moment, finds it by name in `pmset -g assertions` and checks that releasing it ends it.
 
 The codec check compiles the actual native decoder source, compares Annex B parsing against the previous parser on malformed and sliced inputs, and verifies that returned NAL storage survives input mutation. Its alternating warmed microbenchmarks measure parser cost only; they are not evidence of end-to-end latency or total application CPU savings.
 

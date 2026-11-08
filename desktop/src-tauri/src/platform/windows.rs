@@ -42,7 +42,30 @@ pub fn computer_name() -> Option<String> {
         .and_then(|o| String::from_utf8(o.stdout).ok())
         .or_else(|| std::env::var("COMPUTERNAME").ok())
 }
+/// Keep the PC from sleeping while idle during a session, which would drop
+/// the connection. Windows ties the request to the calling thread, so the
+/// guard can't leave it, and ends it on drop.
+#[cfg(windows)]
+pub fn session_activity() -> impl Sized {
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn SetThreadExecutionState(flags: u32) -> u32;
+    }
+    const ES_CONTINUOUS: u32 = 0x8000_0000;
+    const ES_SYSTEM_REQUIRED: u32 = 0x0000_0001;
+    struct Awake(std::marker::PhantomData<*const ()>);
+    impl Drop for Awake {
+        fn drop(&mut self) {
+            unsafe { SetThreadExecutionState(ES_CONTINUOUS) };
+        }
+    }
+    unsafe { SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED) };
+    Awake(std::marker::PhantomData)
+}
+#[cfg(not(windows))]
 pub fn session_activity() -> impl Sized {}
+/// Windows has no App Nap to hold off while connections are allowed.
+pub fn available_activity() -> impl Sized {}
 
 pub mod passkey {
     pub fn available() -> bool {

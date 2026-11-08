@@ -10,7 +10,7 @@ for arch in arm64 x86_64; do
         -import-objc-header native/macos/display/VirtualDisplay.h "target/VirtualDisplay-$arch.o" \
         native/apple/shared/VideoDecoding.swift native/apple/shared/CursorPacket.swift \
         native/macos/display/Metrics.swift native/macos/display/BenchmarkMarker.swift native/macos/display/VideoCodec.swift native/macos/display/CaptureDiagnostics.swift native/macos/display/CaptureStartupDeadline.swift native/macos/display/CaptureLifecycle.swift native/macos/display/Capture.swift \
-        native/macos/display/Cursor.swift native/macos/display/PresentationQueue.swift native/macos/display/RenderReadiness.swift native/macos/input/InputModel.swift \
+        native/macos/display/Cursor.swift native/macos/display/PowerAssertion.swift native/macos/display/PresentationQueue.swift native/macos/display/RenderReadiness.swift native/macos/input/InputModel.swift \
         native/macos/display/ViewerInput.swift native/macos/display/Viewer.swift native/macos/display/Main.swift \
         -o "target/ExtendComputerDisplay-$arch"
 done

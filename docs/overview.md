@@ -99,6 +99,7 @@ The server advertises relay availability when an account connection starts. Disa
 
 - Platform-specific optimizations belong in adapters. The macOS implementation uses a privileged Wi-Fi broker with a narrow authenticated API, and native user-session helpers for input capture and injection.
 - The desktop runtime permits one active connection job at a time. The CLI uses the same engine through terminal commands.
+- During a keyboard-and-mouse or display session the app keeps the computer from sleeping while idle: on macOS it holds a power assertion that `pmset -g assertions` lists as “extend.computer keeps this Mac awake during a connection”, and on Windows it requests `ES_SYSTEM_REQUIRED`. A computer showing another device's display also keeps its screen on.
 
 ---
 
