@@ -454,6 +454,7 @@ let updateSettings = {
   channel: "stable",
   version: "0.2.1",
 };
+let openAtLogin = false;
 function fail(message: string): never {
   throw new Error(message);
 }
@@ -643,6 +644,13 @@ export async function invoke<T>(
       break;
     case "update_settings":
       result = { ...updateSettings };
+      break;
+    case "open_at_login":
+      result = openAtLogin;
+      break;
+    case "set_open_at_login":
+      openAtLogin = Boolean(args.enabled);
+      result = openAtLogin;
       break;
     case "configure_updates":
       updateSettings = {

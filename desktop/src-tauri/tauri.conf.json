@@ -13,6 +13,7 @@
     "windows": [
       {
         "title": "extend.computer",
+        "visible": false,
         "width": 760,
         "height": 600,
         "minWidth": 580,

@@ -595,7 +595,7 @@ export const scenarios: Scenario[] = [
     "Settings",
     "settings",
     "Settings · signed out",
-    "Account, name, appearance, permissions and updates.",
+    "Account, name, appearance, startup, permissions and updates.",
     "Appearance",
     settings,
   ),

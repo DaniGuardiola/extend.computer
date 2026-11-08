@@ -71,6 +71,10 @@ and still probes its authenticated service before reporting Allowed. No legacy
 ad-hoc helper, global background-item reset, or system certificate trust change is
 involved. The installer refuses to replace a running development service.
 
+## Open at login
+
+**Open at login** (Settings, off by default) writes a launch agent, `~/Library/LaunchAgents/computer.extend.desktop.plist` (`computer.extend.desktop.development.plist` for development), through `tauri-plugin-autostart`. It starts the app with `--autostart`, which skips opening the window. macOS reports the new background item and lists it in Login Items & Extensions under Allow in the Background; turning it off there stops the launch even though the setting still shows it on. The launch agent records the app's path, so moving the app needs the setting turned off and on again.
+
 ## Verification
 
 Run `scripts/macos/test-wifi-signing.py` after configuring local dev signing. It verifies matching app/helper acceptance and rejects a wrong identifier, wrong signer, and ad-hoc application. Rust tests cover pending approval, setup failure, and connection permission gates; native lifecycle tests cover restoration and externally reactivated AWDL. Live approval remains a macOS user action. A production certificate build must also be tested in the release environment.

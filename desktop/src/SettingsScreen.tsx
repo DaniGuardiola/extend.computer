@@ -3,6 +3,7 @@ import { AccountPanel, type AccountFlow } from "./Account";
 import { useState } from "react";
 import { DeviceInformation } from "./DeviceInformation";
 import { DeviceNameSettings } from "./DeviceNameSettings";
+import { OpenAtLogin } from "./OpenAtLogin";
 import { Appearance, type Theme } from "./Appearance";
 import { ArrowLeft } from "lucide-react";
 import {
@@ -46,6 +47,7 @@ export function SettingsScreen({
         </h2>
         <Appearance theme={theme} onChange={onThemeChange} />
       </section>
+      <OpenAtLogin />
       {(capabilities.input_permissions ||
         capabilities.wifi_optimization ||
         (permissions.checked && !permissions.snapshot.permissions.available) ||

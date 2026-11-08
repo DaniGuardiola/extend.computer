@@ -65,6 +65,31 @@ impl Desktop {
     pub fn receive(self: &Arc<Self>, pairing: bool) -> Result<()> {
         self.receive_at(pairing, 48177)
     }
+    /// Turn Allow connections on or off from outside the window, such as the
+    /// menu bar icon. Returns whether the window must open to finish: missing
+    /// permissions open its permission guide, as its switch does, and other
+    /// failures show in its notification bar.
+    pub fn set_receiving(self: &Arc<Self>, on: bool) -> bool {
+        self.set_receiving_at(on, 48177)
+    }
+    pub(super) fn set_receiving_at(self: &Arc<Self>, on: bool, port: u16) -> bool {
+        let result = if on {
+            self.receive_at(false, port)
+        } else {
+            self.stop_receiving()
+        };
+        let Err(error) = result else { return false };
+        if error.is::<ReceivingPermissionRequired>() {
+            self.inner.lock().unwrap().permission_request = Some("receive".into());
+        } else {
+            self.notify(format!(
+                "Incoming connections couldn’t {}. {}",
+                if on { "start" } else { "stop" },
+                friendly_error(&error)
+            ));
+        }
+        true
+    }
     pub(super) fn receive_at(self: &Arc<Self>, pairing: bool, port: u16) -> Result<()> {
         let mut preference = self.receiving_preference.lock().unwrap();
         self.receive_with_preference(pairing, port, &mut preference)

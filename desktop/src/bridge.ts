@@ -4,6 +4,10 @@ export const native = isTauri();
 // decides what is offered.
 const os = navigator.platform;
 export const localNoun = os.startsWith("Mac") ? "Mac" : "computer";
+/** Where the status icon lives, which keeps running with the window closed. */
+export const statusArea = os.startsWith("Mac")
+  ? "menu bar"
+  : "notification area";
 export const unavailableHere = `Not available on ${os.startsWith("Win") ? "Windows" : `this ${localNoun}`} yet.`;
 /** Why Extend display is off here: Windows extends through a display driver,
  * which the app looks for once, at launch. */
@@ -168,6 +172,9 @@ export const api = {
   openPermission: (permission: "listen" | "post" | "wifi") =>
     invoke<void>("open_permission", { permission }),
   dismiss: () => invoke<void>("dismiss_message"),
+  openAtLogin: () => invoke<boolean>("open_at_login"),
+  setOpenAtLogin: (enabled: boolean) =>
+    invoke<boolean>("set_open_at_login", { enabled }),
 };
 
 export type AccountDevice = {

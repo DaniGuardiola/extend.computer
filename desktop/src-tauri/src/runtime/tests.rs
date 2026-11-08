@@ -155,6 +155,14 @@ esac
             .is_some_and(|s| s.phase == Phase::Connected)
     });
     assert!(receiver.approvals.current().is_none());
+    // The status icon names the other device and who started the session.
+    let incoming = receiver.activity();
+    let session = incoming.session.as_ref().unwrap();
+    assert!(session.incoming && session.display.is_none() && session.stage == Stage::Connected);
+    assert_eq!(session.peer, "My custom name");
+    let outgoing = sender.activity();
+    assert_eq!(outgoing.session.as_ref().unwrap().peer, "Test Mac");
+    assert!(!outgoing.session.as_ref().unwrap().incoming);
     let session_id = sender.snapshot().unwrap().session.unwrap().id;
     let mut changed = device.clone();
     changed.edge = "right".into();
@@ -614,6 +622,35 @@ fn receiving_requires_accessibility_and_wifi_but_pairing_does_not() {
     app.refresh_permissions().unwrap();
     assert!(!app.snapshot().unwrap().receiving);
     app.stop_receiving().unwrap();
+    wait(|| app.inner.lock().unwrap().listener.is_none());
+}
+
+#[test]
+#[cfg(unix)]
+fn status_icon_switch_starts_receiving_or_opens_the_permission_guide() {
+    use std::os::unix::fs::PermissionsExt;
+    let temp = tempfile::tempdir().unwrap();
+    let helper = temp.path().join("helper");
+    let status = temp.path().join("status");
+    std::fs::write(&helper, "#!/bin/sh\ncat \"$(dirname \"$0\")/status\"\n").unwrap();
+    std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o700)).unwrap();
+    std::fs::write(&status, "listen=true post=false wifi=true\n").unwrap();
+    let app = Desktop::new(temp.path().join("app"), helper).unwrap();
+    *app.identity.lock().unwrap() = Some(Arc::new(Identity::generate()));
+    // Missing permissions need the window, which then guides through them.
+    assert!(app.set_receiving_at(true, 0));
+    let snapshot = app.snapshot().unwrap();
+    assert_eq!(snapshot.permission_request.as_deref(), Some("receive"));
+    assert!(!snapshot.receiving && snapshot.notification.is_none());
+    assert_eq!(app.activity().status(), "Not accepting connections");
+    app.clear_message();
+    std::fs::write(&status, "listen=true post=true wifi=true\n").unwrap();
+    assert!(!app.set_receiving_at(true, 0));
+    assert!(app.snapshot().unwrap().receiving);
+    assert_eq!(app.activity().status(), "Accepting connections");
+    assert!(app.snapshot().unwrap().permission_request.is_none());
+    assert!(!app.set_receiving_at(false, 0));
+    assert!(!app.activity().receiving);
     wait(|| app.inner.lock().unwrap().listener.is_none());
 }
 

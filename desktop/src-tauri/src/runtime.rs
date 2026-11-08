@@ -17,6 +17,7 @@ use std::{
     time::{Duration, Instant},
 };
 mod abilities;
+mod activity;
 mod device_info;
 mod device_names;
 mod display;
@@ -36,6 +37,7 @@ mod usb;
 mod usb_control_test;
 mod wired;
 pub(crate) use abilities::Abilities;
+pub use activity::{Activity, Stage};
 pub(crate) use errors::friendly_error;
 use errors::is_connection_error;
 mod state;
@@ -87,6 +89,21 @@ struct Inner {
     notification_sequence: u64,
 }
 impl Inner {
+    /// The session the window shows. An incoming connection appears once it
+    /// asks for approval or connects, not while it only handshakes.
+    fn visible_job(&self) -> Option<&Job> {
+        self.job.as_ref().filter(|j| {
+            !(j.view.kind == SessionKind::Incoming && j.view.phase == Phase::Connecting)
+        })
+    }
+    /// Allow connections is on and its listener is running.
+    fn receiving(&self) -> bool {
+        self.receiving_enabled
+            && self
+                .listener
+                .as_ref()
+                .is_some_and(|stop| !stop.load(Ordering::SeqCst))
+    }
     fn receiving_paused(&mut self, message: String) {
         eprintln!("Receiving paused: {message}");
         self.receiving_enabled = false;
@@ -314,14 +331,7 @@ impl Desktop {
             "presence" => Ok(*self.presence_port.lock().unwrap()),
             "control" => {
                 let inner = self.inner.lock().unwrap();
-                ensure!(
-                    inner.receiving_enabled
-                        && inner
-                            .listener
-                            .as_ref()
-                            .is_some_and(|stop| !stop.load(Ordering::SeqCst)),
-                    "Receiving is off"
-                );
+                ensure!(inner.receiving(), "Receiving is off");
                 Ok(inner.listener_port)
             }
             _ => anyhow::bail!("Invalid relay connection kind"),
@@ -500,23 +510,13 @@ impl Desktop {
                 .filter(|i| i.ip().is_ipv4() && !i.is_loopback())
                 .map(|i| SocketAddr::new(i.ip(), 48177).to_string())
                 .collect(),
-            session: inner
-                .job
-                .as_ref()
-                .filter(|j| {
-                    !(j.view.kind == SessionKind::Incoming && j.view.phase == Phase::Connecting)
-                })
-                .map(|j| Session {
-                    quality: (j.view.phase == Phase::Connected)
-                        .then(|| j.quality.view())
-                        .flatten(),
-                    ..j.view.clone()
-                }),
-            receiving: inner.receiving_enabled
-                && inner
-                    .listener
-                    .as_ref()
-                    .is_some_and(|stop| !stop.load(Ordering::SeqCst)),
+            session: inner.visible_job().map(|j| Session {
+                quality: (j.view.phase == Phase::Connected)
+                    .then(|| j.quality.view())
+                    .flatten(),
+                ..j.view.clone()
+            }),
+            receiving: inner.receiving(),
             code: inner
                 .code
                 .as_ref()

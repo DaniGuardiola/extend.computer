@@ -8,6 +8,8 @@ mod permission_flow;
 mod platform;
 mod relay;
 mod runtime;
+mod shell;
+mod tray;
 mod updates;
 mod wifi_permission;
 use peers::Device;
@@ -268,13 +270,7 @@ async fn account_browser_login(
     background(move || {
         state.browser(move || {
             let handle = app.clone();
-            let _ = app.run_on_main_thread(move || {
-                if let Some(window) = handle.get_webview_window("main") {
-                    let _ = window.show();
-                    let _ = window.unminimize();
-                    let _ = window.set_focus();
-                }
-            });
+            let _ = app.run_on_main_thread(move || shell::show_window(&handle));
         })
     })
     .await
@@ -333,7 +329,16 @@ fn display_benchmark_arguments(
 }
 
 fn main() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // A second launch, such as from the Start menu while the window is
+    // closed, opens the running app's window instead. macOS does this itself.
+    #[cfg(windows)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _| {
+        if !args.iter().any(|arg| arg == shell::AUTOSTART) {
+            shell::show_window(app);
+        }
+    }));
+    builder
         .setup(|app| {
             if std::env::var_os("EXTEND_DISPLAY_METRICS").is_some()
                 || std::env::var_os("EXTEND_DISPLAY_BENCHMARK_CONTEXT").is_some()
@@ -400,7 +405,23 @@ fn main() {
             app.manage(accounts);
             app.manage(desktop.clone());
             updates::initialize(app.handle(), &desktop)?;
+            app.handle()
+                .plugin(shell::autostart_plugin(&app.config().identifier))?;
+            tray::start(app.handle(), desktop)?;
+            // At login only the status icon appears.
+            if !shell::started_at_login() {
+                shell::show_window(app.handle());
+            }
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            // Closing hides the window; the app keeps running until it quits.
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == "main" {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![
             connect_display,
@@ -424,6 +445,8 @@ fn main() {
             account_cancel,
             account_browser_login,
             account_open_page,
+            shell::open_at_login,
+            shell::set_open_at_login,
             snapshot,
             local_device_info,
             set_local_device_name,
@@ -460,13 +483,21 @@ fn main() {
             ) {
                 traffic_lights::apply(app);
             }
-            if matches!(
-                event,
-                tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit
-            ) {
-                if let Some(state) = app.try_state::<Arc<Desktop>>() {
-                    state.shutdown();
+            match event {
+                // The Dock icon (or opening the app again) shows the window.
+                #[cfg(target_os = "macos")]
+                tauri::RunEvent::Reopen { .. } => shell::show_window(app),
+                // Running out of windows isn't quitting. Quitting, from the
+                // menus or Cmd+Q, ends with Exit.
+                tauri::RunEvent::ExitRequested {
+                    code: None, api, ..
+                } => api.prevent_exit(),
+                tauri::RunEvent::Exit => {
+                    if let Some(state) = app.try_state::<Arc<Desktop>>() {
+                        state.shutdown();
+                    }
                 }
+                _ => {}
             }
         });
 }

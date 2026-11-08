@@ -14,7 +14,7 @@ dev-identity = ["extend-computer-agent/dev-identity"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 extend-computer-agent = { path = "../../engine" }
@@ -33,6 +33,7 @@ base64 = "0.22"
 url = "2"
 open = "5"
 tungstenite = { version = "0.28", features = ["rustls-tls-native-roots"] }
+tauri-plugin-autostart = "2"
 
 [target.'cfg(target_os = "macos")'.dev-dependencies]
 plist = { version = "1.7", default-features = false }
@@ -42,3 +43,6 @@ objc2-app-kit = { version = "0.3", default-features = false, features = ["std", 
 objc2 = "0.6"
 objc2-authentication-services = { version = "0.3", default-features = false, features = ["std", "ASAuthorization", "ASAuthorizationController", "ASAuthorizationCredential", "ASAuthorizationProvider", "ASAuthorizationRequest", "ASAuthorizationPlatformPublicKeyCredentialProvider", "ASAuthorizationPlatformPublicKeyCredentialAssertionRequest", "ASAuthorizationPlatformPublicKeyCredentialAssertion", "ASAuthorizationPlatformPublicKeyCredentialDescriptor", "ASAuthorizationPublicKeyCredentialAssertion", "ASAuthorizationPublicKeyCredentialDescriptor", "ASAuthorizationSecurityKeyPublicKeyCredentialProvider", "ASAuthorizationSecurityKeyPublicKeyCredentialAssertionRequest", "ASAuthorizationSecurityKeyPublicKeyCredentialAssertion", "ASAuthorizationSecurityKeyPublicKeyCredentialDescriptor", "ASAuthorizationPublicKeyCredentialAssertionRequest", "ASAuthorizationPublicKeyCredentialConstants", "ASFoundation", "ASPublicKeyCredential"] }
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSData", "NSError", "NSProcessInfo", "NSString"] }
+
+[target."cfg(windows)".dependencies]
+tauri-plugin-single-instance = "2"

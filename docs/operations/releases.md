@@ -244,8 +244,9 @@ Development bundles and unconfigured local bundles do not access release feeds.
 Checks are deferred during sharing. If a session starts after downloading an
 update, installation waits for the session to finish. Installation reserves the
 idle desktop under the same lock used to start sessions, then shuts down listeners
-and input resources before Sparkle replaces/relaunches the app. Ordinary quit also
-runs shutdown. Native helper approval remains managed by macOS.
+and input resources before Sparkle replaces/relaunches the app. Quitting also
+runs shutdown; closing the window only hides it. Native helper approval remains
+managed by macOS.
 
 ## Device compatibility
 

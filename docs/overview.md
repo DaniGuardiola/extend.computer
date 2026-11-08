@@ -26,6 +26,7 @@ extend.computer connects devices to share input and displays across platforms. D
 | --- | --- | --- |
 | Desktop UI | Devices, permissions, account sign-in, connection controls, and updates | [`desktop/src/`](../desktop/src/) |
 | Desktop runtime | Incoming/outgoing jobs, pairing verification, presence, and connection lifecycle | [`desktop/src-tauri/src/runtime.rs`](../desktop/src-tauri/src/runtime.rs) |
+| Status icon | Connection state, the current session and quick actions with the window closed | [`desktop/src-tauri/src/tray.rs`](../desktop/src-tauri/src/tray.rs) |
 | Shared engine | Identity, trust, encrypted sessions, input ordering, and reconnect | [`engine/src/lib.rs`](../engine/src/lib.rs) |
 | CLI | Terminal commands using the shared engine | [`engine/src/main.rs`](../engine/src/main.rs) |
 | Account services | Sign-in, device membership, presence, and encrypted relay transport | [`web/`](../web/) and [`server/`](../server/) |
@@ -99,6 +100,7 @@ The server advertises relay availability when an account connection starts. Disa
 
 - Platform-specific optimizations belong in adapters. The macOS implementation uses a privileged Wi-Fi broker with a narrow authenticated API, and native user-session helpers for input capture and injection.
 - The desktop runtime permits one active connection job at a time. The CLI uses the same engine through terminal commands.
+- The desktop app keeps running with its window closed: closing hides the window, and connections, presence and discovery continue. Its icon in the menu bar (macOS) or notification area (Windows) shows whether the device accepts connections and the current session, and offers Allow connections, the session's stop action, the window and Quit. Only quitting shuts the runtime down. **Open at login**, off by default, starts the app with only that icon.
 - During a keyboard-and-mouse or display session the app keeps the computer from sleeping while idle: on macOS it holds a power assertion that `pmset -g assertions` lists as “extend.computer keeps this Mac awake during a connection”, and on Windows it requests `ES_SYSTEM_REQUIRED`. A computer showing another device's display also keeps its screen on.
 
 ---
