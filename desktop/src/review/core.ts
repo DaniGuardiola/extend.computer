@@ -130,6 +130,10 @@ if (["many", "many-online", "session-many"].includes(id)) {
   });
 }
 if (id === "unknown-platform") delete snapshot.peers[0].device_info;
+if (id === "ipad-account") {
+  snapshot.peers[0] = { ...peer(1, "Review iPad"), trust_source: "account" };
+  delete snapshot.peers[0].device_info;
+}
 if (id === "peer-no-viewer")
   snapshot.peers[0] = {
     ...peer(1, "Desk PC"),
@@ -338,6 +342,7 @@ if (
   snapshot.peers[0].route = "usb";
 const signedIn = [
   "account-trust",
+  "ipad-account",
   "account-long-email",
   "settings-account",
   "account-signed-in",
@@ -389,6 +394,7 @@ accountState.devices = snapshot.peers.map((p) => ({
   last_seen: null,
 }));
 if (id === "unknown-platform") accountState.devices = [];
+if (id === "ipad-account") accountState.devices[0].platform = "ipados";
 if (signedIn)
   accountState.devices.push({
     id: "this-device",

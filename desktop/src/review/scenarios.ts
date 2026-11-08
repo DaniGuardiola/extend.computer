@@ -116,8 +116,15 @@ export const scenarios: Scenario[] = [
     "Devices",
     "android-phone",
     "Android phone",
-    "Reported phone hardware uses a phone icon, distinct from a tablet.",
+    "Reported phone hardware uses a phone icon, distinct from a tablet. A phone has no desktop to view, so its card has no Remote desktop tile.",
     "Pixel Phone",
+  ),
+  s(
+    "Devices",
+    "ipad-account",
+    "iPad from the account",
+    "An account device without reported hardware: the account's iPadOS platform alone leaves out Remote desktop, and the three tiles share the row.",
+    "Review iPad",
   ),
   s(
     "Devices",

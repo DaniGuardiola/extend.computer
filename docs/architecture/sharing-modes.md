@@ -40,6 +40,8 @@ A device presents another device's desktop and supplies authorized control input
 > [!NOTE]
 > **Not supported yet.**
 
+Desktop device cards show a dimmed Remote desktop tile, marked as coming later, only for peers with a desktop to view: computers, and devices of unknown type. Phones and tablets, and peers whose offers leave out `display-source-mirror`, get no tile ([`remoteDesktop.ts`](../../desktop/src/remoteDesktop.ts)).
+
 ## Shared boundaries
 
 Device discovery, cryptographic identity, pairing or account membership, OS permissions, routing, and session lifecycle apply across all sharing modes.

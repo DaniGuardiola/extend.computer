@@ -25,6 +25,7 @@ import {
   type Snapshot,
 } from "./bridge";
 import { DeviceIcon } from "./DeviceIcon";
+import { hasDesktopToView } from "./remoteDesktop";
 import { TruncatedText } from "./TruncatedText";
 import { Select } from "./Select";
 import { UsbConnection } from "./UsbConnection";
@@ -139,6 +140,8 @@ export function DeviceRow({
   const sessionMode = session ? (session.display ?? "input") : undefined;
   // What this computer can't start, or what the peer said it can't do.
   const showsDisplays = peerOffers(peer, "display-viewer");
+  // Phones and tablets have no desktop to view, so the tile would only tease.
+  const remoteDesktop = hasDesktopToView(peer, platform);
   const noDisplays = `${peer.name} can’t show another screen yet.`;
   const unavailable = (
     icon: ReactNode,
@@ -318,7 +321,9 @@ export function DeviceRow({
         </p>
       )}
       {(session || peer.availability === "online") && (
-        <div className="grid grid-cols-2 gap-1 px-3 pb-3 min-[720px]:grid-cols-4">
+        <div
+          className={`grid gap-1 px-3 pb-3 ${remoteDesktop ? "grid-cols-2 min-[720px]:grid-cols-4" : "grid-cols-3"}`}
+        >
           {sessionMode === "extend" ? (
             stopAction
           ) : !capabilities.extend_display ? (
@@ -404,18 +409,20 @@ export function DeviceRow({
               <span>Share keyboard &amp; mouse</span>
             </ExplainedButton>
           )}
-          <ExplainedButton
-            className="device-action"
-            aria-disabled="true"
-            explanation={
-              capabilities.remote_desktop
-                ? "View and control the other device’s desktop from here. Coming later."
-                : unavailableHere
-            }
-          >
-            <Monitor size={18} />
-            <span>Remote desktop</span>
-          </ExplainedButton>
+          {remoteDesktop && (
+            <ExplainedButton
+              className="device-action"
+              aria-disabled="true"
+              explanation={
+                capabilities.remote_desktop
+                  ? "View and control the other device’s desktop from here. Coming later."
+                  : unavailableHere
+              }
+            >
+              <Monitor size={18} />
+              <span>Remote desktop</span>
+            </ExplainedButton>
+          )}
         </div>
       )}
       {sharingInput && (
