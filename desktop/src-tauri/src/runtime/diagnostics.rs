@@ -188,8 +188,11 @@ pub(crate) fn report(system: &System, snapshot: &Snapshot, account: &AccountSumm
     if capabilities.wifi_optimization {
         line(
             "Wi-Fi optimization",
+            // The same order as the receiving error's explanation.
             if permissions.wifi {
                 "allowed"
+            } else if permissions.wifi_pending {
+                "waiting for approval"
             } else if permissions.wifi_installing {
                 "setting up"
             } else if permissions.wifi_setup_failed {
@@ -377,6 +380,57 @@ Devices: 2
             &"b".repeat(16),
         ] {
             assert!(!report.contains(secret), "{secret} leaked:\n{report}");
+        }
+    }
+
+    #[test]
+    fn wifi_optimization_reads_like_the_receiving_explanation() {
+        let account = AccountSummary {
+            server: "https://extend.computer",
+            signed_in: false,
+        };
+        for (permissions, expected) in [
+            (
+                native::Permissions {
+                    wifi: true,
+                    wifi_pending: true,
+                    ..Default::default()
+                },
+                "allowed",
+            ),
+            (
+                native::Permissions {
+                    wifi_pending: true,
+                    wifi_setup_failed: true,
+                    ..Default::default()
+                },
+                "waiting for approval",
+            ),
+            (
+                native::Permissions {
+                    wifi_installing: true,
+                    ..Default::default()
+                },
+                "setting up",
+            ),
+            (
+                native::Permissions {
+                    wifi_setup_failed: true,
+                    ..Default::default()
+                },
+                "setup failed",
+            ),
+            (native::Permissions::default(), "not allowed"),
+        ] {
+            let snapshot = Snapshot {
+                permissions,
+                ..snapshot()
+            };
+            let report = report(&system(), &snapshot, &account);
+            assert!(
+                report.contains(&format!("\nWi-Fi optimization: {expected}\n")),
+                "{expected}:\n{report}"
+            );
         }
     }
 
