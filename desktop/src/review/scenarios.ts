@@ -23,7 +23,7 @@ const device = [label("Settings for Studio Mac")];
 const usb = [button("Connect with USB")];
 const usbSelected = [
   ...usb,
-  button("Choose the connected Android device"),
+  button("Choose the connected phone or tablet"),
   { text: "Pixel Tablet · REVIEW-CABLE-1" },
 ] satisfies Step[];
 const manualSubmitted = [
@@ -1047,7 +1047,7 @@ export const scenarios: Scenario[] = [
     "usb-none",
     "USB · no compatible cable",
     "Data cable and unlock guidance.",
-    "No compatible Android device found",
+    "No compatible device found",
     usb,
   ),
   s(
@@ -1063,7 +1063,7 @@ export const scenarios: Scenario[] = [
     "usb-found",
     "USB · cable found",
     "Choose Android descriptor before connecting.",
-    "Choose the connected Android device",
+    "Choose the connected phone or tablet",
     usb,
   ),
   s(
@@ -1071,7 +1071,7 @@ export const scenarios: Scenario[] = [
     "usb-many",
     "USB · many cables",
     "Cable selector with several Android devices.",
-    "Choose the connected Android device",
+    "Choose the connected phone or tablet",
     usb,
   ),
   s(
@@ -1090,7 +1090,7 @@ export const scenarios: Scenario[] = [
     "Unplug and reconnect this cable",
     [
       ...usb,
-      button("Choose the connected Android device"),
+      button("Choose the connected phone or tablet"),
       { text: "Pixel Tablet · REVIEW-CABLE-1 (reconnect cable)" },
     ],
   ),
