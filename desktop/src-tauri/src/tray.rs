@@ -107,19 +107,21 @@ fn render(
 }
 
 /// The logo, with a dot while another device controls this one or shows a
-/// display on it. macOS tints the template images for the menu bar.
-fn icon(#[allow(unused)] app: &AppHandle, incoming: bool) -> Option<Image<'static>> {
-    #[cfg(target_os = "macos")]
-    return Some(if incoming {
-        tauri::include_image!("icons/tray-active.png")
-    } else {
-        tauri::include_image!("icons/tray.png")
-    });
-    #[cfg(not(target_os = "macos"))]
-    if incoming {
+/// display on it. macOS tints the template images for the menu bar; Windows
+/// shows the app's icon. Both branches compile everywhere, so a Windows-only
+/// mistake fails the macOS build too.
+fn icon(app: &AppHandle, incoming: bool) -> Option<Image<'static>> {
+    if cfg!(target_os = "macos") {
+        Some(if incoming {
+            tauri::include_image!("icons/tray-active.png")
+        } else {
+            tauri::include_image!("icons/tray.png")
+        })
+    } else if incoming {
         Some(tauri::include_image!("icons/tray-windows-active.png"))
     } else {
-        app.default_window_icon().cloned()
+        // The app's icon, owned so it outlives this borrow of the app.
+        app.default_window_icon().cloned().map(Image::to_owned)
     }
 }
 
