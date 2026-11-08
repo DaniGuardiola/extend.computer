@@ -15,9 +15,15 @@ import {
   api,
   native,
   type Device,
+  type Peer,
   type Snapshot,
   type Permissions,
 } from "./bridge";
+import {
+  displayConfig,
+  presetDisplaySizes,
+  readDisplayPreferences,
+} from "./displayPreferences";
 import {
   PermissionContinuation,
   permissionsReady,
@@ -167,6 +173,29 @@ export function App() {
       await api.connect(peer, device);
     });
   };
+  const display = (peer: Peer, mode: "extend" | "mirror") =>
+    api.display(
+      peer.id,
+      peer,
+      mode,
+      displayConfig(mode, readDisplayPreferences(peer.id)),
+      mode === "extend" ? presetDisplaySizes(peer.id) : undefined,
+    );
+  // Sharing this screen asks for Screen Recording first, so the first Extend
+  // or Mirror doesn't fail; the dialog resumes it once it is allowed. Access
+  // already seen skips the check, and a check that fails doesn't block it:
+  // the display helper still reports a grant taken back.
+  const startDisplay = async (peer: Peer, mode: "extend" | "mirror") => {
+    if (data?.capabilities.screen_permission && !data.permissions.screen) {
+      const access = await permissionFlow.check().catch(() => null);
+      if (access && !permissionsReady("display", access)) {
+        continuation.current.waitFor({ kind: "display", peer: peer.id, mode });
+        setPermissionAction("display");
+        return;
+      }
+    }
+    await display(peer, mode);
+  };
   const permissionRequest = data?.permission_request;
   useEffect(() => {
     if (!permissionRequest) return;
@@ -212,7 +241,8 @@ export function App() {
       } else {
         const peer = data.peers.find((peer) => peer.id === pending.peer);
         if (!peer) throw new Error("This device is no longer paired.");
-        await api.connect(peer.id, peer);
+        if (pending.kind === "display") await display(peer, pending.mode);
+        else await api.connect(peer.id, peer);
       }
     });
   });
@@ -418,6 +448,7 @@ export function App() {
                           capabilities={data.capabilities}
                           disabled={!!session || busy}
                           connect={connect}
+                          startDisplay={startDisplay}
                           session={session?.peer === peer.id ? session : null}
                           pending={busy}
                           disconnect={() => void act(api.disconnect)}

@@ -529,6 +529,14 @@ export const scenarios: Scenario[] = [
   ),
   s(
     "Permissions",
+    "permission-display",
+    "Extend · screen access needed",
+    "Screen Recording asked before the first Extend; allowing it starts the display.",
+    "Allow screen sharing",
+    [button("Extend display")],
+  ),
+  s(
+    "Permissions",
     "permission-usb",
     "USB · accessibility only",
     "USB skips Wi-Fi permission.",

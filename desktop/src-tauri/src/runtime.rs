@@ -538,6 +538,10 @@ impl Desktop {
             capabilities: self.abilities().capabilities(),
         })
     }
+    /// Asks for Screen Recording before this device shares its screen.
+    pub fn request_screen_access(&self) -> Result<()> {
+        native::request_screen_access(&self.helper)
+    }
     pub fn refresh_permissions(&self) -> Result<Permissions> {
         let ticket = self.begin_permission_check();
         self.apply_permissions(ticket, native::permissions(&self.helper))

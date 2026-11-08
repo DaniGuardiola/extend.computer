@@ -13,6 +13,12 @@ The native input helper checks effective input-monitoring and event-posting acce
 
 The PermissionFlow bridge opens the relevant System Settings page and shows a floating guide containing the outer app bundle for dragging into the permissions list. Its observer closes the guide when access is granted. Native approval remains a user action; guidance does not bypass macOS checks.
 
+## Screen Recording
+
+Extend display and Mirror display capture the screen, which needs Screen Recording. Every permission check also asks the display helper (`status`, `capture=`), so the answer comes from the process that captures, whichever app macOS holds responsible for it. Before an Extend or Mirror from this Mac, the app checks it; when it is missing, the `Allow screen sharing` dialog shows only the Screen Recording row instead of starting a session that would fail, and resumes the Extend or Mirror once access is allowed. Settings › Permissions lists the same row.
+
+`Open settings` runs the display helper's `request-permission`, which calls `CGRequestScreenCaptureAccess` (macOS shows its prompt the first time and adds the app to the list), then opens the Screen Recording list in System Settings. A grant taken back later still ends the session with the helper's own message. The persistent screen-capture entitlement is not applied for, so macOS may ask again periodically on recent versions.
+
 ## Session leases
 
 Both endpoints inspect the actual routed interface. Eligible Wi-Fi control sessions require an authenticated optimization lease before native input is ready. Ethernet and loopback relay bridges skip the lease. Missing or failed required leases end control rather than silently accepting unoptimized Wi-Fi.

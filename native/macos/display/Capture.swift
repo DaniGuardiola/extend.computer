@@ -35,7 +35,8 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate {
         benchmarkMarker = BenchmarkMarker(logicalWidth: width, logicalHeight: height)
         guard CGPreflightScreenCaptureAccess() else {
             _ = CGRequestScreenCaptureAccess()
-            throw DisplayFailure("Allow Screen Recording for extend.computer Display in macOS Settings, then reconnect.")
+            // The app asks before Extend or Mirror; this covers a grant taken back since.
+            throw DisplayFailure("Allow Screen Recording for extend.computer in System Settings › Privacy & Security, then try again.")
         }
         var selected = displayID
         if mode == "extend" {

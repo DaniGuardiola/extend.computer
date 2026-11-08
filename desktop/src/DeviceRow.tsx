@@ -30,11 +30,6 @@ import { Select } from "./Select";
 import { UsbConnection } from "./UsbConnection";
 import { Dialog } from "./Dialog";
 import { ExplainedButton } from "./ExplainedButton";
-import {
-  displayConfig,
-  presetDisplaySizes,
-  readDisplayPreferences,
-} from "./displayPreferences";
 import { DisplayConnectionSettings } from "./DisplayConnectionSettings";
 import {
   QualityBars,
@@ -61,6 +56,7 @@ export function DeviceRow({
   capabilities,
   disabled,
   connect,
+  startDisplay,
   session,
   pending,
   disconnect,
@@ -78,6 +74,8 @@ export function DeviceRow({
   disconnect: () => void;
   changeEdge: (peer: string, device: Device) => void;
   connect: (peer: string, device: Device) => void;
+  /** Extends or mirrors this computer's screen, asking for access first. */
+  startDisplay: (peer: Peer, mode: "extend" | "mirror") => Promise<void>;
   refresh: () => Promise<void>;
   /** A session failure reported by the app for this device. */
   sessionError?: string;
@@ -340,13 +338,7 @@ export function DeviceRow({
                 setBusy(true);
                 setError("");
                 try {
-                  await api.display(
-                    peer.id,
-                    peer,
-                    "extend",
-                    displayConfig("extend", readDisplayPreferences(peer.id)),
-                    presetDisplaySizes(peer.id),
-                  );
+                  await startDisplay(peer, "extend");
                   await refresh();
                 } catch (e) {
                   setError(e instanceof Error ? e.message : String(e));
@@ -374,12 +366,7 @@ export function DeviceRow({
                 setBusy(true);
                 setError("");
                 try {
-                  await api.display(
-                    peer.id,
-                    peer,
-                    "mirror",
-                    displayConfig("mirror", readDisplayPreferences(peer.id)),
-                  );
+                  await startDisplay(peer, "mirror");
                   await refresh();
                 } catch (e) {
                   setError(e instanceof Error ? e.message : String(e));

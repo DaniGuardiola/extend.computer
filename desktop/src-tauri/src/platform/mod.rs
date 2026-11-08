@@ -22,4 +22,7 @@ pub struct Capabilities {
     /// Input capture and injection need the user's approval (Accessibility).
     pub input_permissions: bool,
     pub wifi_optimization: bool,
+    /// Extending or mirroring this screen needs the user's approval
+    /// (Screen Recording).
+    pub screen_permission: bool,
 }

@@ -23,9 +23,11 @@ pub const ABILITIES: crate::runtime::Abilities = crate::runtime::Abilities {
     input_receive: true,
     input_send: true,
 };
-/// Input capture and injection need Accessibility; Wi-Fi uses a broker.
+/// Input capture and injection need Accessibility; Wi-Fi uses a broker;
+/// capturing the screen needs Screen Recording.
 pub const INPUT_PERMISSIONS: bool = true;
 pub const WIFI_OPTIMIZATION: bool = true;
+pub const SCREEN_PERMISSION: bool = true;
 pub fn initialize(app: &tauri::AppHandle) -> Result<()> {
     let resources = crate::permission_flow::resources(app)?;
     crate::wifi_permission::initialize(&resources)?;

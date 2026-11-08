@@ -24,6 +24,8 @@ export type Capabilities = {
   /** Accessibility approval for keyboard and mouse. */
   input_permissions: boolean;
   wifi_optimization: boolean;
+  /** Extending or mirroring this screen needs Screen Recording. */
+  screen_permission: boolean;
 };
 export type Permissions = {
   listen: boolean;
@@ -35,6 +37,8 @@ export type Permissions = {
   wifi_setup_failed: boolean;
   /** An Ethernet link is up, so devices can connect without Wi-Fi optimization. */
   wired: boolean;
+  /** This device may capture its screen (macOS Screen Recording). */
+  screen: boolean;
 };
 export type LocalDeviceInfo = {
   name: string;
@@ -171,7 +175,7 @@ export const api = {
   dismissNotification: (id: number) =>
     invoke<void>("dismiss_notification", { id }),
   checkPermissions: () => invoke<Permissions>("check_permissions"),
-  openPermission: (permission: "listen" | "post" | "wifi") =>
+  openPermission: (permission: "listen" | "post" | "wifi" | "screen") =>
     invoke<void>("open_permission", { permission }),
   dismiss: () => invoke<void>("dismiss_message"),
   openAtLogin: () => invoke<boolean>("open_at_login"),

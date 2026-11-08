@@ -50,6 +50,7 @@ export function SettingsScreen({
       <OpenAtLogin />
       {(capabilities.input_permissions ||
         capabilities.wifi_optimization ||
+        capabilities.screen_permission ||
         (permissions.checked && !permissions.snapshot.permissions.available) ||
         permissions.error) && (
         <section aria-labelledby="permissions-heading">

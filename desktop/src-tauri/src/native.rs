@@ -22,6 +22,9 @@ pub struct Permissions {
     /// An Ethernet link has a local network address, so devices can connect
     /// over it without Wi-Fi optimization.
     pub wired: bool,
+    /// This device may capture its screen to extend or mirror it: macOS's
+    /// Screen Recording. Always true where the OS asks for no grant.
+    pub screen: bool,
     /// Cable checks skip the Wi-Fi broker, so their Wi-Fi fields carry no answer.
     #[serde(skip)]
     pub wifi_skipped: bool,
@@ -147,13 +150,71 @@ pub fn permissions_for_route(path: &Path, usb: bool) -> Result<Permissions> {
         #[cfg(test)]
         return status.contains("wifi=true");
     });
-    // Test helpers describe the network instead of the developer's Mac.
-    permissions.wired = if cfg!(test) {
-        status.contains("wired=true")
+    // Test helpers describe the network and screen access instead of the
+    // developer's Mac.
+    (permissions.wired, permissions.screen) = if cfg!(test) {
+        (
+            status.contains("wired=true"),
+            status.contains("capture=true"),
+        )
     } else {
-        wired_link()
+        (wired_link(), screen_access(path))
     };
     Ok(permissions)
+}
+
+/// The macOS pane that lists Screen Recording grants.
+#[cfg(target_os = "macos")]
+const SCREEN_RECORDING_SETTINGS: &str =
+    "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture";
+
+/// Whether the display helper beside `path` may capture the screen. It
+/// checks as the process that captures does, so the answer follows whichever
+/// app macOS holds responsible. A missing or failing helper counts as no.
+fn screen_access(path: &Path) -> bool {
+    if !crate::platform::SCREEN_PERMISSION {
+        return true;
+    }
+    crate::platform::helper(path, "Display")
+        .and_then(|display| read_status(&display))
+        .is_ok_and(|status| capture_allowed(&status))
+}
+
+/// The display helper's `status` line: `capture=<bool> virtual=<bool>`.
+fn capture_allowed(status: &str) -> bool {
+    status
+        .split_whitespace()
+        .any(|field| field == "capture=true")
+}
+
+/// Asks for Screen Recording through the display helper beside `path`, from
+/// the process that captures: the first time, macOS shows its prompt and
+/// lists the app under Screen Recording. Then opens that list in System
+/// Settings, where the user turns it on.
+pub fn request_screen_access(path: &Path) -> Result<()> {
+    let display = crate::platform::helper(path, "Display")?;
+    ensure!(
+        display.is_file(),
+        "Display helper is missing. Rebuild extend.computer."
+    );
+    let mut child = extend_computer_agent::cursor::helper_command(&display)
+        .arg("request-permission")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()?;
+    let deadline = Instant::now() + Duration::from_secs(4);
+    while child.try_wait()?.is_none() {
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    #[cfg(target_os = "macos")]
+    open::that(SCREEN_RECORDING_SETTINGS).context("Could not open System Settings.")?;
+    Ok(())
 }
 
 fn permissions_from_status(
@@ -173,6 +234,7 @@ fn permissions_from_status(
         wifi_installing: wifi_status == 4,
         wifi_setup_failed: wifi_status == -1 || (!usb && wifi_status == 1 && !wifi_ready),
         wired: false,
+        screen: false,
         wifi_skipped: usb,
     }
 }
@@ -234,6 +296,20 @@ mod tests {
         // With Wi-Fi optimization every link receives, as before.
         let optimized = permissions_from_status("listen=true post=true", 1, false, || true);
         assert!(optimized.can_receive_on(true) && optimized.can_receive_on(false));
+    }
+
+    #[test]
+    fn screen_recording_follows_the_display_helper_status() {
+        assert!(capture_allowed("capture=true virtual=true\n"));
+        assert!(!capture_allowed("capture=false virtual=true\n"));
+        assert!(!capture_allowed(""));
+        assert!(!capture_allowed("capture=truthy"));
+        // A helper that isn't there can't capture.
+        let temp = tempfile::tempdir().unwrap();
+        assert_eq!(
+            screen_access(&temp.path().join("missing")),
+            !crate::platform::SCREEN_PERMISSION
+        );
     }
 
     #[test]

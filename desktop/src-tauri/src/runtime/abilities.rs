@@ -96,6 +96,7 @@ impl Abilities {
             remote_desktop: self.viewer && self.viewer_input,
             input_permissions: crate::platform::INPUT_PERMISSIONS,
             wifi_optimization: crate::platform::WIFI_OPTIMIZATION,
+            screen_permission: crate::platform::SCREEN_PERMISSION,
         }
     }
 

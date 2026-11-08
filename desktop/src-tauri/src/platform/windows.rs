@@ -21,9 +21,10 @@ pub const ABILITIES: crate::runtime::Abilities = crate::runtime::Abilities {
     input_receive: true,
     input_send: true,
 };
-/// Input needs no grants, and there's no Wi-Fi broker.
+/// Input and screen capture need no grants, and there's no Wi-Fi broker.
 pub const INPUT_PERMISSIONS: bool = false;
 pub const WIFI_OPTIMIZATION: bool = false;
+pub const SCREEN_PERMISSION: bool = false;
 pub fn initialize(_: &tauri::AppHandle) -> Result<()> {
     Ok(())
 }

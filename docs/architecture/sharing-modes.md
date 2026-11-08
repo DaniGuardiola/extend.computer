@@ -20,7 +20,7 @@ One device supplies an additional logical display; another presents it. This exp
 > [!NOTE]
 > Experimental macOS LAN and USB-network support.
 
-The source creates a virtual display and captures it with ScreenCaptureKit. VideoToolbox uses hardware HEVC encoding by default, with H.264 available through codec negotiation, WebRTC carries encrypted video directly between devices, and the receiving Mac decodes and presents it with Metal. The source needs Screen Recording permission. Internet connectivity and automatic reconnection for display streaming are not implemented yet.
+The source creates a virtual display and captures it with ScreenCaptureKit. VideoToolbox uses hardware HEVC encoding by default, with H.264 available through codec negotiation, WebRTC carries encrypted video directly between devices, and the receiving Mac decodes and presents it with Metal. The source needs Screen Recording permission; the app asks for it before the first Extend or Mirror and starts the display once it is allowed. Internet connectivity and automatic reconnection for display streaming are not implemented yet.
 
 ## Mirror screen
 

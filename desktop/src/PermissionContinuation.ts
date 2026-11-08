@@ -1,13 +1,17 @@
 import type { Device, Permissions } from "./bridge";
 
 export type PendingPermissionAction =
-  { kind: "receive" } | { kind: "share"; peer: string; device: Device };
+  | { kind: "receive" }
+  | { kind: "share"; peer: string; device: Device }
+  | { kind: "display"; peer: string; mode: "extend" | "mirror" };
 
 export function permissionsReady(
   kind: PendingPermissionAction["kind"],
   access: Permissions,
   route: "local" | "usb" = "local",
 ) {
+  // Sharing this screen needs only Screen Recording.
+  if (kind === "display") return access.screen;
   return (
     access.available &&
     access.post &&

@@ -2,14 +2,16 @@ import type { ReactNode } from "react";
 import { Check, ExternalLink } from "lucide-react";
 import { Dialog } from "./Dialog";
 import { localNoun, type Snapshot } from "./bridge";
-export type PermissionKey = "listen" | "post" | "wifi";
-export type PermissionAction = "receive" | "share";
+export type PermissionKey = "listen" | "post" | "wifi" | "screen";
+export type PermissionAction = "receive" | "share" | "display";
 export type PermissionDetailsProps = {
   snapshot: Snapshot;
   checked: boolean;
   error: string;
   openPermission: (permission: PermissionKey) => Promise<void>;
+  inputRequired?: boolean;
   wifiRequired?: boolean;
+  screenRequired?: boolean;
 };
 
 function PermissionRow({
@@ -56,14 +58,18 @@ export function PermissionDetails({
   checked,
   error,
   openPermission,
+  inputRequired = true,
   wifiRequired = true,
+  screenRequired = true,
 }: PermissionDetailsProps) {
   const allowed = snapshot.permissions.post;
-  const { input_permissions, wifi_optimization } = snapshot.capabilities;
+  const { input_permissions, wifi_optimization, screen_permission } =
+    snapshot.capabilities;
   const wifi = wifiRequired && wifi_optimization;
+  const screen = screenRequired && screen_permission;
   return (
     <>
-      {checked && !snapshot.permissions.available && (
+      {inputRequired && checked && !snapshot.permissions.available && (
         <p className="error mb-4">
           The input helper is missing. Reinstall extend.computer.
         </p>
@@ -73,7 +79,7 @@ export function PermissionDetails({
           {error}
         </p>
       )}
-      {input_permissions && (
+      {inputRequired && input_permissions && (
         <PermissionRow
           title="Accessibility"
           description="Read and control keyboard and mouse."
@@ -143,6 +149,31 @@ export function PermissionDetails({
           Wi-Fi optimization is unavailable. Try again to repair its setup.
         </p>
       )}
+      {screen && (
+        <PermissionRow
+          title="Screen Recording"
+          description={`Extend or mirror this ${localNoun}'s screen to your other devices.`}
+          checked={checked}
+          allowed={snapshot.permissions.screen}
+        >
+          <button
+            className={`button quiet -me-3.5 shrink-0 whitespace-nowrap ${snapshot.permissions.screen ? "text-success" : ""}`}
+            title="Open Screen Recording settings"
+            aria-label={
+              snapshot.permissions.screen
+                ? "Allowed — Open Screen Recording settings"
+                : "Open Screen Recording settings"
+            }
+            onClick={() => void openPermission("screen")}
+          >
+            {snapshot.permissions.screen && (
+              <Check size={16} aria-hidden="true" />
+            )}
+            {snapshot.permissions.screen ? "Allowed" : "Open settings"}
+            <ExternalLink size={14} aria-hidden="true" />
+          </button>
+        </PermissionRow>
+      )}
     </>
   );
 }
@@ -160,18 +191,27 @@ export function PermissionsDialog({
       title={
         action === "receive"
           ? "Allow remote control"
-          : "Allow keyboard & mouse sharing"
+          : action === "display"
+            ? "Allow screen sharing"
+            : "Allow keyboard & mouse sharing"
       }
       onClose={onClose}
     >
       <p className="mb-5 text-sm leading-6 text-muted">
-        {!details.snapshot.capabilities.input_permissions
-          ? `extend.computer can't use the keyboard and mouse on this ${localNoun} yet.`
-          : action === "receive"
-            ? `Allow access below so your other device can control this ${localNoun}.`
-            : "Allow access below to share your keyboard and mouse between devices."}
+        {action === "display"
+          ? `Allow access below so this ${localNoun} can show its screen on your other device.`
+          : !details.snapshot.capabilities.input_permissions
+            ? `extend.computer can't use the keyboard and mouse on this ${localNoun} yet.`
+            : action === "receive"
+              ? `Allow access below so your other device can control this ${localNoun}.`
+              : "Allow access below to share your keyboard and mouse between devices."}
       </p>
-      <PermissionDetails {...details} />
+      <PermissionDetails
+        {...details}
+        {...(action === "display"
+          ? { inputRequired: false, wifiRequired: false }
+          : { screenRequired: false })}
+      />
       {action === "share" &&
         details.checked &&
         details.snapshot.permissions.post &&

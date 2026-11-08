@@ -161,6 +161,11 @@ async fn open_permission(
     state: State<'_>,
     permission: String,
 ) -> Result<(), String> {
+    if permission == "screen" {
+        // The display helper asks; nothing runs on the main thread.
+        let state = state.inner().clone();
+        return background(move || state.request_screen_access()).await;
+    }
     let repair_wifi = if permission == "wifi" {
         background(|| Ok(!extend_computer_agent::low_jitter::ready())).await?
     } else {

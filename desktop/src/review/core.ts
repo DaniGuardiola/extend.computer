@@ -63,6 +63,7 @@ export const snapshot: Snapshot = {
     wifi_installing: false,
     wifi_setup_failed: false,
     wired: false,
+    screen: id !== "permission-display",
   },
   permission_request: null,
   capabilities: {
@@ -72,6 +73,7 @@ export const snapshot: Snapshot = {
     remote_desktop: true,
     input_permissions: !windows,
     wifi_optimization: !windows,
+    screen_permission: !windows,
   },
 };
 const availabilities: Peer["availability"][] = [
@@ -519,6 +521,8 @@ export async function invoke<T>(
       if (args.permission === "wifi") {
         snapshot.permissions.wifi = true;
         snapshot.permissions.wifi_setup_failed = false;
+      } else if (args.permission === "screen") {
+        snapshot.permissions.screen = true;
       } else {
         snapshot.permissions.post = true;
         snapshot.permissions.listen = true;

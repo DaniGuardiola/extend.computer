@@ -63,6 +63,16 @@ test("Ethernet needs no Wi-Fi broker to receive or share", () => {
   assert.deepEqual(pending.takeReady(ethernet), share);
 });
 
+test("sharing this screen waits for Screen Recording only", () => {
+  const pending = new PermissionContinuation();
+  const display = { kind: "display", peer: "peer-a", mode: "extend" };
+  pending.waitFor(display);
+  assert.equal(pending.takeReady({ ...allowed, screen: false }), null);
+  const screenOnly = { available: false, post: false, listen: false, wifi: false, screen: true };
+  assert.deepEqual(pending.takeReady(screenOnly), display);
+  assert.equal(pending.takeReady(screenOnly), null);
+});
+
 test("USB receiving needs accessibility but no capture or Wi-Fi broker", () => {
   const pending = new PermissionContinuation();
   pending.waitFor({ kind: "receive" });

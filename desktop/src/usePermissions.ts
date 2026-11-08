@@ -61,7 +61,7 @@ export function usePermissions(
     };
   }, [watch, check]);
 
-  const open = async (permission: "listen" | "post" | "wifi") => {
+  const open = async (permission: "listen" | "post" | "wifi" | "screen") => {
     setGuideError("");
     try {
       await api.openPermission(permission);
