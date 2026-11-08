@@ -53,7 +53,9 @@ impl Abilities {
             decode_hevc: helper.decodes(VideoCodec::Hevc),
             cursor_send: helper.cursor_send,
             cursor_overlay: helper.viewer && helper.cursor_overlay,
-            viewer_120fps: helper.viewer && helper.viewer_fps >= 120,
+            // Windows reports a 119.88 Hz mode, common on 120 Hz monitors and
+            // TVs, as 119.
+            viewer_120fps: helper.viewer && helper.viewer_fps >= 119,
             ..self
         }
     }
@@ -460,6 +462,9 @@ mod tests {
                 .any(|offer| offer == DISPLAY_VIEWER_120FPS));
         }
         assert!(at(144, true).viewer_120fps);
+        // A 119.88 Hz mode, which Windows rounds down.
+        assert!(at(119, true).viewer_120fps);
+        assert!(!at(118, true).viewer_120fps);
     }
 
     #[test]
