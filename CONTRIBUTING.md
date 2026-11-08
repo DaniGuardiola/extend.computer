@@ -108,7 +108,9 @@ npm run changeset -- pre exit
 Commit the exit state and merge the generated graduation release PR after
 checks pass. Preview releases use separate feeds and do not replace GitHub's
 latest stable download. Users choose channels in Settings → Updates; switching
-back to stable waits for a newer stable build rather than downgrading.
+back to stable waits for a newer stable build rather than downgrading. Settings
+offers a preview channel only once it has a published feed; see
+[preview channels](docs/operations/releases.md#preview-channels).
 
 ## Failed publication and release continuity
 

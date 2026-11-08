@@ -217,6 +217,15 @@ Stable is the normal release channel. Beta, alpha, and canary use separate feeds
 and their GitHub releases are marked as prereleases. A preview build initially
 uses its own channel; users can explicitly choose another in Settings → Updates.
 
+Settings offers only channels with a published feed (`<feed base>/<channel>.xml`
+on the `updates` branch), so an update check never asks for a feed that does not
+exist. Those channels are listed in `PUBLISHED_CHANNELS` in
+`desktop/src-tauri/src/updates.rs`, which holds only `stable` until a preview
+channel's first feed is published; add the channel there afterwards so later
+builds offer it. A preview build always offers its own channel, whose feed is
+published with it. A channel chosen in an older version that has no feed stays
+listed, with a note, until the user picks another.
+
 For beta or alpha, enter Changesets prerelease mode before preparing the release:
 
 ```sh

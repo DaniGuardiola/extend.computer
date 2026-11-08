@@ -450,14 +450,40 @@ if (id === "usb-disconnected")
     peer: fingerprint(1),
     error: "The USB cable was disconnected.",
   };
+// Channels with published feeds; a preview build also publishes its own.
+const publishedChannels =
+  id === "updates-preview" ? ["stable", "beta"] : ["stable"];
 let updateSettings = {
-  available: id !== "updates-unavailable",
+  available: id !== "updates-unavailable" && !windows,
+  unavailable:
+    id === "updates-unavailable"
+      ? "Automatic updates are unavailable in this development build."
+      : windows
+        ? "Automatic updates aren’t available on Windows yet."
+        : null,
   automatic_checks: id !== "updates-manual",
   automatic_downloads: id !== "updates-manual",
-  channel: "stable",
-  version: "0.2.1",
+  channel:
+    id === "updates-preview"
+      ? "beta"
+      : id === "updates-unpublished"
+        ? "alpha"
+        : "stable",
+  channels: [] as string[],
+  channel_published: true,
+  version: id === "updates-preview" ? "0.4.0-beta.0" : "0.2.1",
 };
 let openAtLogin = false;
+const offerChannels = () => {
+  updateSettings.channels = ["stable", "beta", "alpha", "canary"].filter(
+    (channel) =>
+      publishedChannels.includes(channel) || channel === updateSettings.channel,
+  );
+  updateSettings.channel_published = publishedChannels.includes(
+    updateSettings.channel,
+  );
+};
+offerChannels();
 function fail(message: string): never {
   throw new Error(message);
 }
@@ -664,6 +690,7 @@ export async function invoke<T>(
         automatic_downloads: Boolean(args.downloads),
         channel: String(args.channel),
       };
+      offerChannels();
       result = { ...updateSettings };
       break;
     case "check_for_updates":

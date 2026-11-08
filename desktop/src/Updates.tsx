@@ -3,12 +3,25 @@ import { invoke } from "@tauri-apps/api/core";
 import { native } from "./bridge";
 const ReleaseHistory = lazy(() => import("./ReleaseHistory"));
 
+type Channel = "stable" | "beta" | "alpha" | "canary";
 type Settings = {
   available: boolean;
+  /** Why automatic updates are off, when they are. */
+  unavailable: string | null;
   automatic_checks: boolean;
   automatic_downloads: boolean;
-  channel: "stable" | "beta" | "alpha" | "canary";
+  channel: Channel;
+  /** Channels with published releases, plus the current choice. */
+  channels: Channel[];
+  /** False when the chosen channel has no releases to update from. */
+  channel_published: boolean;
   version: string;
+};
+const channelNames: Record<Channel, string> = {
+  stable: "Stable",
+  beta: "Beta",
+  alpha: "Alpha",
+  canary: "Canary",
 };
 
 export function Updates() {
@@ -104,35 +117,43 @@ export function Updates() {
             />
             Automatically download and install updates when sharing has finished
           </label>
-          <label className="flex items-center gap-3">
-            Update channel
-            <select
-              className="rounded border border-line bg-transparent p-2"
-              value={settings.channel}
-              onChange={(e) =>
-                void configure({
-                  ...settings,
-                  channel: e.target.value as Settings["channel"],
-                })
-              }
-            >
-              <option value="stable">Stable</option>
-              <option value="beta">Beta</option>
-              <option value="alpha">Alpha</option>
-              <option value="canary">Canary</option>
-            </select>
-          </label>
-          <p className="text-xs text-muted">
-            Preview channels may contain unfinished features. Returning to
-            Stable waits for a newer stable release; it does not downgrade this
-            installation.
-          </p>
+          {/* Only channels with releases are offered, so Stable alone needs no choice. */}
+          {settings.channels.length > 1 && (
+            <>
+              <label className="flex items-center gap-3">
+                Update channel
+                <select
+                  className="rounded border border-line bg-transparent p-2"
+                  value={settings.channel}
+                  onChange={(e) =>
+                    void configure({
+                      ...settings,
+                      channel: e.target.value as Channel,
+                    })
+                  }
+                >
+                  {settings.channels.map((channel) => (
+                    <option key={channel} value={channel}>
+                      {channelNames[channel]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p className="text-xs text-muted">
+                {settings.channel_published
+                  ? "Preview channels may contain unfinished features. Returning to Stable waits for a newer stable release; it does not downgrade this installation."
+                  : `${channelNames[settings.channel]} has no releases yet. Choose Stable to keep getting updates.`}
+              </p>
+            </>
+          )}
         </fieldset>
-      ) : (
+      ) : settings?.unavailable || !native ? (
+        // The app says why; a browser preview has no updater at all.
         <p className="mt-3 text-xs text-muted">
-          Automatic updates are unavailable in this development build.
+          {settings?.unavailable ??
+            "Automatic updates are unavailable in this development build."}
         </p>
-      )}
+      ) : null}
       {error && (
         <p role="alert" className="mt-3 text-sm">
           {error}

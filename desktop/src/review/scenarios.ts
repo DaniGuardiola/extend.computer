@@ -619,8 +619,8 @@ export const scenarios: Scenario[] = [
     "Settings",
     "windows-settings",
     "Settings · Windows",
-    "Windows needs no Accessibility or Wi-Fi optimization grants, so Permissions is absent.",
-    "Appearance",
+    "Windows needs no Accessibility or Wi-Fi optimization grants, so Permissions is absent, and it has no updater yet.",
+    "Automatic updates aren’t available on Windows yet",
     settings,
   ),
   s(
@@ -685,6 +685,22 @@ export const scenarios: Scenario[] = [
     "Updates · development build",
     "Automatic updates unavailable.",
     "Automatic updates are unavailable",
+    settings,
+  ),
+  s(
+    "Settings",
+    "updates-preview",
+    "Updates · beta build",
+    "A beta build offers its own channel next to Stable; channels without releases stay hidden.",
+    "Update channel",
+    settings,
+  ),
+  s(
+    "Settings",
+    "updates-unpublished",
+    "Updates · channel without releases",
+    "An older version chose Alpha, which has no releases. It stays listed with a way back to Stable.",
+    "Alpha has no releases yet",
     settings,
   ),
   s(
