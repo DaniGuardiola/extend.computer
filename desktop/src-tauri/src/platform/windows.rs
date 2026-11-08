@@ -62,7 +62,7 @@ pub fn os_version() -> String {
 /// The word "Version" is translated in other display languages.
 fn windows_version(ver: &str) -> Option<String> {
     let bracket = ver.split_once('[')?.1.split_once(']')?.0;
-    let number = bracket.split_whitespace().last()?;
+    let number = bracket.split_whitespace().next_back()?;
     (number.contains('.') && number.bytes().all(|b| b.is_ascii_digit() || b == b'.'))
         .then(|| format!("Windows {number}"))
 }
