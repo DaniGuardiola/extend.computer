@@ -2,6 +2,7 @@
 //! and connections, presence and discovery continue until the user quits
 //! from the app menu, the status icon or Cmd+Q. Open at login starts the app
 //! the same way, with only its status icon.
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Manager};
 use tauri_plugin_autostart::ManagerExt;
 
@@ -39,9 +40,30 @@ pub fn autostart_plugin(identifier: &str) -> tauri::plugin::TauriPlugin<tauri::W
 
 pub fn show_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
+        HIDE_AFTER_FULL_SCREEN.store(false, Ordering::SeqCst);
         let _ = window.show();
         let _ = window.unminimize();
         let _ = window.set_focus();
+    }
+}
+
+/// A full-screen window leaves full screen before it hides: on macOS, hiding
+/// it in place would leave its empty full-screen space behind.
+static HIDE_AFTER_FULL_SCREEN: AtomicBool = AtomicBool::new(false);
+/// What closing the main window does instead of quitting.
+pub fn hide_window(window: &tauri::Window) {
+    if cfg!(target_os = "macos") && window.is_fullscreen().unwrap_or(false) {
+        HIDE_AFTER_FULL_SCREEN.store(true, Ordering::SeqCst);
+        let _ = window.set_fullscreen(false);
+    } else {
+        let _ = window.hide();
+    }
+}
+/// The window resized, which is also how leaving full screen ends.
+pub fn window_resized(window: &tauri::Window) {
+    if HIDE_AFTER_FULL_SCREEN.load(Ordering::SeqCst) && window.is_fullscreen().is_ok_and(|on| !on) {
+        HIDE_AFTER_FULL_SCREEN.store(false, Ordering::SeqCst);
+        let _ = window.hide();
     }
 }
 

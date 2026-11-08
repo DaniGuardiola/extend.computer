@@ -417,11 +417,16 @@ fn main() {
         })
         .on_window_event(|window, event| {
             // Closing hides the window; the app keeps running until it quits.
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                if window.label() == "main" {
+            if window.label() != "main" {
+                return;
+            }
+            match event {
+                tauri::WindowEvent::CloseRequested { api, .. } => {
                     api.prevent_close();
-                    let _ = window.hide();
+                    shell::hide_window(window);
                 }
+                tauri::WindowEvent::Resized(_) => shell::window_resized(window),
+                _ => {}
             }
         })
         .invoke_handler(tauri::generate_handler![
