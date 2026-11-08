@@ -19,8 +19,8 @@ pub struct Permissions {
     pub wifi_pending: bool,
     pub wifi_installing: bool,
     pub wifi_setup_failed: bool,
-    /// An Ethernet link has a local network address, so devices can connect
-    /// over it without Wi-Fi optimization.
+    /// This device reaches the local network over Ethernet and not over
+    /// Wi-Fi, so devices can connect without Wi-Fi optimization.
     pub wired: bool,
     /// This device may capture its screen to extend or mirror it: macOS's
     /// Screen Recording. Always true where the OS asks for no grant.
@@ -30,8 +30,8 @@ pub struct Permissions {
     pub wifi_skipped: bool,
 }
 impl Permissions {
-    /// Some local network link accepts connections: Wi-Fi once Wi-Fi
-    /// optimization is ready, or Ethernet without it.
+    /// Local network connections are accepted: once Wi-Fi optimization is
+    /// ready, or without it on a device that uses Ethernet and not Wi-Fi.
     pub fn can_receive(&self) -> bool {
         self.available && self.post && (self.wifi || self.wired)
     }
@@ -66,23 +66,41 @@ pub fn wifi_session(route: Option<&str>, link: Option<Link>) -> bool {
     !matches!(route, Some("usb" | "internet")) && wifi_link(link)
 }
 
-/// Whether an Ethernet link has a routable local network address. Cable
-/// interfaces between Macs only have link-local ones and count separately.
+/// Whether this device reaches the local network over Ethernet and not over
+/// Wi-Fi: see [`ethernet_only`]. Cable interfaces between Macs only have
+/// link-local addresses and count separately.
 fn wired_link() -> bool {
-    if_addrs::get_if_addrs()
-        .unwrap_or_default()
-        .into_iter()
-        .any(|interface| {
-            let ip = interface.ip();
-            interface.is_oper_up()
-                && match ip {
-                    IpAddr::V4(v4) => {
-                        !v4.is_loopback() && !v4.is_link_local() && !v4.is_unspecified()
-                    }
-                    IpAddr::V6(_) => false,
+    // Only macOS has a Wi-Fi broker to do without.
+    if !crate::platform::WIFI_OPTIMIZATION {
+        return false;
+    }
+    ethernet_only(
+        if_addrs::get_if_addrs()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|interface| interface.is_oper_up())
+            .filter_map(|interface| match interface.ip() {
+                IpAddr::V4(v4)
+                    if !v4.is_loopback() && !v4.is_link_local() && !v4.is_unspecified() =>
+                {
+                    Some(extend_computer_agent::link::classify(IpAddr::V4(v4)))
                 }
-                && extend_computer_agent::link::classify(ip) == Some(Link::Ethernet)
-        })
+                _ => None,
+            }),
+    )
+}
+
+/// From the links of this device's routable addresses: an Ethernet link has
+/// one and nothing that may be Wi-Fi does. A device that also uses Wi-Fi
+/// still needs Wi-Fi optimization to receive, since its peers may reach it
+/// over either link and would find the Wi-Fi one turned down.
+fn ethernet_only(links: impl IntoIterator<Item = Option<Link>>) -> bool {
+    let (mut ethernet, mut wifi) = (false, false);
+    for link in links {
+        ethernet |= link == Some(Link::Ethernet);
+        wifi |= wifi_link(link);
+    }
+    ethernet && !wifi
 }
 fn read_status(path: &Path) -> Result<String> {
     let mut child = extend_computer_agent::cursor::helper_command(path)
@@ -310,6 +328,19 @@ mod tests {
             screen_access(&temp.path().join("missing")),
             !crate::platform::SCREEN_PERMISSION
         );
+    }
+
+    #[test]
+    fn only_a_device_off_wifi_counts_as_wired() {
+        assert!(ethernet_only([Some(Link::Ethernet)]));
+        assert!(ethernet_only([Some(Link::Ethernet), Some(Link::Other)]));
+        // A Mac on both would turn down peers that reach it over Wi-Fi, so it
+        // still needs Wi-Fi optimization, as does a link that can't be told.
+        assert!(!ethernet_only([Some(Link::Ethernet), Some(Link::Wifi)]));
+        assert!(!ethernet_only([Some(Link::Wifi), Some(Link::Ethernet)]));
+        assert!(!ethernet_only([Some(Link::Ethernet), None]));
+        assert!(!ethernet_only([Some(Link::Other)]));
+        assert!(!ethernet_only([]));
     }
 
     #[test]

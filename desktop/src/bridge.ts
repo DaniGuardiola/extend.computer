@@ -35,7 +35,7 @@ export type Permissions = {
   wifi_pending: boolean;
   wifi_installing: boolean;
   wifi_setup_failed: boolean;
-  /** An Ethernet link is up, so devices can connect without Wi-Fi optimization. */
+  /** This device uses Ethernet and not Wi-Fi, so devices can connect without Wi-Fi optimization. */
   wired: boolean;
   /** This device may capture its screen (macOS Screen Recording). */
   screen: boolean;

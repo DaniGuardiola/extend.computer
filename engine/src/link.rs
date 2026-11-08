@@ -1,5 +1,6 @@
-//! Best-effort physical link of a connection, for explaining routes to users.
-//! It never affects trust or routing decisions.
+//! Best-effort physical link of a connection, for explaining routes to users
+//! and for telling whether a connection needs Wi-Fi optimization. It never
+//! affects trust or routing decisions.
 use serde::{Deserialize, Serialize};
 use std::net::{IpAddr, TcpStream};
 use std::sync::Mutex;
