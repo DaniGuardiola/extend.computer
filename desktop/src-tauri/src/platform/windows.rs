@@ -90,6 +90,47 @@ pub fn session_activity() -> impl Sized {
 pub fn session_activity() -> impl Sized {}
 /// Windows has no App Nap to hold off while connections are allowed.
 pub fn available_activity() -> impl Sized {}
+/// Whether the taskbar, and the status icon's notification area with it, is
+/// light (Settings > Personalization > Colors, "Choose your mode"). Windows
+/// before 10 version 1903 has only the dark taskbar and no such setting.
+#[cfg(windows)]
+pub fn light_taskbar() -> bool {
+    #[link(name = "advapi32")]
+    extern "system" {
+        fn RegGetValueW(
+            key: isize,
+            subkey: *const u16,
+            value: *const u16,
+            flags: u32,
+            kind: *mut u32,
+            data: *mut u32,
+            size: *mut u32,
+        ) -> i32;
+    }
+    // HKEY_CURRENT_USER, sign-extended as the C headers define it.
+    const HKEY_CURRENT_USER: isize = 0x8000_0001_u32 as i32 as isize;
+    const RRF_RT_REG_DWORD: u32 = 0x10;
+    let wide = |text: &str| text.encode_utf16().chain([0]).collect::<Vec<u16>>();
+    let key = wide(r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+    let name = wide("SystemUsesLightTheme");
+    let (mut light, mut size) = (0u32, 4u32);
+    let status = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            key.as_ptr(),
+            name.as_ptr(),
+            RRF_RT_REG_DWORD,
+            std::ptr::null_mut(),
+            &mut light,
+            &mut size,
+        )
+    };
+    status == 0 && light != 0
+}
+#[cfg(not(windows))]
+pub fn light_taskbar() -> bool {
+    true
+}
 
 pub mod passkey {
     pub fn available() -> bool {
@@ -122,5 +163,27 @@ mod tests {
         );
         assert_eq!(super::windows_version("Microsoft Windows"), None);
         assert_eq!(super::windows_version("[Version <bad>]"), None);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn reads_the_taskbar_theme_as_reg_does() {
+        let output = std::process::Command::new("reg")
+            .args([
+                "query",
+                r"HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
+                "/v",
+                "SystemUsesLightTheme",
+            ])
+            .output()
+            .unwrap();
+        // "    SystemUsesLightTheme    REG_DWORD    0x1"
+        let light = String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .find(|line| line.contains("SystemUsesLightTheme"))
+            .and_then(|line| line.split_whitespace().next_back())
+            .and_then(|value| u32::from_str_radix(value.trim_start_matches("0x"), 16).ok())
+            .is_some_and(|value| value != 0);
+        assert_eq!(super::light_taskbar(), light);
     }
 }
