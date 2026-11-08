@@ -8,7 +8,7 @@ use extend_computer_agent::{
         },
         packet::{frame, read_packet, write_packet, Kind, MAX_VIEWER_INPUT},
     },
-    session::display::{Config, Mode, VideoCodec},
+    session::display::{Config, Mode, VideoCodec, CONFIG_LIMITS},
 };
 use std::{
     collections::VecDeque,
@@ -157,7 +157,25 @@ fn fit_screen(screen: &Screen, config: &mut Config) -> Result<()> {
         width > 0 && height > 0 && screen.scale.is_finite() && screen.scale > 0.0,
         "Invalid display geometry"
     );
-    let retina = config.retina && screen.scale >= 1.5;
+    // The stream size for `points` stream points per screen point.
+    let size = |points: f64, retina: bool| {
+        let (width, height) = (
+            (width as f64 * points).round().max(1.0),
+            (height as f64 * points).round().max(1.0),
+        );
+        let scale = if retina { 2.0 } else { 1.0 };
+        let fit = (4096.0 / (width * scale))
+            .min(4096.0 / (height * scale))
+            .min(1.0);
+        // Align encoded pixels, not logical points: Retina may have odd logical
+        // dimensions while its backing raster remains even for 4:2:0 codecs.
+        let alignment = if retina { 1 } else { 2 };
+        (
+            (width * fit) as u32 / alignment * alignment,
+            (height * fit) as u32 / alignment * alignment,
+        )
+    };
+    let mut retina = config.retina && screen.scale >= 1.5;
     // Stream points per screen point. A Mac reports 1x or 2x, where this is
     // 1. Windows reports its display scale (125%, 150%…): Retina streams its
     // physical pixels at 2x, pixel for pixel; a screen below Retina density
@@ -169,19 +187,17 @@ fn fit_screen(screen: &Screen, config: &mut Config) -> Result<()> {
     } else {
         1.0
     };
-    let (width, height) = (
-        (width as f64 * points).round().max(1.0),
-        (height as f64 * points).round().max(1.0),
-    );
-    let scale = if retina { 2.0 } else { 1.0 };
-    let fit = (4096.0 / (width * scale))
-        .min(4096.0 / (height * scale))
-        .min(1.0);
-    // Align encoded pixels, not logical points: Retina may have odd logical
-    // dimensions while its backing raster remains even for 4:2:0 codecs.
-    let alignment = if retina { 1 } else { 2 };
-    config.width = (width * fit) as u32 / alignment * alignment;
-    config.height = (height * fit) as u32 / alignment * alignment;
+    let mut fitted = size(points, retina);
+    // A small panel at a high display scale (1600x900 at 150% is 800x450 in
+    // Retina) has fewer points than a stream may; it streams its physical
+    // pixels at 1x instead.
+    if points < screen.scale
+        && (fitted.0 < *CONFIG_LIMITS.width.start() || fitted.1 < *CONFIG_LIMITS.height.start())
+    {
+        retina = false;
+        fitted = size(screen.scale, false);
+    }
+    (config.width, config.height) = fitted;
     config.retina = retina;
     config.validate()
 }
@@ -1345,6 +1361,14 @@ mod diagnostic_tests {
             fit(&windows(2194, 1234, 1.75), Mode::Extend, true),
             (1920, 1080, true)
         );
+        // A small panel at a high scale has fewer points than a stream may
+        // (640x480), so it keeps its physical pixels at 1x, as before.
+        let small = windows(1067, 600, 1.5);
+        assert_eq!(fit(&small, Mode::Extend, true), (1600, 900, false));
+        assert_eq!(fit(&small, Mode::Extend, false), (1066, 600, false));
+        let tiny = windows(640, 400, 2.0);
+        assert_eq!(fit(&tiny, Mode::Extend, true), (1280, 800, false));
+        assert_eq!(fit(&tiny, Mode::Mirror, false), (1280, 800, false));
         // A Mac's 2x screen is unchanged: its points at Retina.
         let mac = windows(1512, 982, 2.0);
         assert_eq!(fit(&mac, Mode::Extend, true), (1512, 982, true));
