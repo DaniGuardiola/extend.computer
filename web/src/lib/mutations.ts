@@ -113,6 +113,15 @@ export function useChangePassword() {
   })
 }
 
+// Deletion ends every session, so all cached account data is dropped.
+export function useDeleteAccount() {
+  const client = useQueryClient()
+  return useOperation(async (email: string) => {
+    await api('DELETE /account', { email })
+    client.clear()
+  })
+}
+
 export function useMfaAction() {
   const refresh = useRefreshAccount()
   return useOperation(async (work: () => Promise<void>) => {

@@ -125,6 +125,20 @@ cases.push(
     },
   },
   {
+    name: 'delete-account',
+    url: '/account',
+    action: async (page) => {
+      await page
+        .getByRole('button', { name: 'Delete account', exact: true })
+        .click()
+      await page
+        .getByRole('dialog')
+        .getByRole('textbox', { name: 'Enter your email to confirm' })
+        .fill('review@example.invalid')
+    },
+  },
+  { name: 'login-deleted', url: '/login?reason=account-deleted' },
+  {
     name: 'device-tooltip',
     url: '/account',
     state: 'devices',

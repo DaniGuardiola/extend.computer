@@ -14,13 +14,14 @@ import {
   useRemoveCredential,
   usePasskeyUsage,
   useChangePassword,
+  useDeleteAccount,
 } from '../lib/mutations'
 import { ThemePicker } from '../components/ThemePicker'
 import { ErrorFeedback, useErrorFeedback } from '../components/ErrorFeedback'
 import { ManageKeysLink } from '../components/ManageKeysLink'
 import { CredentialRow } from '../components/CredentialRow'
 import { NewPasswordInput } from '../components/NewPasswordInput'
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import * as Ariakit from '@ariakit/react'
 import {
@@ -74,6 +75,8 @@ function Dashboard() {
   const removalAction = useRemoveCredential()
   const usageAction = usePasskeyUsage()
   const passwordAction = useChangePassword()
+  const deletion = useDeleteAccount()
+  const deleted = useRef(false)
   const queryClient = useQueryClient()
   const enabled = useClientReady()
   const userQuery = useQuery({ ...accountQuery, enabled })
@@ -142,6 +145,11 @@ function Dashboard() {
   }
   const [removal, setRemoval] = useState<Removal | null>(null)
   const [passwordOpen, setPasswordOpen] = useState(false)
+  const [deletionOpen, setDeletionOpen] = useState(false)
+  const [deletionEmail, setDeletionEmail] = useState('')
+  const deletionConfirmed =
+    !!account &&
+    deletionEmail.trim().toLowerCase() === account.email.toLowerCase()
   const [usageChange, setUsageChange] = useState<Passkey | null>(null)
   const [issuedRecoveryCodes, setIssuedRecoveryCodes] = useState<
     string[] | null
@@ -168,7 +176,7 @@ function Dashboard() {
     if (loadError) setError(message(loadError))
   }, [loadError, setError])
   useEffect(() => {
-    if (enabled && userQuery.data === null) {
+    if (enabled && userQuery.data === null && !deleted.current) {
       queryClient.clear()
       window.location.assign('/login?reason=session-ended')
     }
@@ -228,6 +236,33 @@ function Dashboard() {
     )
   }
   useEffect(() => setSignOutOthers(false), [passwordOpen, removal])
+  useEffect(() => setDeletionEmail(''), [deletionOpen])
+  function deleteAccount(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!deletionConfirmed) return
+    const email = deletionEmail
+    setDeletionOpen(false)
+    // Deletion always asks for a fresh password and second factor check.
+    verify(() =>
+      action(
+        async () => {
+          deleted.current = true
+          try {
+            await deletion.run(email)
+          } catch (error) {
+            deleted.current = false
+            throw error
+          }
+          await navigate({
+            to: '/login',
+            search: { reason: 'account-deleted' },
+          })
+        },
+        '',
+        true,
+      ),
+    )
+  }
   async function changePassword(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const data = new FormData(event.currentTarget)
@@ -659,6 +694,24 @@ function Dashboard() {
                 await navigate({ to: '/login' })
               }}
             />
+            <section className="mb-10" aria-labelledby="delete-account-title">
+              <div className="security-heading">
+                <div>
+                  <h2 id="delete-account-title">Delete account</h2>
+                  <p>Permanently delete your account.</p>
+                </div>
+                <button
+                  className="text-button"
+                  disabled={busy}
+                  onClick={() => {
+                    setError('')
+                    setDeletionOpen(true)
+                  }}
+                >
+                  Delete account
+                </button>
+              </div>
+            </section>
           </div>
         ) : null}
       </main>
@@ -766,6 +819,52 @@ function Dashboard() {
               : 'Remove device'}
           </button>
         </div>
+      </Ariakit.Dialog>
+      <Ariakit.Dialog
+        unmountOnHide
+        open={deletionOpen}
+        onClose={() => !busy && setDeletionOpen(false)}
+        className="dialog"
+        backdrop={<div className="dialog-backdrop" />}
+      >
+        <Ariakit.DialogHeading>Delete your account?</Ariakit.DialogHeading>
+        <Ariakit.DialogDescription>
+          This permanently deletes your account, devices, passkeys, security
+          keys and two-factor settings. Every browser and app will be signed
+          out. This can’t be undone.
+        </Ariakit.DialogDescription>
+        <form onSubmit={deleteAccount}>
+          <label className="field">
+            Enter your email to confirm
+            <input
+              aria-label="Enter your email to confirm"
+              name="confirm-email"
+              type="email"
+              autoComplete="off"
+              autoCapitalize="none"
+              spellCheck={false}
+              placeholder={account?.email}
+              required
+              value={deletionEmail}
+              onChange={(event) => setDeletionEmail(event.target.value)}
+            />
+          </label>
+          <div className="dialog-actions">
+            <Ariakit.DialogDismiss
+              className="button button-outline"
+              disabled={busy}
+            >
+              Cancel
+            </Ariakit.DialogDismiss>
+            <button
+              className="button danger"
+              disabled={busy || !deletionConfirmed}
+              type="submit"
+            >
+              Delete account
+            </button>
+          </div>
+        </form>
       </Ariakit.Dialog>
       <Ariakit.Dialog
         unmountOnHide

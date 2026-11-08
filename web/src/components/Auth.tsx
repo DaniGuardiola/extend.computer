@@ -15,10 +15,12 @@ import { message } from '../lib/api'
 export function Auth({
   signup = false,
   sessionEnded = false,
+  accountDeleted = false,
   onSignedIn,
 }: {
   signup?: boolean
   sessionEnded?: boolean
+  accountDeleted?: boolean
   onSignedIn?: () => void | Promise<void>
 }) {
   const operation = useAction()
@@ -102,6 +104,11 @@ export function Auth({
               error="Your session ended. Sign in again to continue."
               attempt={1}
             />
+          )}
+          {accountDeleted && !pending && !error && (
+            <p className="message success-message" role="status">
+              Your account was deleted.
+            </p>
           )}
           {error && <ErrorFeedback error={error} attempt={errorAttempt} />}
           {pending ? (

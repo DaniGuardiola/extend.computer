@@ -184,6 +184,7 @@ export const contracts = {
   'DELETE /devices/:id': endpoint(noBody, empty),
   'DELETE /sessions/:id': endpoint(noBody, empty),
   'DELETE /sessions': endpoint(noBody, empty),
+  'DELETE /account': endpoint(z.object({ email: z.string().min(1) }), empty),
   'POST /account/password': endpoint(
     signOut.extend({ current_password: password, password }),
     empty,

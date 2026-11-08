@@ -374,6 +374,16 @@ export class AccountService extends DurableObject<Env> {
     }
   }
 
+  // Drops this object's rate-limit counters for a deleted account.
+  async forgetAccount(account: string): Promise<void> {
+    this.ctx.storage.sql.exec(
+      'DELETE FROM attempts WHERE key IN (?, ?, ?)',
+      'reauth:' + account,
+      'totp-setup:' + account,
+      'mail-account:' + account,
+    )
+  }
+
   private async sendEmail(account: Account, kind: EmailKind): Promise<number> {
     if (!emailEnabled(this.env))
       fail(
@@ -1339,6 +1349,45 @@ export class AccountService extends DurableObject<Env> {
         .bind(account)
         .first()
       return json({ ...user, email_enabled: emailEnabled(this.env) })
+    }
+    if (path === '/v1/account' && method === 'DELETE') {
+      const input = await body(request)
+      const user = await this.elevated(session)
+      if (
+        typeof input.email !== 'string' ||
+        input.email.trim().toLowerCase() !== user.email
+      )
+        fail(400, 'Enter your account email to confirm')
+      // Every account table cascades from accounts: sessions (and with them
+      // device credentials, app codes and pending tickets), devices, keys,
+      // two-factor data, email links and challenges.
+      const removed = await db
+        .prepare(
+          `DELETE FROM accounts WHERE id=? AND password_hash=? AND mfa_version=? AND
+          EXISTS(SELECT 1 FROM sessions WHERE token_hash=? AND account_id=accounts.id AND expires_at>? AND elevated_until>? AND mfa_version=accounts.mfa_version)`,
+        )
+        .bind(
+          account,
+          user.password_hash,
+          user.mfa_version,
+          session.token_hash,
+          now(),
+          now(),
+        )
+        .run()
+      if (!removed.meta.changes)
+        fail(403, 'Security settings changed. Verify again.')
+      // Short-lived rate-limit counters are keyed by the random account ID.
+      // Clear them here; other IP shards expire theirs within a minute.
+      await this.forgetAccount(account)
+      this.ctx.waitUntil(
+        this.env.ACCOUNTS.getByName('mail-budget')
+          .forgetAccount(account)
+          .catch(() => {}),
+      )
+      const response = empty()
+      setCookie(response, request, COOKIE, '', 0)
+      return response
     }
     if (path === '/v1/auth/email/request' && method === 'POST') {
       const user = await db

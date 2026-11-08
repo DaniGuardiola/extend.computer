@@ -107,3 +107,19 @@ test('Android device directory responses retain their platform', () => {
   })
   assert.equal(device.platform, 'android')
 })
+
+test('account deletion sends the typed email and needs one', async (t) => {
+  const requests: [string, RequestInit | undefined][] = []
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    requests.push([String(url), options])
+    return new Response(null, { status: 204 })
+  })
+  await assert.rejects(api('DELETE /account', { email: '' }), {
+    message: 'Check the information you entered and try again.',
+  })
+  assert.equal(requests.length, 0)
+  await api('DELETE /account', { email: 'a@example.invalid' })
+  assert.equal(requests[0]![0], '/api/v1/account')
+  assert.equal(requests[0]![1]?.method, 'DELETE')
+  assert.equal(requests[0]![1]?.body, '{"email":"a@example.invalid"}')
+})

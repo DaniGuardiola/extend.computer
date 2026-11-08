@@ -11,6 +11,8 @@ function verifyContracts() {
   api('POST /auth/login', { email: 'a@example.invalid' })
   // @ts-expect-error Usage setting requires a boolean
   api('PATCH /passkeys/:id', { sign_in_enabled: 'yes' }, { id: 'key' })
+  // @ts-expect-error Account deletion requires the typed email
+  api('DELETE /account')
   // @ts-expect-error A GET endpoint has no request body
   api('GET /account', { password: 'password' })
   // @ts-expect-error Response is inferred from the endpoint
