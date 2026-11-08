@@ -27,18 +27,24 @@ fn word(value: bool, when_true: &'static str, when_false: &'static str) -> &'sta
     }
 }
 
-/// The server's host (and port, when it isn't the default), never a path.
+/// The server's host name (and port, when it isn't the default), never a
+/// path. A server reached by a network IP address is only named as one, since
+/// the report carries no addresses.
 fn server_host(server: &str) -> String {
-    url::Url::parse(server)
-        .ok()
-        .and_then(|url| {
-            let host = url.host_str()?.to_owned();
-            Some(match url.port() {
-                Some(port) => format!("{host}:{port}"),
-                None => host,
-            })
-        })
-        .unwrap_or_else(|| "unknown".into())
+    let Ok(url) = url::Url::parse(server) else {
+        return "unknown".into();
+    };
+    let host = match url.host() {
+        Some(url::Host::Domain(domain)) => domain.to_owned(),
+        Some(url::Host::Ipv4(ip)) if ip.is_loopback() => ip.to_string(),
+        Some(url::Host::Ipv6(ip)) if ip.is_loopback() => format!("[{ip}]"),
+        Some(_) => return "IP address (hidden)".into(),
+        None => return "unknown".into(),
+    };
+    match url.port() {
+        Some(port) => format!("{host}:{port}"),
+        None => host,
+    }
 }
 
 fn platform_name(platform: &str) -> &'static str {
@@ -380,6 +386,25 @@ Devices: 2
             &"b".repeat(16),
         ] {
             assert!(!report.contains(secret), "{secret} leaked:\n{report}");
+        }
+    }
+
+    #[test]
+    fn account_server_names_a_host_but_hides_network_addresses() {
+        for (server, shown) in [
+            ("https://extend.computer", "extend.computer"),
+            (
+                "https://accounts.example.test:8443",
+                "accounts.example.test:8443",
+            ),
+            ("http://localhost:8080", "localhost:8080"),
+            ("http://127.0.0.1:8080", "127.0.0.1:8080"),
+            ("http://[::1]:8080", "[::1]:8080"),
+            ("https://192.168.1.20:8443", "IP address (hidden)"),
+            ("https://[2001:db8::1]", "IP address (hidden)"),
+            ("not a server", "unknown"),
+        ] {
+            assert_eq!(server_host(server), shown, "{server}");
         }
     }
 
