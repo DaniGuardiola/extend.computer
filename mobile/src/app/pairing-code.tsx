@@ -81,7 +81,8 @@ export default function PairingCode() {
               accessibilityLiveRegion="polite"
               className="text-center text-sm text-muted"
             >
-              Expires in {pairing.secondsRemaining} seconds
+              Expires in {pairing.secondsRemaining}{" "}
+              {pairing.secondsRemaining === 1 ? "second" : "seconds"}
             </Text>
           </View>
         ) : null}
