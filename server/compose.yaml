@@ -8,6 +8,7 @@ services:
       EXTEND_ORIGIN: "${EXTEND_ORIGIN:-http://localhost:8080}"
       EXTEND_MFA_ENCRYPTION_KEY: "${EXTEND_MFA_ENCRYPTION_KEY:-}"
       EXTEND_SIGNUP_ENABLED: "${EXTEND_SIGNUP_ENABLED:-false}"
+      EXTEND_RELAY_ENABLED: "${EXTEND_RELAY_ENABLED:-false}"
     volumes:
       - accounts:/data
 

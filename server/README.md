@@ -10,7 +10,7 @@ EXTEND_ORIGIN=http://localhost:8080 EXTEND_SIGNUP_ENABLED=true cargo run --manif
 
 The default address is `127.0.0.1:8080`. Set `EXTEND_BIND` to change it and `EXTEND_DATABASE` to choose the SQLite file. Signup is disabled unless `EXTEND_SIGNUP_ENABLED=true`; disable it again after creating accounts on a private installation. Existing accounts can still log in.
 
-For Docker, from this directory:
+For a step-by-step setup, including HTTPS, creating accounts and pointing the apps at the server, see [Custom account servers](../docs/operations/account-servers.md). For Docker, from this directory:
 
 ```sh
 EXTEND_SIGNUP_ENABLED=true docker compose up --build -d
@@ -37,7 +37,7 @@ Requests and responses use JSON. Times are Unix seconds. Account and device toke
 
 Signup and login accept `{"email":"you@example.com","password":"your long password"}`. Passwords must be 12–1024 bytes. Email addresses are trimmed and normalized to ASCII lowercase; email ownership is not verified in this first slice.
 
-Device registration accepts `{"public_key":"<64 hex characters>","name":"My Mac","platform":"macos"}`. Use the engine's existing 32-byte X25519 public key. The fingerprint is SHA-256 of its decoded bytes, matching the local engine. Supported platforms are `macos`, `windows`, and `linux`.
+Device registration accepts `{"public_key":"<64 hex characters>","name":"My Mac","platform":"macos"}`. Use the engine's existing 32-byte X25519 public key. The fingerprint is SHA-256 of its decoded bytes, matching the local engine. Supported platforms are `macos`, `windows`, `linux`, `android`, and `ios`.
 
 Registration returns `id`, `fingerprint`, and `device_token`. Re-registering the same key on the same account keeps the device ID and replaces the heartbeat token for that login session. A different login gets its own heartbeat credential. Send heartbeats every 30 seconds; a device becomes offline after 90 seconds without a heartbeat. Registration alone does not mark it online. Logging out invalidates that login's heartbeat credentials immediately; other logged-in sessions remain valid. Device registration persists while offline. Expired login sessions and their device credentials are removed on the next database operation.
 
@@ -74,11 +74,11 @@ Forwarded IP headers are ignored. Behind a reverse proxy, the application rate l
 
 Device registration records the existing engine public key. A session-bound, one-use X25519 challenge proves possession before the device becomes eligible for automatic account pairing or relay access. Challenges expire after two minutes; failed proofs are consumed. Previously registered devices remain unverified until an updated desktop app proves its key.
 
-The desktop app treats verified same-account identities as temporary peers. Membership is refreshed every 30 seconds and expires after 90 seconds without a successful refresh. Account trust and its control consent never become permanent local pairing. Signing out removes temporary access immediately. The receiver must enable incoming connections, grant OS permissions, and approve the first control request locally. Existing manual pairings remain independent.
+The desktop app treats verified same-account identities as temporary peers. Membership is refreshed every 30 seconds and expires after 90 seconds without a successful refresh. Account trust never becomes permanent local pairing. Signing out removes temporary access immediately. Verified devices in the same account connect without an approval prompt, like paired devices: the receiver only needs Allow connections turned on and the OS permissions for the mode. Anyone who controls the server can therefore add a device that connects to the account's computers; run or choose a server you trust. Existing manual pairings remain independent.
 
 ## Internet connections
 
-Relay is disabled by default. Set `EXTEND_RELAY_ENABLED=true` to enable it on a self-hosted server. `GET /v1/relay/status` publishes `{ "relay_enabled": false }`; disabled relay attempts return HTTP 503 with `code: "relay_disabled"`. Clients cache this policy through local retries and recover established connections from temporary network interruptions. When explicitly enabled, the app can use an authenticated WebSocket relay if the local endpoint is unreachable. The relay forwards opaque bytes from the existing pinned Noise connection; it cannot decrypt mouse, keyboard, or screen data. It accepts only verified devices in the same account. Revoked or expired credentials close active tunnels; the server rechecks them every five seconds. Configure the HTTPS reverse proxy to forward WebSocket upgrades for `/v1/relay/*`.
+Relay is disabled by default. Set `EXTEND_RELAY_ENABLED=true` to enable it on a self-hosted server; Docker Compose forwards this variable. `GET /v1/relay/status` publishes `{ "relay_enabled": false }`; disabled relay attempts return HTTP 503 with `code: "relay_disabled"`. Clients cache this policy through local retries and recover established connections from temporary network interruptions. When explicitly enabled, the app can use an authenticated WebSocket relay if the local endpoint is unreachable. The relay forwards opaque bytes from the existing pinned Noise connection; it cannot decrypt mouse, keyboard, or screen data. It accepts only verified devices in the same account. Revoked or expired credentials close active tunnels; the server rechecks them every five seconds. Configure the HTTPS reverse proxy to forward WebSocket upgrades for `/v1/relay/*`.
 
 The relay allows four simultaneous tunnels per account and bounds frames to 64 KiB, traffic to 2 MiB per second and 2,000 frames per second. Pending tunnels expire after 30 seconds. Connections currently expire after one hour. Direct internet NAT traversal is not implemented. Internet connections require explicitly enabling the relay. Official hosting uses a SQLite Durable Object with WebSocket hibernation on Cloudflare's free plan, subject to its usage quotas.
 
@@ -118,6 +118,6 @@ Management requires a fresh password check (and an enabled second factor), valid
 
 ## Desktop account configuration
 
-Open the app's account dialog, expand **Account server**, and enter this server's HTTPS origin (localhost HTTP is allowed for development). Saved sessions are scoped to the server URL and stored in the operating system credential store. The app registers its existing identity and updates device presence every 30 seconds while running. Removing a device from the server invalidates its account credentials on the next check; local pairing remains independent. Sign-out revokes the session and its device heartbeat credentials, then deletes the local saved login.
+Open the app's account dialog, check **Use a custom account server**, and enter this server's HTTPS origin (localhost HTTP is allowed for development). Saved sessions are scoped to the server URL and stored in the operating system credential store. The app registers its existing identity and updates device presence every 30 seconds while running. Removing a device from the server invalidates its account credentials on the next check; local pairing remains independent. Sign-out revokes the session and its device heartbeat credentials, then deletes the local saved login.
 
 This standalone service provides an API rather than a website. Password, TOTP, and recovery-code login work directly in the desktop app. Browser passkey/security-key login, signup, password recovery, and security management require a website deployment; the official installation supplies those flows. Create standalone accounts through its signup API or your own account UI. Keep email/password/2FA policies consistent with your installation.

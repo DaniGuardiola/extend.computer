@@ -22,6 +22,7 @@ How extend.computer connects devices to share input and displays across platform
 | 10. [Development signing](development/signing.md) | Stable development identity and permission retention |
 | 11. [CLI operation](operations/cli.md) | Terminal control sessions and diagnostic commands |
 | 12. [Releases and updates](operations/releases.md) | Current macOS CI, signing, channels, and updates |
+| 13. [Custom account servers](operations/account-servers.md) | Running your own account server and pointing the apps at it |
 
 ---
 

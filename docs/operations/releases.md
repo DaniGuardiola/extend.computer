@@ -1,6 +1,6 @@
 # macOS releases and compatibility
 
-[← CLI operation](cli.md) · [Index](../README.md) · [Index →](../README.md)
+[← CLI operation](cli.md) · [Index](../README.md) · [Custom account servers →](account-servers.md)
 
 > [!NOTE]
 > macOS only. Other platform adapters are **not supported yet**.
@@ -305,4 +305,4 @@ builds through a staging feed and then the production feed:
 
 ---
 
-[← CLI operation](cli.md) · [Index](../README.md) · [Index →](../README.md)
+[← CLI operation](cli.md) · [Index](../README.md) · [Custom account servers →](account-servers.md)

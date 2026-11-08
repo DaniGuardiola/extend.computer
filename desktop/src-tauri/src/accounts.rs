@@ -30,8 +30,9 @@ pub struct Ceremony {
     /// pick any passkey for the account.
     pub allowed: Vec<String>,
 }
-// TODO(before release): point at the real custom account server documentation.
-const ACCOUNT_SERVER_DOCS: &str = "https://example.com/";
+/// How to run an account server and point the apps at it.
+const ACCOUNT_SERVER_DOCS: &str =
+    "https://github.com/DaniGuardiola/extend.computer/blob/main/docs/operations/account-servers.md";
 #[derive(Clone, Default, Serialize)]
 pub struct View {
     pub server: String,
@@ -805,6 +806,16 @@ mod tests {
             assert!(response.contains("Cache-Control: no-store\r\n"));
             assert!(!response.contains("state=") && !response.contains("code="));
         }
+    }
+    #[test]
+    fn learn_more_opens_the_custom_account_server_guide_on_main() {
+        let page = ACCOUNT_SERVER_DOCS
+            .strip_prefix("https://github.com/DaniGuardiola/extend.computer/blob/main/")
+            .expect("The guide is served from the repository's main branch");
+        let guide = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join(page);
+        assert!(guide.is_file(), "{page} is missing from the repository");
     }
     #[test]
     fn passkey_ceremony_keeps_allowed_credentials_for_the_official_site() {

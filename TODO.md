@@ -24,8 +24,6 @@
 
 - [ ] Check whether display SRTP uses hardware AES in release builds. The `aes` 0.8 crate only enables ARMv8 AES instructions with `--cfg aes_armv8`, so str0m's rust-crypto SRTP may run software AES on Apple silicon and Android. Measure per-packet cost at high bitrates before changing build flags.
 
-- [ ] Before release: write documentation about custom account servers and point the desktop login's "Learn more" link at it (`ACCOUNT_SERVER_DOCS` in `desktop/src-tauri/src/accounts.rs`, currently `https://example.com/`).
-
 - [ ] Connection status: tell direct internet connections apart from the relay if the transport can, and consider presented frame rate and receiver-side drops as display quality signals (the live indicator uses round trips, keepalive gaps, RTCP loss and keyframe recoveries).
 
 - [ ] Report the Android device's own link (Wi-Fi/Ethernet) in the Hello through `link::set_classifier`, so Mac explanations cover tablets too. Android currently reports none.
