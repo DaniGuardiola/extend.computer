@@ -1,5 +1,5 @@
-//! What the menu bar (or notification-area) icon shows: the same session and
-//! receiving state as `snapshot`, without the device list.
+//! What the menu bar (or notification-area) icon and the session notices show:
+//! the same session and receiving state as `snapshot`, without the device list.
 use super::*;
 use extend_computer_agent::session::display::Mode;
 
@@ -85,6 +85,22 @@ impl Activity {
             (true, false) => "Accepting connections",
         }
     }
+    /// Another device controls this one or shows a display on it.
+    pub fn incoming(&self) -> bool {
+        self.session
+            .as_ref()
+            .is_some_and(|session| session.incoming && session.stage == Stage::Connected)
+    }
+    /// The notice to post when `self` follows `previous`: another device has
+    /// just started controlling this one, or showing a display on it. Sessions
+    /// this device started never notify.
+    pub fn notice_since(&self, previous: &Activity) -> Option<String> {
+        let session = self.session.as_ref().filter(|_| self.incoming())?;
+        if previous.incoming() && previous.session.as_ref().map(|s| s.id) == Some(session.id) {
+            return None;
+        }
+        Some(session.describe())
+    }
 }
 impl ActiveSession {
     /// The session as one line, such as "Studio is controlling this Mac".
@@ -135,6 +151,38 @@ mod tests {
             incoming,
             display,
             stage,
+        }
+    }
+    fn with(session: Option<ActiveSession>) -> Activity {
+        Activity {
+            receiving: true,
+            session,
+            ..Default::default()
+        }
+    }
+    #[test]
+    fn notices_only_incoming_sessions_once_they_connect() {
+        let idle = with(None);
+        for display in [None, Some(Mode::Extend), Some(Mode::Mirror)] {
+            let connecting = with(Some(session(true, display, Stage::Connecting)));
+            let connected = with(Some(session(true, display, Stage::Connected)));
+            assert_eq!(connecting.notice_since(&idle), None);
+            let notice = connected.notice_since(&connecting).unwrap();
+            assert!(notice.starts_with("Studio is "), "{notice}");
+            assert_eq!(connected.notice_since(&idle), Some(notice));
+            // The same session is announced once, and ending it is silent.
+            assert_eq!(connected.notice_since(&connected), None);
+            let ending = with(Some(session(true, display, Stage::Disconnecting)));
+            assert_eq!(ending.notice_since(&connected), None);
+            assert_eq!(idle.notice_since(&connected), None);
+            // A new session from the same device is a new notice.
+            let mut next = connected.clone();
+            next.session.as_mut().unwrap().id = 2;
+            assert!(next.notice_since(&connected).is_some());
+            // Sessions this device started never notify.
+            let outgoing = with(Some(session(false, display, Stage::Connected)));
+            assert_eq!(outgoing.notice_since(&idle), None);
+            assert!(!outgoing.incoming() && connected.incoming() && !ending.incoming());
         }
     }
     #[test]

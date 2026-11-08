@@ -24,11 +24,11 @@ The macOS CI whitelist includes shared engine and build inputs plus the explicit
 - `runtime/display.rs`: paired/account display connections, authenticated WebRTC setup, adaptive video bitrate, and native helper lifecycle.
 - `runtime/abilities.rs`: this device's display and input roles (per-platform defaults refined by the display helper's `capabilities`), which feed the Hello offers, the UI's capabilities, a source's per-peer codec and pointer, and a receiver's decline check.
 - `runtime/state.rs`: typed session kinds/phases and allowed transitions, serialized with stable IPC strings.
-- `runtime/activity.rs`: the receiving state and current session as the status icon shows them.
+- `runtime/activity.rs`: the receiving state and current session as the status icon shows them, and which sessions announce themselves.
 - `runtime/errors.rs`: user-facing translation of typed engine errors and transport failures.
 - `runtime/tests.rs`: encrypted pairing/control lifecycle tests with a fake native input helper.
 
-`shell.rs` keeps the app running with its window closed and owns Open at login; `tray.rs` is the menu bar or notification-area icon. `platform/` holds per-OS code (helper paths, computer name, startup, passkeys, window chrome, keeping the computer awake during sessions), `approval.rs` owns pending pairing confirmations, `peers.rs` device metadata, `native.rs` helper permission preflight, and `permission_flow.rs` main-thread access to native permission guidance. Device metadata never grants trust. GUI IPC exposes implemented UI actions; GUI unpair removes local trust and tracks removal metadata; CLI revocation remains a separate persistent block.
+`shell.rs` keeps the app running with its window closed and owns Open at login; `tray.rs` is the menu bar or notification-area icon and posts the incoming-session notices. `platform/` holds per-OS code (helper paths, computer name, startup, passkeys, window chrome, keeping the computer awake during sessions), `approval.rs` owns pending pairing confirmations, `peers.rs` device metadata, `native.rs` helper permission preflight, and `permission_flow.rs` main-thread access to native permission guidance. Device metadata never grants trust. GUI IPC exposes implemented UI actions; GUI unpair removes local trust and tracks removal metadata; CLI revocation remains a separate persistent block.
 
 `accounts.rs` owns account sessions and browser sign-in; `relay.rs` bridges account WebSockets to the existing encrypted engine. `runtime/presence.rs` checks peer reachability and availability independently of control sessions. See [accounts and routing](accounts-and-routing.md).
 

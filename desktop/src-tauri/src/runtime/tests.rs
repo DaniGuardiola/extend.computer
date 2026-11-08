@@ -155,14 +155,19 @@ esac
             .is_some_and(|s| s.phase == Phase::Connected)
     });
     assert!(receiver.approvals.current().is_none());
-    // The status icon names the other device and who started the session.
+    // The status icon names the other device; only the controlled side
+    // announces the session.
     let incoming = receiver.activity();
     let session = incoming.session.as_ref().unwrap();
     assert!(session.incoming && session.display.is_none() && session.stage == Stage::Connected);
     assert_eq!(session.peer, "My custom name");
+    assert!(incoming
+        .notice_since(&Activity::default())
+        .is_some_and(|notice| notice.starts_with("My custom name is controlling this ")));
     let outgoing = sender.activity();
     assert_eq!(outgoing.session.as_ref().unwrap().peer, "Test Mac");
     assert!(!outgoing.session.as_ref().unwrap().incoming);
+    assert!(outgoing.notice_since(&Activity::default()).is_none());
     let session_id = sender.snapshot().unwrap().session.unwrap().id;
     let mut changed = device.clone();
     changed.edge = "right".into();

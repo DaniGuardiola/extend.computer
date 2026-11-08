@@ -34,6 +34,7 @@ url = "2"
 open = "5"
 tungstenite = { version = "0.28", features = ["rustls-tls-native-roots"] }
 tauri-plugin-autostart = "2"
+tauri-plugin-notification = "2"
 
 [target.'cfg(target_os = "macos")'.dev-dependencies]
 plist = { version = "1.7", default-features = false }

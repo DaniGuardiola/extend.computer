@@ -1,7 +1,9 @@
 //! The status icon, in the menu bar on macOS and the notification area on
 //! Windows. It shows whether this device accepts connections and the current
-//! session, and offers the window, Allow connections, ending the session and
-//! quitting. It follows the same runtime state the window polls, as often.
+//! session, offers the window, Allow connections, ending the session and
+//! quitting, and posts a notification when another device starts
+//! controlling this one or showing a display on it. It follows the same
+//! runtime state the window polls, as often.
 use crate::runtime::{Activity, Desktop, Stage};
 use std::{
     sync::{
@@ -16,12 +18,17 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent},
     AppHandle, Wry,
 };
+use tauri_plugin_notification::NotificationExt;
 
 const OPEN: &str = "open";
 const ALLOW: &str = "allow";
 const STOP: &str = "stop";
 const QUIT: &str = "quit";
 const POLL: Duration = Duration::from_millis(500);
+#[cfg(target_os = "macos")]
+const WHERE: &str = "in the menu bar";
+#[cfg(not(target_os = "macos"))]
+const WHERE: &str = "in the notification area";
 
 pub fn start(app: &AppHandle, desktop: Arc<Desktop>) -> tauri::Result<()> {
     let shown = Activity::default();
@@ -48,7 +55,7 @@ pub fn start(app: &AppHandle, desktop: Arc<Desktop>) -> tauri::Result<()> {
         })
         .show_menu_on_left_click(cfg!(target_os = "macos"))
         .icon_as_template(cfg!(target_os = "macos"));
-    if let Some(icon) = icon(app) {
+    if let Some(icon) = icon(app, false) {
         tray = tray.icon(icon);
     }
     let tray = tray.build(app)?;
@@ -68,12 +75,15 @@ fn follow(
 ) {
     while !desktop.is_closing() {
         let next = desktop.activity();
+        if let Some(notice) = next.notice_since(&shown) {
+            notify(&app, &notice);
+        }
         // Pairing requests wait for an answer in the window.
         if next.approval.is_some() && next.approval != shown.approval {
             crate::shell::show_window(&app);
         }
         if next != shown || refresh.swap(false, Ordering::SeqCst) {
-            if let Err(error) = render(&app, &tray, &next) {
+            if let Err(error) = render(&app, &tray, &shown, &next) {
                 eprintln!("Could not update the status icon: {error}");
             }
             shown = next;
@@ -82,18 +92,35 @@ fn follow(
     }
 }
 
-fn render(app: &AppHandle, tray: &TrayIcon, next: &Activity) -> tauri::Result<()> {
+fn render(
+    app: &AppHandle,
+    tray: &TrayIcon,
+    shown: &Activity,
+    next: &Activity,
+) -> tauri::Result<()> {
     tray.set_menu(Some(menu(app, next)?))?;
     tray.set_tooltip(Some(tooltip(next)))?;
+    if next.incoming() != shown.incoming() {
+        tray.set_icon_with_as_template(icon(app, next.incoming()), cfg!(target_os = "macos"))?;
+    }
     Ok(())
 }
 
-/// The logo. macOS tints the template image for the menu bar.
-fn icon(#[allow(unused)] app: &AppHandle) -> Option<Image<'static>> {
+/// The logo, with a dot while another device controls this one or shows a
+/// display on it. macOS tints the template images for the menu bar.
+fn icon(#[allow(unused)] app: &AppHandle, incoming: bool) -> Option<Image<'static>> {
     #[cfg(target_os = "macos")]
-    return Some(tauri::include_image!("icons/tray.png"));
+    return Some(if incoming {
+        tauri::include_image!("icons/tray-active.png")
+    } else {
+        tauri::include_image!("icons/tray.png")
+    });
     #[cfg(not(target_os = "macos"))]
-    app.default_window_icon().cloned()
+    if incoming {
+        Some(tauri::include_image!("icons/tray-windows-active.png"))
+    } else {
+        app.default_window_icon().cloned()
+    }
 }
 
 fn tooltip(activity: &Activity) -> String {
@@ -174,5 +201,19 @@ fn act(app: &AppHandle, desktop: &Arc<Desktop>, refresh: &Arc<AtomicBool>, event
         STOP => desktop.end_session(),
         QUIT => app.exit(0),
         _ => {}
+    }
+}
+
+fn notify(app: &AppHandle, notice: &str) {
+    if let Err(error) = app
+        .notification()
+        .builder()
+        .title(notice)
+        .body(format!(
+            "To stop it, choose Disconnect from the extend.computer icon {WHERE}."
+        ))
+        .show()
+    {
+        eprintln!("Could not show a notification: {error}");
     }
 }

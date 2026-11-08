@@ -339,6 +339,7 @@ fn main() {
         }
     }));
     builder
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             if std::env::var_os("EXTEND_DISPLAY_METRICS").is_some()
                 || std::env::var_os("EXTEND_DISPLAY_BENCHMARK_CONTEXT").is_some()
