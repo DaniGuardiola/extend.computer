@@ -1,7 +1,8 @@
 //! Primary-display capture with DXGI Desktop Duplication. The pointer is drawn
 //! into a copy of each desktop image, and the D3D11 video processor scales the
-//! result to the stream size and converts it to NV12 on the GPU
-//! ([`Converter`], which the extended display shares).
+//! result to fit the stream size, with black bars when the shapes differ, and
+//! converts it to NV12 on the GPU ([`Converter`], which the extended display
+//! shares).
 use anyhow::{bail, Context, Result};
 use std::time::Duration;
 use windows::{
@@ -218,12 +219,23 @@ impl Converter {
                 view: view.context("Missing video output view")?,
             });
         }
+        // A screen of another shape than the stream keeps its shape, with
+        // black bars, rather than being stretched.
+        let (left, top, right, bottom) =
+            crate::viewer::fit::even_pixel_rect(self.width, self.height, self.source_size)
+                .context("Invalid screen size")?;
         unsafe {
             let source = RECT {
                 left: 0,
                 top: 0,
                 right: source_width as i32,
                 bottom: source_height as i32,
+            };
+            let destination = RECT {
+                left,
+                top,
+                right,
+                bottom,
             };
             let target = RECT {
                 left: 0,
@@ -237,10 +249,26 @@ impl Converter {
                 true,
                 Some(&source),
             );
-            self.video_context
-                .VideoProcessorSetStreamDestRect(&processor, 0, true, Some(&target));
+            self.video_context.VideoProcessorSetStreamDestRect(
+                &processor,
+                0,
+                true,
+                Some(&destination),
+            );
             self.video_context
                 .VideoProcessorSetOutputTargetRect(&processor, true, Some(&target));
+            let black = D3D11_VIDEO_COLOR {
+                Anonymous: D3D11_VIDEO_COLOR_0 {
+                    RGBA: D3D11_VIDEO_COLOR_RGBA {
+                        R: 0.0,
+                        G: 0.0,
+                        B: 0.0,
+                        A: 1.0,
+                    },
+                },
+            };
+            self.video_context
+                .VideoProcessorSetOutputBackgroundColor(&processor, false, &black);
             self.video_context
                 .VideoProcessorSetStreamAutoProcessingMode(&processor, 0, false);
         }

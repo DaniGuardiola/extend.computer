@@ -55,6 +55,36 @@ pub fn pixel_rect(width: u32, height: u32, source: (u32, u32)) -> Option<(i32, i
     Some((left, top, right, bottom))
 }
 
+/// Like [`pixel_rect`], for a source's NV12 frame of `width` x `height`: a
+/// screen of another shape keeps its shape, with black bars, instead of
+/// being stretched. The edges fall on even pixels, so the picture and the
+/// bars share no chroma sample.
+pub fn even_pixel_rect(
+    width: u32,
+    height: u32,
+    source: (u32, u32),
+) -> Option<(i32, i32, i32, i32)> {
+    if width < 2 || height < 2 {
+        return None;
+    }
+    let fitted = aspect_fit(
+        Area {
+            x: 0.0,
+            y: 0.0,
+            width: f64::from(width),
+            height: f64::from(height),
+        },
+        (f64::from(source.0), f64::from(source.1)),
+    )?;
+    let even = |value: f64| ((value / 2.0).round() * 2.0) as i32;
+    let (width, height) = (width as i32 / 2 * 2, height as i32 / 2 * 2);
+    let left = even(fitted.x).clamp(0, width - 2);
+    let top = even(fitted.y).clamp(0, height - 2);
+    let right = even(fitted.x + fitted.width).clamp(left + 2, width);
+    let bottom = even(fitted.y + fitted.height).clamp(top + 2, height);
+    Some((left, top, right, bottom))
+}
+
 /// A window position as a canvas point, when it lands on the picture and
 /// inside the source's captured `content`.
 pub fn point(
@@ -124,6 +154,50 @@ mod tests {
             Some((0, 656, 1080, 1264))
         );
         assert_eq!(pixel_rect(100, 100, (0, 10)), None);
+    }
+
+    #[test]
+    fn source_frames_keep_the_screen_shape_on_even_pixels() {
+        // Same shape: the whole frame.
+        assert_eq!(
+            even_pixel_rect(2560, 1600, (2560, 1600)),
+            Some((0, 0, 2560, 1600))
+        );
+        assert_eq!(
+            even_pixel_rect(1280, 800, (2560, 1600)),
+            Some((0, 0, 1280, 800))
+        );
+        // A 16:9 screen in a 16:10 stream: bars above and below.
+        assert_eq!(
+            even_pixel_rect(1920, 1200, (1920, 1080)),
+            Some((0, 60, 1920, 1140))
+        );
+        // A 16:10 screen in a 16:9 stream: bars left and right.
+        assert_eq!(
+            even_pixel_rect(1920, 1080, (2560, 1600)),
+            Some((96, 0, 1824, 1080))
+        );
+        // Odd fitted edges round to even pixels, still centered.
+        assert_eq!(
+            even_pixel_rect(1440, 900, (1366, 768)),
+            Some((0, 46, 1440, 854))
+        );
+        for (width, height, source) in [
+            (1440, 900, (1366, 768)),
+            (1280, 720, (1024, 768)),
+            (3024, 1964, (1920, 1080)),
+            (640, 480, (3840, 1600)),
+        ] {
+            let (left, top, right, bottom) = even_pixel_rect(width, height, source).unwrap();
+            assert!([left, top, right, bottom].iter().all(|edge| edge % 2 == 0));
+            assert!(0 <= left && left < right && right <= width as i32);
+            assert!(0 <= top && top < bottom && bottom <= height as i32);
+            // Equal bars on both sides, within a pixel pair.
+            assert!((left - (width as i32 - right)).abs() <= 2);
+            assert!((top - (height as i32 - bottom)).abs() <= 2);
+        }
+        assert_eq!(even_pixel_rect(1920, 1080, (0, 1080)), None);
+        assert_eq!(even_pixel_rect(1, 1080, (1920, 1080)), None);
     }
 
     #[test]
