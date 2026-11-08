@@ -18,6 +18,7 @@ import {
   recoverySalt,
 } from './recovery-codes'
 import { emailEnabled, sendAccountEmail, type EmailKind } from './email'
+import { cookieHeader } from './transport'
 
 const SESSION_SECONDS = 30 * 24 * 60 * 60
 const ONLINE_SECONDS = 90
@@ -62,7 +63,7 @@ function setCookie(
 ) {
   response.headers.append(
     'Set-Cookie',
-    `${name}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${age}${new URL(request.url).protocol === 'https:' ? '; Secure' : ''}`,
+    cookieHeader(new URL(request.url), name, value, age),
   )
 }
 function bearer(request: Request): string | undefined {

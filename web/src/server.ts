@@ -5,6 +5,7 @@ import start from '@tanstack/react-start/server-entry'
 import { createHash } from 'node:crypto'
 import { heartbeat } from './lib/account-service'
 import { sessionLocation } from './lib/session-details'
+import { httpsRedirect, isLocalHost, setSecurityHeaders } from './lib/transport'
 export { AccountService } from './lib/account-service'
 
 const APPLE_APP_SITE_ASSOCIATION = {
@@ -44,6 +45,9 @@ export default {
     _ctx: ExecutionContext,
   ): Promise<Response> {
     const url = new URL(request.url)
+    // Passwords and session cookies never travel over plain HTTP outside local development.
+    const upgrade = httpsRedirect(request)
+    if (upgrade) return upgrade
     let response: Response
     if (url.pathname.startsWith('/v1/relay/')) return relayRequest(request, env)
     if (url.pathname === '/healthz') response = Response.json({ status: 'ok' })
@@ -76,8 +80,7 @@ export default {
         const forwarded = new Request(request)
         forwarded.headers.delete('X-Extend-Session-Location')
         // Cloudflare's local runtime supplies simulated geolocation metadata.
-        const local = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
-        const location = local ? null : sessionLocation(request.cf)
+        const location = isLocalHost(url) ? null : sessionLocation(request.cf)
         if (location)
           forwarded.headers.set(
             'X-Extend-Session-Location',
@@ -89,13 +92,7 @@ export default {
       }
     } else response = await start.fetch(request)
     const headers = new Headers(response.headers)
-    headers.set('X-Content-Type-Options', 'nosniff')
-    headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
-    headers.set('X-Frame-Options', 'DENY')
-    headers.set(
-      'Permissions-Policy',
-      'camera=(), microphone=(), geolocation=()',
-    )
+    setSecurityHeaders(url, headers)
     if (url.pathname !== '/' && !url.pathname.startsWith('/assets/'))
       headers.set('Cache-Control', 'no-store')
     return new Response(response.body, {
