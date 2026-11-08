@@ -616,14 +616,14 @@ fn policy(app: &Desktop, id: u64, peer: &str) -> std::result::Result<(), Reason>
     if !inner.receiving_enabled {
         return Err(Reason::ReceivingOff);
     }
-    let usb = inner
-        .job
-        .as_ref()
-        .is_some_and(|job| job.view.id == id && job.view.route == Some("usb"));
+    let job = inner.job.as_ref().filter(|job| job.view.id == id);
+    let usb = job.is_some_and(|job| job.view.route == Some("usb"));
+    // Only a session over Wi-Fi needs Wi-Fi optimization.
+    let wifi = job.is_none_or(|job| crate::native::wifi_session(job.view.route, job.view.link));
     if !(if usb {
         inner.permissions.available && inner.permissions.post
     } else {
-        inner.permissions.can_receive()
+        inner.permissions.can_receive_on(wifi)
     }) {
         return Err(Reason::Permission);
     }

@@ -11,7 +11,8 @@ export function permissionsReady(
   return (
     access.available &&
     access.post &&
-    (access.wifi || route === "usb") &&
+    // Only Wi-Fi connections need Wi-Fi optimization.
+    (access.wifi || access.wired || route === "usb") &&
     (kind === "receive" || access.listen)
   );
 }

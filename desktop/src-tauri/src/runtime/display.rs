@@ -553,6 +553,7 @@ impl Desktop {
         let cable_route = wired::socket_route(&socket);
         let physical_usb =
             usb_route.is_none() && cable_route == Some("usb") && physical_usb_peer(ip, remote_ip);
+        let wifi = crate::native::wifi_connection(&socket);
         let identity = self.identity()?;
         let store = self.store()?;
         let mut media = None;
@@ -570,7 +571,7 @@ impl Desktop {
                 if usb_route.is_some() || cable_route == Some("usb") {
                     permissions.available && permissions.post
                 } else {
-                    permissions.can_receive()
+                    permissions.can_receive_on(wifi)
                 },
                 "Incoming permissions are not ready"
             );

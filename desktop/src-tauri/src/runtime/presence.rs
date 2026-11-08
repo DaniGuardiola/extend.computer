@@ -153,12 +153,13 @@ impl Desktop {
                                     return;
                                 }
                                 let cable = wired::socket_route(&socket) == Some("usb");
+                                let wifi = crate::native::wifi_connection(&socket);
                                 if let Ok(store) = app.store() {
                                     let _ = serve_presence(socket, &identity, &store, || {
                                         let inner = app.inner.lock().unwrap();
                                         Presence {
                                             receiving: inner.receiving_enabled
-                                                && (inner.permissions.can_receive()
+                                                && (inner.permissions.can_receive_on(wifi)
                                                     || (cable
                                                         && inner.permissions.available
                                                         && inner.permissions.post))

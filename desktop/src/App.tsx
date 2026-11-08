@@ -61,7 +61,9 @@ export function App() {
   };
   const [busy, setBusy] = useState(false);
   const [receivingBusy, setReceivingBusy] = useState(false);
-  const usbOnly = !!data?.receiving && !data.permissions.wifi;
+  // Without Wi-Fi optimization, only a cable or Ethernet can connect.
+  const usbOnly =
+    !!data?.receiving && !data.permissions.wifi && !data.permissions.wired;
   const connectionRoute = (peer?: string): "local" | "usb" =>
     data?.peers.some(
       (candidate) =>

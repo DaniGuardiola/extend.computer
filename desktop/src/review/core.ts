@@ -62,6 +62,7 @@ export const snapshot: Snapshot = {
     wifi_pending: false,
     wifi_installing: false,
     wifi_setup_failed: false,
+    wired: false,
   },
   permission_request: null,
   capabilities: {

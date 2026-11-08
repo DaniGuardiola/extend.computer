@@ -51,6 +51,18 @@ test("USB continuation still requires native input access and its current target
   assert.equal(pending.takeReady(noWifi, cable), null);
 });
 
+test("Ethernet needs no Wi-Fi broker to receive or share", () => {
+  const ethernet = { ...allowed, wifi: false, wired: true };
+  const receive = new PermissionContinuation();
+  receive.waitFor({ kind: "receive" });
+  assert.equal(receive.takeReady({ ...ethernet, post: false }), null);
+  assert.deepEqual(receive.takeReady(ethernet), { kind: "receive" });
+  const pending = new PermissionContinuation();
+  pending.waitFor(share);
+  assert.equal(pending.takeReady({ ...ethernet, listen: false }), null);
+  assert.deepEqual(pending.takeReady(ethernet), share);
+});
+
 test("USB receiving needs accessibility but no capture or Wi-Fi broker", () => {
   const pending = new PermissionContinuation();
   pending.waitFor({ kind: "receive" });

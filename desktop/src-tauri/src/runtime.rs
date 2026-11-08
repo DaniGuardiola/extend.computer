@@ -642,7 +642,7 @@ impl Desktop {
                         if !value.post {
                             missing.push("Accessibility");
                         }
-                        if !value.wifi {
+                        if !value.wifi && !value.wired {
                             missing.push(if value.wifi_pending {
                                 "Wi-Fi optimization approval"
                             } else if value.wifi_installing {
@@ -670,19 +670,19 @@ impl Desktop {
                 } else {
                     false
                 }
-            } else if !value.can_receive() {
-                if let Some(job) = inner.job.as_mut().filter(|job| {
-                    job.view.kind == SessionKind::Incoming && job.view.route != Some("usb")
-                }) {
-                    job.cancelled.store(true, Ordering::SeqCst);
-                    job.view.advance(Phase::Disconnecting);
-                    if let Some(socket) = &job.socket {
-                        let _ = socket.shutdown(Shutdown::Both);
-                    }
-                    true
-                } else {
-                    false
+            } else if let Some(job) = inner.job.as_mut().filter(|job| {
+                // Each connection keeps what its own link needs: Wi-Fi
+                // optimization only over Wi-Fi.
+                job.view.kind == SessionKind::Incoming
+                    && job.view.route != Some("usb")
+                    && !value.can_receive_on(native::wifi_session(job.view.route, job.view.link))
+            }) {
+                job.cancelled.store(true, Ordering::SeqCst);
+                job.view.advance(Phase::Disconnecting);
+                if let Some(socket) = &job.socket {
+                    let _ = socket.shutdown(Shutdown::Both);
                 }
+                true
             } else {
                 false
             }

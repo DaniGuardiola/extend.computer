@@ -27,6 +27,11 @@ pub fn of(socket: &TcpStream) -> Option<Link> {
     if local.is_loopback() {
         return None;
     }
+    classify(local)
+}
+
+/// The link that owns this local address, when it can be told.
+pub fn classify(local: IpAddr) -> Option<Link> {
     let classify = CLASSIFIER
         .lock()
         .unwrap()

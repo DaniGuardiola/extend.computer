@@ -49,6 +49,7 @@ impl Desktop {
                 job: id,
                 cancelled,
                 usb: true,
+                wifi: false,
                 last_heartbeat: None,
             };
             session::serve_connection_with_cursor_pinned(
@@ -186,6 +187,7 @@ impl Desktop {
                                 &socket,
                             )?;
                             let cable = wired::socket_route(&socket) == Some("usb");
+                            let wifi = crate::native::wifi_connection(&socket);
                             app.set_socket(id, &socket)?;
                             let code = app.inner.lock().unwrap().code.take();
                             let expires = code.as_ref().map(|c| c.expires);
@@ -196,6 +198,7 @@ impl Desktop {
                                 job: id,
                                 cancelled: cancelled.clone(),
                                 usb: cable,
+                                wifi,
                                 last_heartbeat: None,
                             };
                             let mut sink = if cable {
@@ -346,6 +349,8 @@ struct GuiSink {
     job: u64,
     cancelled: Arc<AtomicBool>,
     usb: bool,
+    /// The connection arrived over Wi-Fi, which needs Wi-Fi optimization.
+    wifi: bool,
     last_heartbeat: Option<Instant>,
 }
 impl CursorSink for GuiSink {
@@ -377,7 +382,7 @@ impl CursorSink for GuiSink {
             || !(if self.usb {
                 permissions.available && permissions.post
             } else {
-                permissions.can_receive()
+                permissions.can_receive_on(self.wifi)
             })
         {
             return Ok(false);

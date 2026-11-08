@@ -17,6 +17,10 @@ The PermissionFlow bridge opens the relevant System Settings page and shows a fl
 
 Both endpoints inspect the actual routed interface. Eligible Wi-Fi control sessions require an authenticated optimization lease before native input is ready. Ethernet and loopback relay bridges skip the lease. Missing or failed required leases end control rather than silently accepting unoptimized Wi-Fi.
 
+## Receiving without Wi-Fi optimization
+
+Receiving needs Wi-Fi optimization only for connections that arrive over Wi-Fi. Permission checks also note whether an Ethernet link has a routable address (`wired`); with one, Allow connections works without the broker and the footer no longer reads `USB only`. Each incoming keyboard and mouse session, display session, presence reply and display-control grant then checks the link of its own connection: Wi-Fi, or a link that can't be classified, still needs a working broker; Ethernet, other links such as Thunderbolt Bridge or a VPN tunnel, loopback relay bridges and USB cables need only the native permissions. A Mac on both Wi-Fi and Ethernet without the broker therefore accepts Ethernet connections and turns down Wi-Fi ones, and peers that reach it over Wi-Fi see it as not accepting connections.
+
 The broker temporarily pauses AWDL, holds a restoration obligation, and renews while its session process remains alive. Disconnect, expiry, and process loss release leases. The prior interface state is restored after the last lease; originally disabled AWDL stays disabled. Externally reactivated AWDL invalidates a lease. AirDrop and some Continuity features can be affected while paused.
 
 The broker API permits only lease and status operations, not arbitrary commands or paths. Its client checks signing identity; the daemon also checks the active console user.

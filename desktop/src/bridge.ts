@@ -33,6 +33,8 @@ export type Permissions = {
   wifi_pending: boolean;
   wifi_installing: boolean;
   wifi_setup_failed: boolean;
+  /** An Ethernet link is up, so devices can connect without Wi-Fi optimization. */
+  wired: boolean;
 };
 export type LocalDeviceInfo = {
   name: string;
