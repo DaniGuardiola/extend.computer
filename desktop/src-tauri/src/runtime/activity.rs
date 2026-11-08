@@ -44,7 +44,11 @@ impl Desktop {
                 })
                 .map(|job| job.view.clone());
             let receiving = inner.receiving();
-            (receiving, receiving && !inner.permissions.wifi, session)
+            // Without Wi-Fi optimization, only a cable or Ethernet can
+            // connect, as the window's footer says.
+            let permissions = &inner.permissions;
+            let usb_only = receiving && !permissions.wifi && !permissions.wired;
+            (receiving, usb_only, session)
         };
         let session = session.map(|view| ActiveSession {
             id: view.id,

@@ -207,6 +207,15 @@ pub(crate) fn report(system: &System, snapshot: &Snapshot, account: &AccountSumm
                 "not allowed"
             },
         );
+        // Without Wi-Fi optimization, a Mac on Ethernet and not on Wi-Fi
+        // still accepts connections.
+        line("Ethernet only", word(permissions.wired, "yes", "no"));
+    }
+    if capabilities.screen_permission {
+        line(
+            "Screen Recording",
+            word(permissions.screen, "allowed", "not allowed"),
+        );
     }
     let starts: Vec<_> = [
         (capabilities.extend_display, "extend display"),
@@ -353,6 +362,8 @@ Input helper: found
 Accessibility: allowed
 Keyboard and mouse capture: ready
 Wi-Fi optimization: setup failed
+Ethernet only: no
+Screen Recording: not allowed
 Can start: extend display, mirror display, share keyboard and mouse
 Session: extended display, outgoing, connected, local network (Ethernet)
 Devices: 2
