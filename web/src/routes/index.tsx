@@ -47,20 +47,21 @@ const modes = [
     detail: 'YOUR KEYBOARD + MOUSE',
   },
   {
-    id: 'remote',
-    label: 'Remote desktop',
-    title: 'Your other device. Right here.',
-    description:
-      'Open another device’s workspace in a window on yours. Use its apps and files while keeping your own workspace.',
-    detail: 'ANOTHER DEVICE. WITHIN REACH.',
-  },
-  {
     id: 'mirror',
     label: 'Mirror screen',
     title: 'Your screen. A different seat.',
     description:
       'Bring one device’s screen onto another. See the same workspace and control it from wherever you’re sitting.',
     detail: 'SAME SCREEN. NEW PERSPECTIVE.',
+  },
+  {
+    id: 'remote',
+    label: 'Remote desktop',
+    planned: true,
+    title: 'Your other device. Right here.',
+    description:
+      'Coming later: open another device’s workspace in a window on yours, and use its apps and files while keeping your own.',
+    detail: 'COMING LATER',
   },
 ] as const
 
@@ -655,7 +656,7 @@ function Desk() {
     <section
       ref={ref}
       className={`desk-visual mode-${mode} ${paused ? 'demo-paused' : ''}`}
-      aria-label="Explore the four modes"
+      aria-label="Explore the modes"
     >
       <div className="desk-topline">
         <span>
@@ -671,6 +672,11 @@ function Desk() {
         {modes.map((item) => (
           <Ariakit.Tab key={item.id} id={item.id} className="mode-tab">
             {item.label}
+            {'planned' in item ? (
+              <span className="mode-tab-soon">
+                <span className="sr-only">, </span>Soon
+              </span>
+            ) : null}
           </Ariakit.Tab>
         ))}
       </Ariakit.TabList>
@@ -812,7 +818,6 @@ function Landing() {
             Turn another device into an extra display.
             <br className="desktop-break" /> Share your keyboard. Mirror your
             screen.
-            <br className="desktop-break" /> Control another desktop from yours.
             <br className="desktop-break" /> Choose how your devices work
             together.
           </p>
@@ -841,8 +846,8 @@ function Landing() {
             <span className="feature-number">03</span>
             <h3>Make yourself at home.</h3>
             <p>
-              Use the desktop app or the CLI. Run your own account server
-              whenever you want.
+              Use the desktop app, or build the CLI from source. Run your own
+              account server whenever you want.
             </p>
           </article>
         </section>
@@ -856,7 +861,7 @@ function Landing() {
             <p>
               Sign in once. Find your devices in one place.
               <br />
-              Your desk, ready wherever you are.
+              Connect them without pairing codes.
             </p>
           </div>
           <Link to="/signup" className="button light">
@@ -867,9 +872,14 @@ function Landing() {
       <footer className="site-footer">
         <Brand />
         <span>Less friction. More flow.</span>
-        <a href="#how-it-works">
-          Self-hostable by design <ArrowUpRight size={15} />
-        </a>
+        <nav aria-label="Project links" className="footer-links">
+          <a href="https://github.com/DaniGuardiola/extend.computer/blob/main/docs/operations/account-servers.md">
+            Self-hostable by design <ArrowUpRight size={15} />
+          </a>
+          <a href="https://github.com/DaniGuardiola/extend.computer/issues">
+            Report a problem <ArrowUpRight size={15} />
+          </a>
+        </nav>
       </footer>
     </div>
   )

@@ -204,7 +204,10 @@ function Benchmarks() {
                   </div>
                   <div>
                     <strong>{p.samples.toLocaleString()}</strong>
-                    <span>Readable transitions · {p.runs} runs</span>
+                    <span>
+                      Readable transitions · {p.runs}{' '}
+                      {p.runs === 1 ? 'run' : 'runs'}
+                    </span>
                   </div>
                 </div>
               </article>

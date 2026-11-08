@@ -5,7 +5,7 @@
 > [!NOTE]
 > Current support: keyboard and mouse sharing between macOS devices, plus experimental display extension and mirroring over the local network or a Mac-to-Mac USB cable. Remote desktop and other platforms are not supported yet. See [sharing modes](docs/architecture/sharing-modes.md) and [platform support](docs/architecture/platforms.md).
 
-Implemented foundations include encrypted local pairing, pinned device identities, account-connected devices, local-network connections with internet relay fallback, native permission guidance, and transport recovery.
+Implemented foundations include encrypted local pairing, pinned device identities, account-connected devices, local-network and USB cable connections, native permission guidance, and transport recovery. An internet relay for keyboard and mouse sessions is built but off on the hosted service; [custom account servers](docs/operations/account-servers.md) can turn it on.
 
 ## Install
 

@@ -21,7 +21,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         {
           name: 'description',
           content:
-            'Your screens, keyboard and mouse, across your devices. Extend displays, share input, mirror screens and access another workspace. Starting on macOS.',
+            'Your screens, keyboard and mouse, across your devices. Extend displays, share your keyboard and mouse, and mirror screens. Starting on macOS.',
         },
         { name: 'theme-color', content: '#141714' },
         { property: 'og:title', content: 'One desk. Zero borders.' },

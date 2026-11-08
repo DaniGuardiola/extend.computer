@@ -631,7 +631,12 @@ button:disabled {
 .site-footer .brand svg {
   @apply w-[22px];
 }
-.site-footer > a {
+.footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+}
+.footer-links a {
   display: flex;
   gap: 8px;
   align-items: center;
@@ -1259,6 +1264,20 @@ button:disabled {
 .mode-tab[aria-selected='true'] {
   color: #182111;
   background: var(--acid);
+}
+/* A mode that is planned but not built yet. */
+.mode-tab-soon {
+  margin-left: 8px;
+  padding: 2px 5px;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  font:
+    8px ui-monospace,
+    monospace;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  vertical-align: 1px;
+  opacity: 0.8;
 }
 .mode-panel:focus-visible {
   outline: 2px solid var(--acid);
@@ -1985,6 +2004,11 @@ button:disabled {
     padding: 9px 4px;
     font-size: 10px;
     white-space: nowrap;
+  }
+  .mode-tab-soon {
+    margin-left: 5px;
+    padding: 1px 4px;
+    font-size: 7px;
   }
   .mode-description {
     min-height: 138px;
