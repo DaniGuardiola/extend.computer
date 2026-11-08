@@ -48,13 +48,23 @@ The rest of this page covers the standalone server.
 ## Run the standalone server
 
 You need Docker with Compose, a domain name, and an HTTPS reverse proxy. From
-`server/` in a checkout of this repository:
+`server/` in a checkout of this repository, write the settings to a `.env` file
+and start the server:
 
 ```sh
-export EXTEND_ORIGIN=https://accounts.example.com
-export EXTEND_MFA_ENCRYPTION_KEY=$(openssl rand -hex 32)
-EXTEND_SIGNUP_ENABLED=true docker compose up --build -d
+cat > .env <<EOF
+EXTEND_ORIGIN=https://accounts.example.com
+EXTEND_MFA_ENCRYPTION_KEY=$(openssl rand -hex 32)
+EXTEND_SIGNUP_ENABLED=true
+EOF
+chmod 600 .env
+docker compose up --build -d
 ```
+
+Compose reads `.env` from this directory every time it runs, so later commands
+keep the same origin and key. Keep the file private and keep a copy of it: it
+holds the key that encrypts authenticator app secrets. Git and Docker builds
+ignore it.
 
 [`compose.yaml`](../../server/compose.yaml) builds the
 [`Dockerfile`](../../server/Dockerfile), runs the server as an unprivileged
@@ -107,19 +117,25 @@ curl https://accounts.example.com/v1/auth/signup \
   -d '{"email":"you@example.com","password":"at least twelve characters"}'
 ```
 
-Then set `EXTEND_SIGNUP_ENABLED=false` and restart. Existing accounts can still
-sign in. The response contains a session token for that account; it expires
-after 30 days without use.
+The response contains a session token for that account; it expires after 30
+days without use. When your accounts exist, close sign-up: set
+`EXTEND_SIGNUP_ENABLED=false` in `.env` and run `docker compose up -d`, which
+recreates the container with the new setting (`docker compose restart` keeps
+the old one). Without Docker, restart the server without
+`EXTEND_SIGNUP_ENABLED=true`. Existing accounts can still sign in.
 
 ### Back up and upgrade
 
 Back up the database with SQLite's online backup (for example
-`sqlite3 extend.sqlite3 ".backup backup.sqlite3"`), or stop the server before
-copying the file. Copying a live database file alone can lose recent changes.
-Keep the `EXTEND_MFA_ENCRYPTION_KEY` with the backup.
+`sqlite3 extend.sqlite3 ".backup backup.sqlite3"`), or stop the server and copy
+`extend.sqlite3` together with its `extend.sqlite3-wal` and `extend.sqlite3-shm`
+files. With Docker, stop it with `docker compose stop` and copy the whole
+`accounts` volume. Copying a live database file, or the main file without the
+others, can lose recent changes. Keep `.env`, or at least
+`EXTEND_MFA_ENCRYPTION_KEY`, with the backup.
 
-To upgrade, update your checkout and run `docker compose up --build -d` again.
-Keep the volume.
+To upgrade, update your checkout and run `docker compose up --build -d` again
+from `server/`, next to the same `.env`. Keep the volume.
 
 ## Point the apps at your server
 
