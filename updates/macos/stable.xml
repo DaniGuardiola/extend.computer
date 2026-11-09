@@ -1,6 +1,80 @@
 <?xml version="1.0" encoding="utf-8" standalone="yes"?><!-- sparkle-sign-warning:
 IMPORTANT: This file was signed by Sparkle. Any modifications to this file requires re-signing this file with generate_appcast or sign_update! The signed signature will be embedded at the end of this file.
---><rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0"><channel><title>extend.computer updates</title><item><title>extend.computer 0.3.1</title><sparkle:version>10</sparkle:version><sparkle:shortVersionString>0.3.1</sparkle:shortVersionString><sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion><description>&lt;h3&gt;Patch Changes&lt;/h3&gt;
+--><rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0"><channel><title>extend.computer updates</title><item><title>extend.computer 0.4.0</title><sparkle:version>12</sparkle:version><sparkle:shortVersionString>0.4.0</sparkle:shortVersionString><sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion><description>&lt;h3&gt;Minor Changes&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;a href="https://github.com/DaniGuardiola/extend.computer/commit/07d5d71ca049272acff38d043240957ee56cfe2f"&gt;&lt;code&gt;07d5d71&lt;/code&gt;&lt;/a&gt; Thanks &lt;a href="https://github.com/DaniGuardiola"&gt;@DaniGuardiola&lt;/a&gt;! - Show whether a local network connection runs over Wi-Fi or Ethernet. The connection status names the link, and its explanation says which link each device uses.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;a href="https://github.com/DaniGuardiola/extend.computer/commit/09cc0b313b76c9a9791b6c9e96d397867cee91cd"&gt;&lt;code&gt;09cc0b3&lt;/code&gt;&lt;/a&gt; Thanks &lt;a href="https://github.com/DaniGuardiola"&gt;@DaniGuardiola&lt;/a&gt;! - Show live connection quality for connected devices. Signal bars in the connection status show good, fair or poor quality, hovering shows the round trip and packet loss, and a connection that stays below good suggests a fix for its route, such as Ethernet or a USB cable instead of Wi-Fi.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;a href="https://github.com/DaniGuardiola/extend.computer/commit/ff60ac3f706671ab5ae881111da9711074a85796"&gt;&lt;code&gt;ff60ac3&lt;/code&gt;&lt;/a&gt; Thanks &lt;a href="https://github.com/DaniGuardiola"&gt;@DaniGuardiola&lt;/a&gt;! - Display settings now offer 120 FPS when the other device&amp;#x27;s screen can show it, such as a MacBook Pro or a 120 Hz monitor, instead of only frame rates used before. Choosing a lower frame rate no longer hides the higher ones.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;a href="https://github.com/DaniGuardiola/extend.computer/commit/feaf8b36b70ef46337025aa97db313d7d367f22e"&gt;&lt;code&gt;feaf8b3&lt;/code&gt;&lt;/a&gt; Thanks &lt;a href="https://github.com/DaniGuardiola"&gt;@DaniGuardiola&lt;/a&gt;! - A Mac connected by Ethernet, with Wi-Fi off or not joined to a network, can now accept connections without approving Wi-Fi optimization, instead of showing &amp;quot;Allow connections · USB only&amp;quot;. Wi-Fi connections still need Wi-Fi optimization.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;a href="https://github.com/DaniGuardiola/extend.computer/commit/a2a6882508325a2c32e2871a1c001a2a8fd5a942"&gt;&lt;code&gt;a2a6882&lt;/code&gt;&lt;/a&gt; Thanks &lt;a href="https://github.com/DaniGuardiola"&gt;@DaniGuardiola&lt;/a&gt;! - Settings has a new Help section. Report a problem opens a new GitHub issue with the app and system versions filled in, and Copy diagnostic info copies a short summary of connection and permission states that you can read first; it leaves out device names, keys, addresses and your email.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;a href="https://github.com/DaniGuardiola/extend.computer/commit/103e044401eb52e34bb611167b8dff5c7c92e88e"&gt;&lt;code&gt;103e044&lt;/code&gt;&lt;/a&gt; Thanks &lt;a href="https://github.com/DaniGuardiola"&gt;@DaniGuardiola&lt;/a&gt;! - When another device starts controlling this computer or showing a display on it, extend.computer posts a notification naming the device, and its menu bar icon shows a dot until that session ends.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;a href="https://github.com/DaniGuardiola/extend.computer/commit/be32574ef6956ac58b0b7d0ce866b5ce03cb1e4a"&gt;&lt;code&gt;be32574&lt;/code&gt;&lt;/a&gt; Thanks &lt;a href="https://github.com/DaniGuardiola"&gt;@DaniGuardiola&lt;/a&gt;! - Sign in with a passkey or security key directly in the app on extend.computer accounts, without switching to the browser. This also works for accounts that use a passkey or security key as their second factor. Custom account servers keep passkey sign-in through the browser.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;a href="https://github.com/DaniGuardiola/extend.computer/commit/ecb9ebde465974b856ae841bf153acd9e048fc39"&gt;&lt;code&gt;ecb9ebd&lt;/code&gt;&lt;/a&gt; Thanks &lt;a href="https://github.com/DaniGuardiola"&gt;@DaniGuardiola&lt;/a&gt;! - Turn on Open at login in Settings to start extend.computer in the menu bar when you log in, ready for your devices to connect.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;a href="https://github.com/DaniGuardiola/extend.computer/commit/ecb9ebde465974b856ae841bf153acd9e048fc39"&gt;&lt;code&gt;ecb9ebd&lt;/code&gt;&lt;/a&gt; Thanks &lt;a href="https://github.com/DaniGuardiola"&gt;@DaniGuardiola&lt;/a&gt;! - Closing the window keeps extend.computer running, so your devices can still connect. Its icon in the menu bar (the notification area on Windows) shows whether connections are allowed and the current session, and can turn Allow connections on or off, end the session, open the window or quit.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;a href="https://github.com/DaniGuardiola/extend.computer/commit/319cc6cf3a262c4ff2c4a7a822ffb3972f32a0ad"&gt;&lt;code&gt;319cc6c&lt;/code&gt;&lt;/a&gt; Thanks &lt;a href="https://github.com/DaniGuardiola"&gt;@DaniGuardiola&lt;/a&gt;! - A Windows PC with the extend.computer display driver can now extend its desktop onto another device. The new display appears right of your other displays the first time, comes back where you arranged it for that device and frame rate after that, and goes away when the connection ends. Without the driver, Extend display says what it needs.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;a href="https://github.com/DaniGuardiola/extend.computer/commit/37af21643ef8a1aa08c2d24666c271b1600edddf"&gt;&lt;code&gt;37af216&lt;/code&gt;&lt;/a&gt; Thanks &lt;a href="https://github.com/DaniGuardiola"&gt;@DaniGuardiola&lt;/a&gt;! - Extending a Mac to a Windows PC whose display is scaled to 150% or more now gives a sharp Retina display that matches the PC&amp;#x27;s screen pixel for pixel, and the Retina setting is available for it. PCs at 100% or 125% keep their full resolution.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;a href="https://github.com/DaniGuardiola/extend.computer/commit/d68e62136a9cb7c50134fbe6898a407fcdd2d88e"&gt;&lt;code&gt;d68e621&lt;/code&gt;&lt;/a&gt; Thanks &lt;a href="https://github.com/DaniGuardiola"&gt;@DaniGuardiola&lt;/a&gt;! - A Mac can now extend or mirror its screen to a Windows PC running extend.computer. Devices now tell each other what they support, so the Mac picks a video format the other device can show, and Extend, Mirror and Share keyboard &amp;amp; mouse explain when a device can&amp;#x27;t do them instead of failing after connecting.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;a href="https://github.com/DaniGuardiola/extend.computer/commit/b5ac9ea1feed49e636588e051d075d65dfdfa67d"&gt;&lt;code&gt;b5ac9ea&lt;/code&gt;&lt;/a&gt; Thanks &lt;a href="https://github.com/DaniGuardiola"&gt;@DaniGuardiola&lt;/a&gt;! - Make the app bigger or smaller with Command (Control on Windows) and plus or minus, from 80% to 150%, and press Command or Control and 0 to go back to 100%. The app remembers your zoom level.&lt;/p&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3&gt;Patch Changes&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;a href="https://github.com/DaniGuardiola/extend.computer/commit/9913018498a3dd5cd594ae4574ca698bdf1b961f"&gt;&lt;code&gt;9913018&lt;/code&gt;&lt;/a&gt; Thanks &lt;a href="https://github.com/DaniGuardiola"&gt;@DaniGuardiola&lt;/a&gt;! - Learn more next to Use a custom account server now opens a guide to running your own account server and signing in to it, instead of a placeholder page.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;a href="https://github.com/DaniGuardiola/extend.computer/commit/821d2fb238f0b4cb55f8a3696ee45966c8715d1f"&gt;&lt;code&gt;821d2fb&lt;/code&gt;&lt;/a&gt; Thanks &lt;a href="https://github.com/DaniGuardiola"&gt;@DaniGuardiola&lt;/a&gt;! - Switch between a USB cable and the local network within seconds when the cable is plugged in or removed, instead of losing the device until the app restarts. A connection error on a device now clears once that device is reachable again.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;a href="https://github.com/DaniGuardiola/extend.computer/commit/4a804bac273fbb27d31f7622d69fa4ec6ee84199"&gt;&lt;code&gt;4a804ba&lt;/code&gt;&lt;/a&gt; Thanks &lt;a href="https://github.com/DaniGuardiola"&gt;@DaniGuardiola&lt;/a&gt;! - Changing the extended display&amp;#x27;s size no longer makes other monitors look darker or warmer. The extended display now offers its sizes from the start, so changing size switches modes instead of rebuilding it, which had made macOS reset other screens&amp;#x27; color profiles until disconnecting.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;a href="https://github.com/DaniGuardiola/extend.computer/commit/c33f448156dc15432b4dd95abb938ad7e476b621"&gt;&lt;code&gt;c33f448&lt;/code&gt;&lt;/a&gt; Thanks &lt;a href="https://github.com/DaniGuardiola"&gt;@DaniGuardiola&lt;/a&gt;! - Fix extending a display failing on the first attempt with &amp;quot;placement rejected&amp;quot;: the app now waits for macOS to bring the new display online before placing it.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;a href="https://github.com/DaniGuardiola/extend.computer/commit/d2a25b559bb94497a644d9b503d6e43b898bc964"&gt;&lt;code&gt;d2a25b5&lt;/code&gt;&lt;/a&gt; Thanks &lt;a href="https://github.com/DaniGuardiola"&gt;@DaniGuardiola&lt;/a&gt;! - Keep keyboard and mouse sharing smooth while the app is in the background, and send right-hand Shift, Control, Option and Command keys as themselves instead of their left-hand counterparts.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;a href="https://github.com/DaniGuardiola/extend.computer/commit/d94658abc9849fb1909520befa84c5e72ade5723"&gt;&lt;code&gt;d94658a&lt;/code&gt;&lt;/a&gt; Thanks &lt;a href="https://github.com/DaniGuardiola"&gt;@DaniGuardiola&lt;/a&gt;! - Computers stay awake during keyboard and mouse and display sessions, and a Mac showing another device&amp;#x27;s display keeps its screen on instead of dimming and going to sleep.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;a href="https://github.com/DaniGuardiola/extend.computer/commit/72ae3f9c51d95029942f1ed20ac4a80cbfbbc2a4"&gt;&lt;code&gt;72ae3f9&lt;/code&gt;&lt;/a&gt; Thanks &lt;a href="https://github.com/DaniGuardiola"&gt;@DaniGuardiola&lt;/a&gt;! - Phones and tablets no longer show a dimmed Remote desktop tile, since they have no desktop to view. Computers still show it as coming later.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;a href="https://github.com/DaniGuardiola/extend.computer/commit/03ab27869413e72a2a93592b40ee3233f64facb1"&gt;&lt;code&gt;03ab278&lt;/code&gt;&lt;/a&gt; Thanks &lt;a href="https://github.com/DaniGuardiola"&gt;@DaniGuardiola&lt;/a&gt;! - The first Extend display or Mirror display from a Mac now asks for Screen Recording before starting, and starts the display by itself once it is allowed, instead of failing and asking you to reconnect. Settings › Permissions also shows Screen Recording.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;a href="https://github.com/DaniGuardiola/extend.computer/commit/49be8d342e68d59ebc09d7a424fb16ca144880f3"&gt;&lt;code&gt;49be8d3&lt;/code&gt;&lt;/a&gt; Thanks &lt;a href="https://github.com/DaniGuardiola"&gt;@DaniGuardiola&lt;/a&gt;! - Settings › Updates no longer offers Beta, Alpha and Canary before they have any releases, so update checks don&amp;#x27;t fail on an empty channel. On Windows, Updates now says automatic updates aren&amp;#x27;t available there yet, instead of calling the app a development build.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;a href="https://github.com/DaniGuardiola/extend.computer/commit/6914d919d833fd86c06b8611a0c6f758cf792b53"&gt;&lt;code&gt;6914d91&lt;/code&gt;&lt;/a&gt; Thanks &lt;a href="https://github.com/DaniGuardiola"&gt;@DaniGuardiola&lt;/a&gt;! - Mirroring a Windows PC to a screen of another shape now keeps the picture&amp;#x27;s proportions, with black bars at the edges, instead of stretching it.&lt;/p&gt;
+&lt;/li&gt;
+&lt;/ul&gt;</description><enclosure url="https://github.com/DaniGuardiola/extend.computer/releases/download/v0.4.0/extend.computer-0.4.0-universal.dmg" length="25076706" type="application/octet-stream" sparkle:edSignature="riDEVGax8gKcswnPaeb09Nd95FkPoTUxlyL1JsTqcm+mcLRguMtbrjMVM4tvDRaNNwtIgzuU6Mchn9yqqHBRAg=="></enclosure></item><item><title>extend.computer 0.3.1</title><sparkle:version>10</sparkle:version><sparkle:shortVersionString>0.3.1</sparkle:shortVersionString><sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion><description>&lt;h3&gt;Patch Changes&lt;/h3&gt;
 &lt;ul&gt;
 &lt;li&gt;&lt;a href="https://github.com/DaniGuardiola/extend.computer/commit/8bec829e22b3cfea056b11ceecc2ed6849830586"&gt;&lt;code&gt;8bec829&lt;/code&gt;&lt;/a&gt; Thanks &lt;a href="https://github.com/DaniGuardiola"&gt;@DaniGuardiola&lt;/a&gt;! - Keep Wi-Fi optimization showing as allowed while a USB cable is connected. Background permission checks over a cable skip the Wi-Fi check, and they no longer reset its status, so the setting stops flipping to &amp;quot;Permission needed&amp;quot; and devices on the local network can keep connecting.&lt;/li&gt;
 &lt;/ul&gt;</description><enclosure url="https://github.com/DaniGuardiola/extend.computer/releases/download/v0.3.1/extend.computer-0.3.1-universal.dmg" length="23535114" type="application/octet-stream" sparkle:edSignature="k6s+0pIVcPIKEFnuvRdi2/apP1JinsxrwQELKlgeMpeufJEED3aoZEY3W5rpr75P5VetT1txvSbI2gV8UEh/DA=="></enclosure></item><item><title>extend.computer 0.3.0</title><sparkle:version>9</sparkle:version><sparkle:shortVersionString>0.3.0</sparkle:shortVersionString><sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion><description>&lt;h3&gt;Minor Changes&lt;/h3&gt;
@@ -43,6 +117,6 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
 &lt;li&gt;Pair Macs and share keyboard and mouse control over encrypted connections.&lt;/li&gt;
 &lt;li&gt;Manage accounts, device permissions, and local device settings.&lt;/li&gt;
 &lt;/ul&gt;</description><enclosure url="https://github.com/DaniGuardiola/extend.computer/releases/download/v0.1.0/extend.computer-0.1.0-universal.dmg" length="14141761" type="application/octet-stream" sparkle:edSignature="V4zFxK/Wkh2G2T0kNva1sHB34VuTcfCU36iA9LGGsgVllSIrelT9+cNo1pB1Hzi5IPYJ5C0dEwYGQQ3IxgAaAQ=="></enclosure></item></channel></rss><!-- sparkle-signatures:
-edSignature: LswfEPWqaFlet9VU4hTif+rdhXt4+K33lCenvM0LOIb2RDB6doqYtqyun6s6AS+gHXEX8koPRYfKsVugVR+0Dw==
-length: 9302
+edSignature: 9JbhbmlNqOKLbAr94gG6Bv7E2tvTjN++QwWsdPz/jtA5ogqXphq7V+1K9zVZrLGcyHv3V4Sk/OZ/Bc9hh0kGBQ==
+length: 21742
 -->
